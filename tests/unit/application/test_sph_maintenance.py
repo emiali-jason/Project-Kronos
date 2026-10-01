@@ -100,7 +100,13 @@ def test_expected_disconnect_suppresses_both_deliveries_but_retains_truth(tmp_pa
     g.enter_maintenance(GENERATION)
     with expected_transport_close(g):
         assert service.observe_connection_state('WATCH','VBL',State.DISCONNECTED) is None
-    assert service._connection_state['WATCH'][0] is State.DISCONNECTED
+    checkpoint = service._store.context('connection-baselines')['WATCH']
+    assert checkpoint['state'] == State.DISCONNECTED.value
+    assert checkpoint['open'] is False
+    assert checkpoint['incident'] is None
+    restored = ux10(tmp_path/'notifications',tg)
+    assert restored._store.context('connection-baselines')['WATCH'] == checkpoint
+    assert restored.snapshot().records == ()
     assert service.snapshot().records==() and tg.messages==[]
     evidence=list((g.store.root/'maintenance').glob('*disconnect.json'))
     assert len(evidence)==1 and b'DISCONNECTED' in evidence[0].read_bytes()

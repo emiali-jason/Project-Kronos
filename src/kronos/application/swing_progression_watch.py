@@ -186,6 +186,20 @@ class SwingProgressionWatchWorkflow:
                 tuple(sorted(self._consumers)),
             )
 
+    def notification_monitoring_evidence(self, watch_id: str) -> dict | None:
+        """Read the exact consumer, registration and last observed session tick."""
+        with self._lock:
+            watch = self._watches.get(watch_id)
+            consumer = self._consumers.get(watch_id)
+            if watch is None:
+                return None
+            session = None if consumer is None else consumer.session
+            tick = None if consumer is None else consumer.notification_observation
+            return dict(state=watch.state.value,
+                registered=bool(session is not None and getattr(session, "active", False)),
+                connection=None if session is None else getattr(getattr(session, "connection_state", None), "value", None),
+                observation=tick)
+
     def activate_requirement(self, requirement_id: str, capability: object) -> ProgressionWatch:
         with self._lock:
             requirement = self._requirements.get(requirement_id)
@@ -483,6 +497,7 @@ class _ProgressionMonitoringConsumer:
         self.session = None
         self.closed = False
         self.last_checked_minute: datetime | None = None
+        self.notification_observation = None
 
     def bind(self, session) -> None:  # type: ignore[no-untyped-def]
         self.session = session
@@ -492,6 +507,10 @@ class _ProgressionMonitoringConsumer:
             return
         if type(tick) is not ProviderMarketTick or tick.instrument != self.instrument:
             raise ValueError("PROGRESSION_WATCH_INSTRUMENT_BINDING_MISMATCH")
+        self.notification_observation = dict(connection_id=tick.connection_id,
+            session_continuous=tick.session_continuous,
+            previous_interval_available=tick.previous_interval_available,
+            ordering_deterministic=tick.ordering_deterministic, recovered=tick.recovered)
         minute = tick.received_at.replace(second=0, microsecond=0)
         if minute == self.last_checked_minute:
             return
@@ -507,6 +526,7 @@ class _ProgressionMonitoringConsumer:
         return None
 
     def on_connection_state(self, state: MonitoringConnectionState) -> None:
+        self.notification_observation = None
         # Provider owns reconnect; UX-10 receives a factual transport-state edge.
         self.workflow.observe_connection_state(
             self.watch.watch_id, state, self.workflow._clock()

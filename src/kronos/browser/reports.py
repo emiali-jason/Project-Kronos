@@ -364,7 +364,10 @@ def _from_operational(
             item.paper_track_outcome if observation else "NOT_APPLICABLE"
         ),
         objective_outcome=item.objective_outcome,
-        step31_severity=item.step31_severity.value,
+        step31_severity=(
+            "UNAVAILABLE" if item.step31_severity is None
+            else item.step31_severity.value
+        ),
         risk_state=item.risk_state,
         activation_disposition=item.activation_disposition.value,
         source_contract_identity=item.projection_contract_identity,

@@ -62,6 +62,69 @@ def _blocked(tmp_path):  # type: ignore[no-untyped-def]
     )
 
 
+def test_operational_get_is_observational_and_admitted_sync_links_lagging_track(tmp_path):
+    result = _blocked(tmp_path)
+    service, paper = _v2(tmp_path, result)
+    track = paper.retain_track(create_paper_observation_track(
+        result, current_run_identity=result.snapshot.native_run_identity,
+        created_at=NOW,
+    ))
+    def inventory():
+        return {str(path): (path.read_bytes(), path.stat().st_mtime_ns)
+                for path in tmp_path.rglob("*") if path.is_file()}
+    before = inventory()
+    first = service.operational_handoffs(governed_current_trading_date=NOW.date())
+    second = service.operational_handoffs(governed_current_trading_date=NOW.date())
+    assert first == second and first[0].paper_track_identity is None
+    assert inventory() == before
+    service.synchronize()  # existing admitted event/maintenance owner
+    linked = service.operational_handoffs(governed_current_trading_date=NOW.date())
+    assert linked[0].paper_track_identity == track.track_identity
+    assert linked[0].mode is ObservationMode.PAPER_OBSERVATION
+    assert linked[0].native_run_identity == result.snapshot.native_run_identity
+    assert linked[0].native_assessment_sha256 == result.snapshot.native_assessment_sha256
+    assert linked[0].decision_snapshot_identity == result.snapshot.snapshot_identity
+    assert (result.snapshot.contract_identity, result.snapshot.contract_version) in linked[0].source_versions
+    after = inventory()
+    service.synchronize()
+    assert inventory() == after
+    restarted = ObservationResearchLedgerV2Service(
+        LocalObservationResearchLedgerV2Store(tmp_path / "v2"), service.v1, paper
+    )
+    assert restarted.operational_handoffs(
+        governed_current_trading_date=NOW.date()
+    ) == linked
+    restarted.synchronize()
+    assert inventory() == after
+
+
+def test_missing_v2_decision_is_unavailable_not_a_healthy_empty_book(tmp_path):
+    result = _blocked(tmp_path)
+    v1 = _service(tmp_path, result)
+    service = ObservationResearchLedgerV2Service(
+        LocalObservationResearchLedgerV2Store(tmp_path / "v2"), v1,
+        LocalPaperObservationTrackStore(tmp_path / "paper"),
+    )
+    with pytest.raises(ValueError, match="OBSERVATION_RESEARCH_V2_SOURCE_INCOMPLETE"):
+        service.operational_handoffs(governed_current_trading_date=NOW.date())
+
+
+def test_operational_handoff_validates_v1_once_per_read(tmp_path):
+    result = _blocked(tmp_path)
+    service, _ = _v2(tmp_path, result)
+    original = service.v1.snapshot
+    calls = []
+    def counted(*args, **kwargs):
+        calls.append(1)
+        return original(*args, **kwargs)
+    service.v1.snapshot = counted
+    handoffs = service.operational_handoffs(
+        governed_current_trading_date=NOW.date()
+    )
+    assert len(handoffs) == 1
+    assert calls == [1]
+
+
 def _selected_history_service(tmp_path):
     from kronos.swing.v1.paper_observation_track import make_market_fact, make_monitoring_record, PaperObservationMonitoringState
     result=_blocked(tmp_path)
@@ -253,6 +316,7 @@ def test_current_ltp_distance_is_projection_only_and_touch_state_wins(tmp_path) 
         current_run_identity=result.snapshot.native_run_identity,
         created_at=NOW,
     ))
+    service.synchronize()  # Admitted event/maintenance boundary; reads do not link Tracks.
     fact = CurrentMarketFactV2(
         result.snapshot.canonical_instrument,
         Decimal("105"),
@@ -267,9 +331,7 @@ def test_current_ltp_distance_is_projection_only_and_touch_state_wins(tmp_path) 
     )[0]
     assert handoff.mode is ObservationMode.PAPER_OBSERVATION
     assert handoff.entry == track.observation_entry_reference
-    assert handoff.monitoring_state == paper.projection(
-        track.track_identity
-    ).monitoring_state.value
+    assert handoff.monitoring_state == "UNKNOWN"  # no current exact owner/session proof
     assert handoff.distance_to_target == result.snapshot.target - Decimal("105")
     assert handoff.distance_to_stop == Decimal("105") - result.snapshot.stop
     assert handoff.monetary_pnl_state == "UNAVAILABLE"

@@ -426,7 +426,18 @@ def test_14_get_and_status_do_not_call_mutation_owners(monkeypatch):
             (server.trade_window,'synchronize_downstream'),
             (server.native_review,'_reconcile_journal_unlocked'),
             (server.application,'reconcile_committed_analysis')):
-            monkeypatch.setattr(owner,name,reject)
+            if owner is server.notification_centre or owner is server.native_review:
+                # The server pulse is a separately admitted writer. This guard
+                # rejects request-thread writes without disabling its owner.
+                from threading import current_thread
+                original = getattr(owner, name)
+                def request_guard(*args, _original=original, **kwargs):
+                    if current_thread() is thread:
+                        return _original(*args, **kwargs)
+                    return reject(*args, **kwargs)
+                monkeypatch.setattr(owner, name, request_guard)
+            else:
+                monkeypatch.setattr(owner,name,reject)
         for _ in range(3):
             assert _request(server,'GET','/swing/opportunities')[0]==200
             assert _request(server,'GET','/status')[0]==200
@@ -456,13 +467,16 @@ def test_sponsor_notifications_use_run_control_not_review_attempt_freshness(monk
         observed = []
 
         def capture(*args, **kwargs):
-            observed.append(kwargs["current_run_identity"])
+            from threading import current_thread
+            if current_thread() is not thread:
+                observed.append(kwargs["current_run_identity"])
             return synchronize(*args, **kwargs)
 
         monkeypatch.setattr(server.notification_centre, "synchronize", capture)
 
         server.sponsor_notification_snapshot()
-
+        assert observed == []  # Snapshot reads no longer synchronize.
+        server.synchronize_swing_notifications()
         assert observed == [run_identity]
     finally:
         server.shutdown();server.server_close();thread.join(timeout=5)

@@ -935,6 +935,9 @@ class NativeReviewWorkflow:
 
         return len(self._active_lifecycle_monitoring.active_position_ids)
 
+    def notification_monitoring_evidence(self, position_id: str) -> dict | None:
+        return self._active_lifecycle_monitoring.notification_monitoring_evidence(position_id)
+
     def lifecycle_monitoring_active(self, position_id: str) -> bool:
         return position_id in self._active_lifecycle_monitoring.active_position_ids
 
@@ -988,6 +991,19 @@ class NativeReviewWorkflow:
         with self._lock:
             self._reconcile_journal_unlocked()
             return self._trade_journal.snapshot()
+
+    def journal_current_snapshot(self) -> TradeJournalSnapshot:
+        """Observational Step-33 read; reconciliation belongs to admitted owners."""
+
+        with self._lock:
+            if self._v3_decision_needs_readiness_unlocked():
+                raise ValueError("JOURNAL_UNAVAILABLE:V3_READINESS_NOT_RESTORED")
+            return self._trade_journal.snapshot()
+
+    def journal_position_monitoring_evidence(
+        self, position_id: str
+    ) -> tuple[str, str | None, str | None]:
+        return self._active_lifecycle_monitoring.journal_monitoring_evidence(position_id)
 
     def _reconcile_journal_unlocked(self) -> TradeJournalSnapshot:
         if self._v3_decision_needs_readiness_unlocked():

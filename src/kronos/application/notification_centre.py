@@ -280,7 +280,19 @@ class SponsorNotificationCentre:
             raise TypeError("SPONSOR_NOTIFICATION_SOURCE_INVALID")
         now = self._clock()
         watch_identities = {item.source_identity for item in watches.records}
-        sources = tuple(_watch_source(item) for item in watches.records) + tuple(
+        watch_sources = []
+        for item in watches.records:
+            source = _watch_source(item)
+            delivery_type = (Ux10NotificationType.PROMOTION_CONDITION_MET
+                if item.state is NotificationState.TRIGGERED
+                else Ux10NotificationType.READY_MONITORING_ACTIVATED)
+            delivery = next((event for event in ux10.records
+                if event.watch_identity == item.source_identity
+                and event.notification_type is delivery_type), None)
+            if delivery is not None:
+                source["telegram_delivery"] = delivery.telegram_delivery_state.value
+            watch_sources.append(source)
+        sources = tuple(watch_sources) + tuple(
             _ux10_source(item, ux10, current_run_identity)
             for item in ux10.records
             if not (
@@ -513,6 +525,22 @@ class SponsorNotificationCentre:
             )
             latest = _from_values(values)
             self._retain(latest)
+        # Swing source progression is independent of the LIVE/EXPIRED shell.
+        # Intraday adapters and their immutable semantics are unchanged.
+        if (latest.product == "SWING" and latest.source_kind == "UX08_WATCH"
+                and latest.notification_type == "PROGRESSION_WATCH"
+                and source["notification_type"] == "PROMOTION_WATCH_REACHED"):
+            latest = self._revise(latest, max(now, latest.updated_at), "WATCH_TRIGGERED",
+                summary=source["summary"], notification_type=source["notification_type"],
+                priority=source["priority"])
+        if (latest.product == "SWING" and latest.action is SponsorNotificationAction.OPEN
+                and latest.action_path != source["action_path"]):
+            latest = self._revise(latest, max(now, latest.updated_at), "EVIDENCE_LINK_BOUND",
+                action_path=source["action_path"])
+        if (latest.product == "SWING" and source.get("telegram_delivery") is not None
+                and latest.telegram_delivery != source["telegram_delivery"]):
+            latest = self._revise(latest, max(now, latest.updated_at), "DELIVERY_STATUS_CHANGED",
+                telegram_delivery=source["telegram_delivery"])
         if latest.dismissed:
             return
         desired = source["state"]
@@ -577,6 +605,15 @@ class SponsorNotificationCentre:
         self, record: SponsorNotificationRecord, occurred_at: datetime,
         event_type: str, **updates: object,
     ) -> SponsorNotificationRecord:
+        if record.product == "SWING":
+            with self._lock:
+                current = self._records.get(record.notification_identity)
+                if current is not None and current.integrity_sha256 != record.integrity_sha256:
+                    raise ValueError("NOTIFICATION_STALE_REVISION")
+                return self._revise_owned(record, occurred_at, event_type, **updates)
+        return self._revise_owned(record, occurred_at, event_type, **updates)
+
+    def _revise_owned(self, record, occurred_at, event_type, **updates):
         if occurred_at.tzinfo is None or occurred_at < record.updated_at:
             raise ValueError("NOTIFICATION_EVENT_TIME_INVALID")
         values = asdict(record)
@@ -678,7 +715,7 @@ def _ux10_source(
     current_incidents = {value.notification_id for value in snapshot.active_incidents}
     promotion = item.family is Ux10NotificationFamily.PROMOTION_WATCH
     live = (
-        (reminder and (current_run_identity is None or item.run_identity == current_run_identity))
+        (reminder and current_run_identity is not None and item.run_identity == current_run_identity)
         or (outage and item.notification_id in current_incidents)
         or (promotion and item.run_identity is not None and item.run_identity == current_run_identity)
     )
@@ -695,11 +732,13 @@ def _ux10_source(
         else SponsorNotificationAction.NONE
     )
     path = "/swing/analysis" if action is SponsorNotificationAction.REFRESH else (
-        "/journal" if action is SponsorNotificationAction.OPEN else ""
+        f"/notifications/swing/evidence/UX10_EVENT/{item.notification_id}"
+        if action is SponsorNotificationAction.OPEN else ""
     )
     return dict(
         source_identity=item.notification_id,
         source_kind="UX10_EVENT",
+        telegram_delivery=item.telegram_delivery_state.value,
         source_run_identity=item.run_identity,
         family=family,
         notification_type=item.notification_type.value,

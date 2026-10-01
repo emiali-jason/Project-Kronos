@@ -914,6 +914,25 @@ class ActiveLifecycleMonitoringCoordinator:
                 raise ValueError("SHARED_MONITORING_HUB_REQUIRES_IDLE_COORDINATOR")
             self._monitoring_hub = hub
 
+    def notification_monitoring_evidence(self, position_id: str) -> dict | None:
+        with self._lock:
+            consumer = self._consumers.get(position_id)
+            try:
+                position = self._service._require(position_id)
+            except ValueError:
+                return None
+            session = None if consumer is None else consumer.session
+            observation = None if consumer is None else consumer.notification_observation
+            if (consumer is not None and getattr(consumer, "mcx_historical", None) is not None
+                    and consumer.latest_observation() is None):
+                # Use the deployed exact-subscription/current-connection fence.
+                # A retained quote from an invalidated session is not card truth.
+                observation = None
+            return dict(state=position.state.value,
+                registered=bool(session is not None and getattr(session, "active", False)),
+                connection=None if session is None else getattr(getattr(session, "connection_state", None), "value", None),
+                observation=observation)
+
     def attach(self, position_id: str, capability: object, instrument: InstrumentRecord) -> None:
         position = self._service._require(position_id)
         if position.mcx_v1_contract_symbol is not None or position.mcx_quantity is not None:
@@ -1018,6 +1037,47 @@ class ActiveLifecycleMonitoringCoordinator:
             return None
         return consumer.latest_observation()
 
+    def journal_monitoring_evidence(self, position_id: str) -> tuple[str, str | None, str | None]:
+        """Read exact owner/session/accepted-observation proof for one position."""
+
+        position = self._service._require(position_id)
+        if position.state is ActiveLifecycleState.CLOSED:
+            return "NOT_REQUIRED", None, None
+        if position.state is ActiveLifecycleState.MONITORING_UNAVAILABLE:
+            return "INTERRUPTED", None, position.last_observation_id
+        with self._lock:
+            consumer = self._consumers.get(position_id)
+            if consumer is None or consumer.closed or consumer.session is None:
+                return "UNKNOWN", None, position.last_observation_id
+            session = consumer.session
+            state = getattr(session, "connection_state", None)
+            if state is None:
+                state = getattr(session, "state", None)
+            if state in {MonitoringConnectionState.DISCONNECTED,
+                         MonitoringConnectionState.RECONNECTING,
+                         MonitoringConnectionState.CONTEXT_INCOMPLETE}:
+                return "INTERRUPTED", None, position.last_observation_id
+            if state is not MonitoringConnectionState.CONNECTED:
+                return "UNKNOWN", None, position.last_observation_id
+            if consumer.instrument not in getattr(
+                session, "subscriptions", (consumer.instrument,)
+            ):
+                return "UNKNOWN", None, position.last_observation_id
+            tick = consumer.last_accepted_tick
+            if getattr(consumer, 'mcx_historical', None) is not None and consumer.latest_observation() is None:
+                return "UNKNOWN", None, position.last_observation_id
+            if tick is None or position.last_observed_at != tick.observed_at:
+                return "UNKNOWN", None, position.last_observation_id
+            if not tick.session_continuous or not tick.ordering_deterministic:
+                return "INTERRUPTED", tick.connection_id, position.last_observation_id
+            hub = self._monitoring_hub
+            if hub is not None:
+                latest = next((item for item in hub.latest_market_ticks
+                               if item.instrument == consumer.instrument), None)
+                if latest is None or latest != tick:
+                    return "UNKNOWN", tick.connection_id, position.last_observation_id
+            return "ACTIVE", tick.connection_id, position.last_observation_id
+
 
 class _LifecycleMonitoringConsumer:
     def __init__(self, position_id, instrument, service, calendar, clock, on_closed,
@@ -1038,6 +1098,9 @@ class _LifecycleMonitoringConsumer:
         self._observation_context = None
         self._latest_publication = None
         self._lock = RLock()
+        self.notification_observation = None
+
+        self.last_accepted_tick: ProviderMarketTick | None = None
 
     def bind(self, session) -> None:  # type: ignore[no-untyped-def]
         self.session = session
@@ -1118,10 +1181,15 @@ class _LifecycleMonitoringConsumer:
                     self.position_id, tick, schedule)
         else:
             position = self.service.observe_tick(self.position_id, tick, schedule)
+        self.notification_observation = dict(connection_id=tick.connection_id,
+            session_continuous=tick.session_continuous,
+            previous_interval_available=tick.previous_interval_available,
+            ordering_deterministic=tick.ordering_deterministic, recovered=tick.recovered)
         if before.mcx_v1_contract_symbol is not None or before.mcx_quantity is not None:
             self.latest_mcx_tick = (tick, self.connection_state)
             self._observation_context = context
             self._latest_publication = (tick, self.connection_state, context)
+        self.last_accepted_tick = tick
         if position.state is ActiveLifecycleState.CLOSED:
             self.on_closed()
 
@@ -1142,6 +1210,8 @@ class _LifecycleMonitoringConsumer:
             self.latest_mcx_tick = None
             self._observation_context = None
             self._latest_publication = None
+        self.notification_observation = None
+        self.last_accepted_tick = None
         if state in {MonitoringConnectionState.DISCONNECTED, MonitoringConnectionState.CONTEXT_INCOMPLETE}:
             position = self.service._require(self.position_id)
             if position.state not in {ActiveLifecycleState.CLOSED, ActiveLifecycleState.MONITORING_UNAVAILABLE}:

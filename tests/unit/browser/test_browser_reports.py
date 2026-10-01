@@ -451,3 +451,332 @@ def test_reports_browser_route_and_filtered_exports_are_read_only(tmp_path) -> N
         assert workflow.journal_snapshot().records == ()
     finally:
         server.shutdown(); thread.join(timeout=2); server.server_close()
+
+
+_COMPATIBILITY_FORMATS = (
+    '/reports', '/reports/export.csv', '/reports/export.json', '/reports/export.xlsx',
+)
+
+
+def _reports_inventory(root):
+    """Capture contents and metadata, including directory membership effects."""
+    import hashlib
+    return {
+        str(path.relative_to(root)): (
+            path.is_dir(), path.stat().st_size, path.stat().st_mode,
+            path.stat().st_mtime_ns, path.stat().st_ctime_ns,
+            None if path.is_dir() else hashlib.sha256(path.read_bytes()).hexdigest(),
+        )
+        for path in (root, *sorted(root.rglob('*')))
+    }
+
+
+def _reports_get(server, route):
+    connection = HTTPConnection('127.0.0.1', server.server_port, timeout=3)
+    try:
+        connection.request('GET', route)
+        response = connection.getresponse()
+        return response.status, response.read()
+    finally:
+        connection.close()
+
+
+@pytest.fixture
+def compatibility_reports_server(tmp_path):
+    """Real cached Step-33 evidence; scheduled reconciliation stays separate."""
+    cached, service, *_ = _run_paper(tmp_path / 'cached-step33')
+    workflow = NativeReviewWorkflow(
+        NativeReviewEvidenceStore((tmp_path / 'native').resolve()),
+        trade_journal_service=service,
+    )
+    application = SwingOpportunitiesApplication(
+        _Provider, initial_snapshot=_ready(), clock=lambda: NOW,
+        market_calendar_publisher=MarketCalendarPublisher(),
+    )
+    application.current_swing_trading_date = lambda: NOW.date()
+    server = create_browser_server(application, port=0, native_review=workflow)
+    assert workflow.journal_current_snapshot().records == cached.records
+    assert cached.records
+    server._next_swing_journal_reconciliation = float('inf')
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield server
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+        server.server_close()
+
+
+@pytest.mark.parametrize('route', _COMPATIBILITY_FORMATS)
+def test_reports_compatibility_all_get_formats_are_observational(
+    tmp_path, compatibility_reports_server, monkeypatch, route,
+):
+    server = compatibility_reports_server
+    calls = []
+
+    def forbidden(*args, **kwargs):
+        calls.append('MUTATION_OR_ACQUISITION')
+        raise AssertionError('Reports GET crossed an admitted mutation boundary')
+
+    monkeypatch.setattr(server.native_review, 'journal_snapshot', forbidden)
+    monkeypatch.setattr(server.trade_window, 'reconcile_journal_read_models', forbidden)
+    monkeypatch.setattr(server.trade_window, '_synchronize_observation_research_links', forbidden)
+    monkeypatch.setattr(server.trade_window._observation_research_v2, 'synchronize', forbidden)
+    monkeypatch.setattr(server.application, 'run_analysis', forbidden)
+    before = _reports_inventory(tmp_path)
+    for _ in range(2):
+        status, payload = _reports_get(server, route+'?product=SWING&view=ALL_RECORDS')
+        assert status == 200
+        assert payload
+    assert calls == []
+    assert _reports_inventory(tmp_path) == before
+
+
+@pytest.mark.parametrize('route', _COMPATIBILITY_FORMATS)
+@pytest.mark.parametrize('owner,marker', (
+    ('_swing_step33_reconciliation_failure', b'Step-33 reconciliation unavailable'),
+    ('_swing_v2_reconciliation_failure', b'V2 reconciliation unavailable'),
+))
+def test_reports_compatibility_retained_failure_cannot_hide_behind_cached_evidence(
+    tmp_path, compatibility_reports_server, monkeypatch, route, owner, marker,
+):
+    server = compatibility_reports_server
+    setattr(server, owner, 'SOURCE_UNAVAILABLE')
+    calls = []
+
+    def must_not_read(*args, **kwargs):
+        calls.append('READ_OR_REPAIR')
+        raise AssertionError('Known failed authority was consulted by Reports GET')
+
+    monkeypatch.setattr(server.native_review, 'journal_snapshot', must_not_read)
+    monkeypatch.setattr(server.native_review, 'journal_current_snapshot', must_not_read)
+    monkeypatch.setattr(server.trade_window, 'observation_operational_handoffs_v2', must_not_read)
+    before = _reports_inventory(tmp_path)
+    status, body = _reports_get(server, route+'?product=SWING')
+    assert status == 503 and marker in body
+    assert b'NO HISTORICAL RECORDS' not in body
+    assert calls == []
+    assert _reports_inventory(tmp_path) == before
+
+
+@pytest.mark.parametrize('route', _COMPATIBILITY_FORMATS)
+@pytest.mark.parametrize('source', ('STEP33', 'V2'))
+def test_reports_compatibility_missing_source_is_explicit_without_repair(
+    tmp_path, compatibility_reports_server, monkeypatch, route, source,
+):
+    server = compatibility_reports_server
+
+    def unavailable(*args, **kwargs):
+        raise OSError('isolated retained source unavailable')
+
+    owner, method = ((server.native_review, 'journal_current_snapshot')
+                     if source == 'STEP33' else
+                     (server.trade_window, 'observation_operational_handoffs_v2'))
+    monkeypatch.setattr(owner, method, unavailable)
+    before = _reports_inventory(tmp_path)
+    status, body = _reports_get(server, route+'?product=SWING')
+    assert status == 503 and b'Swing Reports source evidence unavailable' in body
+    assert b'NO HISTORICAL RECORDS' not in body and b'/Users/' not in body
+    assert _reports_inventory(tmp_path) == before
+
+
+def test_reports_compatibility_admitted_recovery_is_independent(
+    compatibility_reports_server, monkeypatch,
+):
+    server = compatibility_reports_server
+    original_step33 = server.native_review.journal_snapshot
+    original_v2 = server.trade_window.reconcile_journal_read_models
+    failed = {'STEP33', 'V2'}
+    admissions = []
+
+    def reconcile(name, original):
+        def call():
+            state = server.maintenance_admission.snapshot()
+            assert state['owners'].get('SERVER_PULSE', 0) > 0
+            admissions.append(name)
+            if name in failed:
+                raise OSError('isolated '+name+' reconciliation failure')
+            return original()
+        return call
+
+    monkeypatch.setattr(server.native_review, 'journal_snapshot', reconcile('STEP33', original_step33))
+    monkeypatch.setattr(server.trade_window, 'reconcile_journal_read_models', reconcile('V2', original_v2))
+
+    def pulse():
+        server._next_swing_journal_reconciliation = 0.0
+        server.service_actions()
+        server._next_swing_journal_reconciliation = float('inf')
+
+    pulse()
+    assert server._swing_step33_reconciliation_failure is not None
+    assert server._swing_v2_reconciliation_failure is not None
+    failed.remove('STEP33')
+    pulse()
+    assert server._swing_step33_reconciliation_failure is None
+    assert server._swing_v2_reconciliation_failure is not None
+    for route in _COMPATIBILITY_FORMATS:
+        status, body = _reports_get(server, route+'?product=SWING')
+        assert status == 503 and b'V2 reconciliation unavailable' in body
+    failed.add('STEP33')
+    failed.remove('V2')
+    pulse()
+    assert server._swing_step33_reconciliation_failure is not None
+    assert server._swing_v2_reconciliation_failure is None
+    for route in _COMPATIBILITY_FORMATS:
+        status, body = _reports_get(server, route+'?product=SWING')
+        assert status == 503 and b'Step-33 reconciliation unavailable' in body
+    failed.clear()
+    pulse()
+    assert server._swing_step33_reconciliation_failure is None
+    assert server._swing_v2_reconciliation_failure is None
+    for route in _COMPATIBILITY_FORMATS:
+        assert _reports_get(server, route+'?product=SWING')[0] == 200
+    assert admissions == ['STEP33', 'V2'] * 4
+
+
+@pytest.mark.parametrize('severity', [None, *Step31WarningSeverity])
+def test_reports_compatibility_optional_severity_preserves_factual_exports(tmp_path, severity):
+    row = replace(_record('CANBK', ObservationMode.PAPER), step31_severity=severity)
+    projection = project_historical_reports(
+        (row,), _empty_journal(tmp_path), ReportsQuery(),
+        governed_current_trading_date=NOW.date(),
+    )
+    expected = 'UNAVAILABLE' if severity is None else severity.value
+    record = projection.records[0]
+    assert record.step31_severity == expected
+    assert record.entry == row.entry and record.exit == row.exit
+    assert record.pnl == row.position_gross_pnl
+    assert record.source_contract_identity == row.projection_contract_identity
+    assert expected in render_reports(_ready(), projection, selected_record_id=record.record_identity)
+    assert json.loads(export_reports_json(projection))['records'][0]['step31_severity'] == expected
+    assert expected in export_reports_csv(projection).decode()
+    assert expected in _xlsx_rows(export_reports_xlsx(projection, generated_at=NOW))[1]
+
+
+@pytest.mark.parametrize('route', _COMPATIBILITY_FORMATS)
+def test_reports_compatibility_intraday_does_not_use_swing_health_or_sources(
+    tmp_path, compatibility_reports_server, monkeypatch, route,
+):
+    from tests.unit.intraday.test_wo1516_books import fixture as books_fixture
+    server = compatibility_reports_server
+    books, *_ = books_fixture(tmp_path/'intraday-books')
+    server.intraday_books = books
+    server._swing_step33_reconciliation_failure = 'SOURCE_UNAVAILABLE'
+    server._swing_v2_reconciliation_failure = 'SOURCE_UNAVAILABLE'
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError('Intraday Reports consulted Swing authority')
+
+    monkeypatch.setattr(server.native_review, 'journal_snapshot', forbidden)
+    monkeypatch.setattr(server.native_review, 'journal_current_snapshot', forbidden)
+    monkeypatch.setattr(server.trade_window, 'observation_operational_handoffs_v2', forbidden)
+    expected = books.snapshot()
+    before = _reports_inventory(tmp_path)
+    status, body = _reports_get(server, route+'?product=INTRADAY&view=ALL_RECORDS')
+    assert status == 200
+    if route.endswith('.xlsx'):
+        assert 'LUPIN-20260913-100000' in str(_xlsx_rows(body))
+    else:
+        assert b'LUPIN-20260913-100000' in body
+    assert books.snapshot() == expected
+    assert _reports_inventory(tmp_path) == before
+
+
+@pytest.mark.parametrize('family', ('GOLDM', 'SILVERM', 'COPPER', 'CRUDEOIL', 'NATURALGAS'))
+def test_reports_compatibility_exact_mcx_history_remains_factual(tmp_path, family):
+    from tests.unit.browser.test_wo14_mcx_journal_integration import fixture as mcx_fixture
+    from tests.unit.swing.v1.test_mcx_contract_lifecycle import _wire_monitor, START
+    from kronos.application.swing_mcx_journal import mcx_journal_handoffs
+    from kronos.swing.v1.mcx_contract_profile import McxFamily
+    control, position, instrument, plan = mcx_fixture(tmp_path, McxFamily(family), active=True)
+    clock = [START]
+    monitor, capability, _ = _wire_monitor(
+        control.lifecycle, control.bound.bindings, instrument, clock,
+    )
+    control.native_review._active_lifecycle_monitoring = monitor
+    try:
+        monitor.attach(position.position_id, capability, instrument)
+        clock[0] += timedelta(minutes=1)
+        capability.tick(103)
+        tick, _ = monitor.latest_mcx_observation(position.position_id)
+        schedule = monitor._calendar.schedule('MCX', START.date(), observed_at=clock[0])
+        closure = control.bound.manual_paper_exit_at_cmp(position.position_id, tick, schedule)
+        rows = mcx_journal_handoffs(control, START.date()+timedelta(days=1))
+        journal = _empty_journal(tmp_path/'reports-journal')
+        before = _reports_inventory(tmp_path)
+        projection = project_historical_reports(
+            rows, journal,
+            ReportsQuery(instrument=plan.contract_symbol, view=ReportView.PAPER),
+            governed_current_trading_date=START.date()+timedelta(days=1),
+        )
+        record = projection.records[0]
+        assert len(projection.records) == 1
+        assert record.instrument == plan.contract_symbol
+        assert record.record_identity == position.position_id
+        assert record.decision_identity == position.decision_id
+        assert record.entry == Decimal('101') == closure.actual_entry
+        assert record.exit == tick.last_price == closure.actual_exit == Decimal('103')
+        assert record.relevant_timestamp == closure.exit_timestamp
+        assert record.step31_severity == 'UNAVAILABLE'
+        assert record.pnl is projection.overview.net_pnl is None
+        payload = json.loads(export_reports_json(projection))
+        exported = payload['records'][0]
+        assert exported['instrument'] == plan.contract_symbol
+        assert exported['step31_severity'] == exported['pnl'] == 'UNAVAILABLE'
+        assert exported['entry'] == '101' and exported['exit'] == '103'
+        assert plan.contract_symbol in export_reports_csv(projection).decode()
+        assert plan.contract_symbol in str(_xlsx_rows(export_reports_xlsx(projection, generated_at=NOW)))
+        html = render_reports(_ready(), projection, selected_record_id=record.record_identity)
+        assert plan.contract_symbol in html
+        # Reports projections and all exporters preserve the retained exact source.
+        assert _reports_inventory(tmp_path) == before
+    finally:
+        monitor.close()
+
+
+def test_reports_compatibility_does_not_mask_unexpected_projector_failure(
+    compatibility_reports_server, monkeypatch,
+):
+    import sys
+    from http.client import RemoteDisconnected
+    from threading import Event
+    import kronos.browser.server as browser_server
+    server = compatibility_reports_server
+    error = Event()
+    observed = []
+
+    def fail_projection(*args, **kwargs):
+        raise ValueError('isolated projector defect, not source unavailability')
+
+    def retain_error(*args, **kwargs):
+        observed.append(type(sys.exc_info()[1]))
+        error.set()
+
+    monkeypatch.setattr(browser_server, 'project_historical_reports', fail_projection)
+    monkeypatch.setattr(server, 'handle_error', retain_error)
+    with pytest.raises(RemoteDisconnected):
+        _reports_get(server, '/reports?product=SWING')
+    assert error.wait(3) and observed == [ValueError]
+
+
+@pytest.mark.parametrize('owner,marker', (
+    ('_swing_step33_reconciliation_failure', b'Step-33 reconciliation unavailable'),
+    ('_swing_v2_reconciliation_failure', b'V2 reconciliation unavailable'),
+))
+def test_reports_compatibility_failure_during_read_withholds_cached_report(
+    tmp_path, compatibility_reports_server, monkeypatch, owner, marker,
+):
+    server = compatibility_reports_server
+    original = server.native_review.journal_current_snapshot
+
+    def fail_during_read():
+        cached = original()
+        setattr(server, owner, 'SOURCE_UNAVAILABLE')
+        return cached
+
+    monkeypatch.setattr(server.native_review, 'journal_current_snapshot', fail_during_read)
+    before = _reports_inventory(tmp_path)
+    status, body = _reports_get(server, '/reports?product=SWING')
+    assert status == 503 and marker in body
+    assert _reports_inventory(tmp_path) == before

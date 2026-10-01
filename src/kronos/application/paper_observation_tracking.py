@@ -131,6 +131,39 @@ class PaperObservationTrackingWorkflow:
     def active_monitoring_count(self) -> int:
         return len(self._registrations)
 
+    def journal_monitoring_evidence(self, track_identity: str) -> tuple[str, str | None, str | None]:
+        """Read one Track's owner/session proof without changing restoration state."""
+
+        projection = self.projection(track_identity)
+        if projection.track_state is PaperObservationTrackState.COMPLETE:
+            return "NOT_REQUIRED", None, None
+        if projection.monitoring_state is PaperObservationMonitoringState.INTERRUPTED:
+            return "INTERRUPTED", None, None
+        with self._lock:
+            registration = self._registrations.get(track_identity)
+            consumer = self._consumers.get(track_identity)
+            if registration is None or consumer is None or consumer._detached:
+                return "UNKNOWN", None, None
+            state = getattr(registration, "connection_state", None)
+            if state in {MonitoringConnectionState.DISCONNECTED,
+                         MonitoringConnectionState.CONTEXT_INCOMPLETE}:
+                return "INTERRUPTED", None, None
+            if state is not MonitoringConnectionState.CONNECTED or not registration.active:
+                return "UNKNOWN", None, None
+            tick = consumer._last_accepted_tick
+            if tick is None or projection.last_factual_observation_at != tick.observed_at:
+                return "UNKNOWN", None, None
+            if not tick.session_continuous or not tick.ordering_deterministic:
+                return "INTERRUPTED", tick.connection_id, None
+            hub = self._hub
+            latest = None if hub is None else next(
+                (item for item in hub.latest_market_ticks
+                 if item.instrument == consumer._instrument), None
+            )
+            if latest is None or latest != tick:
+                return "UNKNOWN", tick.connection_id, None
+            return "ACTIVE", tick.connection_id, None
+
     def start(
         self,
         decision: SponsorObservationDecisionResult,
@@ -1509,6 +1542,7 @@ class _PaperObservationTrackConsumer:
         self._ever_connected = reconcile_on_connect
         self._restoration_only = reconcile_on_connect
         self._received_tick = False
+        self._last_accepted_tick: ProviderMarketTick | None = None
         self._detached = False
         self._identity = track.track_identity
         self._registration = None
@@ -1543,6 +1577,7 @@ class _PaperObservationTrackConsumer:
         else:
             self._workflow.observe_tick(self._identity, tick)
         self._received_tick = True
+        self._last_accepted_tick = tick
 
     def on_order_update(self, _update: ProviderOrderUpdateEvidence) -> None:
         # Broker/order-update evidence is not Paper Track authority.

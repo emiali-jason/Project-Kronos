@@ -71,3 +71,33 @@ def project_swing_notification_workspace(
 
 
 __all__ = ["project_swing_notification_workspace"]
+
+
+def monitoring_indicator(evidence: dict | None) -> str:
+    """Presentation of an exact owner's session facts; never infer continuity."""
+    if not evidence:
+        return "UNAVAILABLE"
+    if evidence.get("state") in {"CLOSED", "TRIGGERED", "INACTIVE", "STALE"}:
+        return "NOT_REQUIRED"
+    if evidence.get("state") in {"MONITORING_UNAVAILABLE", "EVENT_UNRESOLVED"}:
+        return "INTERRUPTED"
+    if evidence.get("connection") in {"DISCONNECTED", "RECONNECTING", "CONTEXT_INCOMPLETE"}:
+        return "INTERRUPTED"
+    if not evidence.get("registered"):
+        return "UNAVAILABLE"
+    if evidence.get("connection") != "CONNECTED":
+        return "UNAVAILABLE"
+    tick = evidence.get("observation")
+    if tick is None or not tick.get("connection_id"):
+        return "UNAVAILABLE"
+    if not (tick.get("session_continuous") and tick.get("previous_interval_available")
+            and tick.get("ordering_deterministic") and not tick.get("recovered")):
+        return "INTERRUPTED"
+    return "LIVE"
+
+
+def notification_revision(centre, indicators: dict[str, str]) -> str:
+    from hashlib import sha256
+    import json
+    return sha256(json.dumps((centre.revision, sorted(indicators.items())),
+        separators=(",", ":")).encode()).hexdigest()

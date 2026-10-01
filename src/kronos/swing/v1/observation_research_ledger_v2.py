@@ -280,6 +280,8 @@ class GovernedPositionPresentationFactsV2:
     gross_pnl: Decimal | None
     completion_timestamp: datetime | None
     source_integrity_sha256: str
+    lifecycle_event_ids: tuple[str, ...] = ()
+    prior_state: str | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -287,6 +289,7 @@ class GovernedPositionPresentationFactsV2:
             or not _identity(self.sponsor_position_identity)
             or self.mode not in {SponsorTradeChoice.PAPER, SponsorTradeChoice.LIVE}
             or not re.fullmatch(r"[A-Z0-9_ -]{1,128}", self.state)
+            or (self.prior_state is not None and not re.fullmatch(r"[A-Z0-9_ -]{1,128}", self.prior_state))
             or any(value is not None and not _finite(value) for value in (
                 self.actual_entry, self.actual_exit, self.gross_pnl
             ))
@@ -295,6 +298,7 @@ class GovernedPositionPresentationFactsV2:
                 and not _aware(self.completion_timestamp)
             )
             or not _digest(self.source_integrity_sha256)
+            or any(not _identity(item) for item in self.lifecycle_event_ids)
         ):
             raise ValueError("OBSERVATION_POSITION_PRESENTATION_FACT_INVALID")
 
@@ -307,7 +311,7 @@ class ObservationOperationalHandoffV2:
     direction: V1Direction
     decision_identity: str
     decision_timestamp: datetime
-    step31_severity: Step31WarningSeverity
+    step31_severity: Step31WarningSeverity | None
     step31_warnings: tuple[str, ...]
     risk_state: str
     activation_disposition: SponsorActivationDisposition
@@ -345,6 +349,22 @@ class ObservationOperationalHandoffV2:
     paper_source_count: int | None = None
     paper_consolidation_identity: str | None = None
     paper_history_detail_reason: str | None = None
+    native_run_identity: str | None = None
+    native_assessment_sha256: str | None = None
+    decision_snapshot_identity: str | None = None
+    trade_plan_identity: str | None = None
+    trade_plan_sha256: str | None = None
+    activation_identity: str | None = None
+    research_record_identity: str | None = None
+    source_events: tuple[tuple[str, str, str], ...] = ()
+    source_versions: tuple[tuple[str, str], ...] = ()
+    monitoring_session_identity: str | None = None
+    monitoring_observation_identity: str | None = None
+    step33_record_identity: str | None = None
+    sponsor_position_prior_state: str | None = None
+    exact_contract_expiry: str | None = None
+    position_lots: int | None = None
+    actual_entry_at: datetime | None = None
 
 
 class LocalObservationResearchLedgerV2Store:
@@ -493,12 +513,13 @@ class ObservationResearchLedgerV2Service:
         return self.snapshot()
 
     def snapshot(
-        self, query: ObservationResearchQueryV2 | None = None
+        self, query: ObservationResearchQueryV2 | None = None,
+        *, _sources: tuple[ObservationResearchProjectionV1, ...] | None = None,
     ) -> tuple[ObservationResearchProjectionV2, ...]:
         query = query or ObservationResearchQueryV2()
         links = self.store.load_links()
         records = self.store.load_records()
-        sources = self.v1.snapshot() if records else ()
+        sources = (self.v1.snapshot() if records else ()) if _sources is None else _sources
         projections = tuple(self._projection(record, links, sources) for record in records)
         return tuple(sorted(
             (item for item in projections if _matches(item, query)),
@@ -540,6 +561,12 @@ class ObservationResearchLedgerV2Service:
         current_facts = current_facts or {}
         completion_trading_dates = completion_trading_dates or {}
         position_facts = position_facts or {}
+        sources = self.v1.snapshot()
+        rows = self.snapshot(_sources=sources)
+        v1_decisions = {item.record.decision_identity for item in sources}
+        v2_decisions = {item.record.decision_identity for item in rows}
+        if v1_decisions != v2_decisions:
+            raise ValueError("OBSERVATION_RESEARCH_V2_SOURCE_INCOMPLETE")
         return tuple(
             _operational_handoff(
                 item,
@@ -549,7 +576,7 @@ class ObservationResearchLedgerV2Service:
                 websocket_state,
                 position_facts.get(item.record.decision_identity),
             )
-            for item in self.synchronize()
+            for item in rows
         )
 
     def _source(self, record: ObservationResearchRecordV2, sources=None) -> ObservationResearchProjectionV1:
@@ -896,20 +923,20 @@ def _operational_handoff(
         sponsor_position_state=(
             "UNAVAILABLE" if position_fact is None else position_fact.state
         ),
+        sponsor_position_prior_state=(
+            None if position_fact is None else position_fact.prior_state
+        ),
         paper_track_identity=None if paper is None else paper.track.track_identity,
         paper_track_state="NOT_APPLICABLE" if item.paper_track_state is None else item.paper_track_state.value,
         paper_track_latest_event="NOT_APPLICABLE" if paper is None else paper.latest_event.value,
         paper_track_outcome="NOT_APPLICABLE" if paper is None else paper.outcome_state.value,
+        # Retained lifecycle/Track state is not proof of a current owner and
+        # accepted session observation. The Journal adds exact owner evidence.
         monitoring_state=(
-            paper.monitoring_state.value
-            if paper is not None
-            else (
-                "NOT_ACTIVE"
-                if position_fact is None
-                else "INTERRUPTED"
-                if "MONITORING" in position_fact.state
-                else "ACTIVE"
-            )
+            "NOT_REQUIRED" if completion is not None else
+            "INTERRUPTED" if paper is not None and paper.monitoring_state.value == "INTERRUPTED" else
+            "INTERRUPTED" if position_fact is not None and "MONITORING" in position_fact.state else
+            "UNKNOWN"
         ),
         objective_state="UNAVAILABLE" if model is None else model.source_state,
         objective_outcome="UNAVAILABLE" if objective is None else objective.source_state,
@@ -944,6 +971,32 @@ def _operational_handoff(
         paper_source_count=None if paper is None else paper.historical_source_count,
         paper_consolidation_identity=None if paper is None else paper.historical_consolidation_identity,
         paper_history_detail_reason=None if paper is None else paper.historical_detail_reason,
+        native_run_identity=snapshot.native_run_identity,
+        native_assessment_sha256=snapshot.native_assessment_sha256,
+        decision_snapshot_identity=snapshot.snapshot_identity,
+        trade_plan_identity=snapshot.conventional_trade_plan_identity,
+        trade_plan_sha256=snapshot.conventional_trade_plan_sha256,
+        activation_identity=source.activation.disposition_identity,
+        research_record_identity=item.record.record_identity,
+        source_events=tuple(
+            (link.kind.value, link.source_record_identity, link.source_contract_identity + " / " + link.source_contract_version)
+            for link in item.source.links
+        ) + tuple(
+            (link.kind.value, link.source_identity, link.source_contract_identity + " / " + link.source_contract_version)
+            for link in item.paper_links
+        ) + tuple(
+            ("LIFECYCLE_EVENT", event_id, "ACTIVE_LIFECYCLE / 1")
+            for event_id in (() if position_fact is None else position_fact.lifecycle_event_ids)
+        ),
+        source_versions=(
+            (snapshot.contract_identity, snapshot.contract_version),
+            (source.decision.contract_identity, source.decision.contract_version),
+            (source.activation.contract_identity, source.activation.contract_version),
+            (item.source.record.contract_identity, item.source.record.contract_version),
+            (item.record.contract_identity, item.record.contract_version),
+        ) + (() if paper is None else ((
+            paper.track.contract_identity, paper.track.contract_version
+        ),)),
     )
 
 

@@ -3144,9 +3144,10 @@ def _report_value(value: Decimal | None) -> str:
 
 def render_trade_journal(
     snapshot: BrowserWorkspaceSnapshot,
-    journal: TradeJournalSnapshot,
+    journal: TradeJournalSnapshot | None,
     *,
     operational: tuple[ObservationOperationalHandoffV2, ...] | None = None,
+    operational_source_status: str = "AVAILABLE",
     operational_websocket_state: WebSocketPresentationState | None = None,
     governed_trading_date: date | None = None,
     selected_product: str = "SWING",
@@ -3163,6 +3164,8 @@ def render_trade_journal(
     """Render the operational Sponsor book or the preserved research surface."""
 
     if operational is None:
+        if journal is None:
+            raise ValueError("JOURNAL_SOURCE_UNAVAILABLE")
         return _render_trade_journal_research(
             snapshot,
             journal,
@@ -3182,6 +3185,7 @@ def render_trade_journal(
         operational,
         websocket_state=operational_websocket_state,
         governed_trading_date=governed_trading_date,
+        source_status=operational_source_status,
         selected_product=selected_product,
         search=search,
         selected_record_id=selected_record_id,
@@ -3282,6 +3286,7 @@ def _render_operational_trade_journal(
     *,
     websocket_state: WebSocketPresentationState | None,
     governed_trading_date: date | None,
+    source_status: str,
     selected_product: str,
     search: str,
     selected_record_id: str | None,
@@ -3300,10 +3305,11 @@ def _render_operational_trade_journal(
             body=body,
         )
 
-    current = tuple(
+    unfiltered_current = tuple(
         item for item in records
         if item.operational_route is not ObservationOperationalRoute.HISTORICAL
     )
+    current = unfiltered_current
     needle = search.strip().casefold()
     if needle:
         current = tuple(item for item in current if needle in item.instrument.casefold())
@@ -3347,24 +3353,33 @@ def _render_operational_trade_journal(
         if item.mode is ObservationMode.PAPER_OBSERVATION
         and item.paper_track_identity is not None
     )
-    detail = next(
-        (item for item in records if item.decision_identity == selected_record_id
-         and (item in current or (item.mode is ObservationMode.PAPER_OBSERVATION
-              and item.paper_history_representation in {"COMPACT_HISTORICAL", "HISTORY_UNAVAILABLE"}))),
-        None,
-    )
+    detail = next((item for item in records if item.decision_identity == selected_record_id), None)
     content = ''.join((
         _journal_position_section("PAPER TRADES", "paper", paper),
         _journal_position_section("LIVE TRADES", "live", live),
         _journal_observation_section(observations),
     ))
     if not paper and not live and not observations:
-        content = (
-            '<div class="workflow-empty"><strong>NO ACTIVE SWING TRADES OR OBSERVATIONS</strong><br>'
-            'Historical records remain available in Reports.</div>'
-        )
+        if source_status != "AVAILABLE":
+            empty_title = "SWING JOURNAL SOURCE UNAVAILABLE"
+            empty_detail = "Current positions cannot be determined from available evidence."
+        elif needle and unfiltered_current:
+            empty_title = "NO MATCHING SWING JOURNAL ROWS"
+            empty_detail = "Clear the search to see the current book."
+        else:
+            empty_title = "NO CURRENT SWING TRADES OR OBSERVATIONS"
+            empty_detail = "The governed source is healthy; historical records remain available by exact identity."
+        content = ('<div class="workflow-empty"><strong>' + empty_title
+                   + '</strong><br>' + empty_detail + '</div>')
+    if source_status != "AVAILABLE" and (paper or live or observations):
+        content = ('<div class="workflow-empty"><strong>SWING JOURNAL SOURCE UNAVAILABLE</strong><br>'
+                   'Retained rows are visible; currentness is unavailable.</div>' + content)
     if detail is not None:
         content = _journal_detail(detail) + content
+    elif selected_record_id is not None:
+        content = ('<div class="workflow-empty"><strong>EXACT JOURNAL RECORD UNAVAILABLE</strong><br>'
+                   'No retained operational decision matches ' + escape(selected_record_id)
+                   + '.</div>' + content)
     content += (
         '<details class="native-diagnostics"><summary>GOVERNED EVIDENCE</summary>'
         '<a class="button" href="/journal?view=research">OPEN HISTORICAL RESEARCH LEDGER</a>'
@@ -3384,8 +3399,16 @@ def _journal_order_key(item: ObservationOperationalHandoffV2) -> tuple[object, .
 
 
 def _journal_status(item: ObservationOperationalHandoffV2) -> str:
+    if item.operational_route is ObservationOperationalRoute.HISTORICAL and item.sponsor_position_state == "CLOSED":
+        return "EXITED HISTORY"
     if item.operational_route is ObservationOperationalRoute.COMPLETED_CURRENT_TRADING_DAY:
         return "COMPLETE TODAY" if item.mode is ObservationMode.PAPER_OBSERVATION else "EXITED TODAY"
+    if item.mode is ObservationMode.PAPER and (
+        item.sponsor_position_state == "PAPER_ARMED"
+        or (item.sponsor_position_state == "MONITORING_UNAVAILABLE"
+            and item.sponsor_position_prior_state == "PAPER_ARMED")
+    ):
+        return "WAITING FOR ENTRY"
     if item.monitoring_state in {"INTERRUPTED", "MONITORING_UNAVAILABLE"}:
         return "MONITORING INTERRUPTED"
     if item.mode is ObservationMode.PAPER_OBSERVATION:
@@ -3412,27 +3435,33 @@ def _journal_distance(item: ObservationOperationalHandoffV2, target: bool) -> st
 
 def _journal_monitoring(item: ObservationOperationalHandoffV2) -> str:
     state = item.monitoring_state
-    if state in {"ACTIVE", "CONNECTED"}:
-        return "● ACTIVE"
     if state in {"INTERRUPTED", "MONITORING_UNAVAILABLE", "DISCONNECTED"}:
         return "● INTERRUPTED"
-    return "○ NOT ACTIVE"
+    if state == "NOT_REQUIRED":
+        return "○ CLOSED / INACTIVE"
+    if item.mode is ObservationMode.PAPER and item.sponsor_position_state == "PAPER_ARMED":
+        return "○ ARMED / WAITING"
+    if state == "ACTIVE":
+        return "● ACTIVE"
+    return "○ UNKNOWN"
 
 
 def _journal_position_section(
     title: str, style: str, records: tuple[ObservationOperationalHandoffV2, ...]
 ) -> str:
-    active = sum(item.operational_route is ObservationOperationalRoute.ACTIVE for item in records)
-    exited = len(records) - active
-    summary = f"{active} ACTIVE · {exited} EXITED TODAY"
+    waiting = sum(_journal_status(item) == "WAITING FOR ENTRY" for item in records)
+    exited = sum(item.operational_route is ObservationOperationalRoute.COMPLETED_CURRENT_TRADING_DAY
+                 for item in records)
+    active = len(records) - waiting - exited
+    summary = f"{waiting} WAITING · {active} ACTIVE · {exited} EXITED TODAY"
     rows = ''.join(
-        '<tr><td><a href="/journal?product=SWING&amp;record=' + escape(item.decision_identity)
+        '<tr><td><a href="/journal?product=SWING&amp;record=' + quote(item.decision_identity, safe="")
         + '">' + escape(item.instrument) + '</a></td>'
         '<td class="journal-side ' + item.direction.value + '">' + item.direction.value + '</td>'
         '<td>' + escape(_journal_status(item)) + '</td>'
         '<td>' + _journal_value(item.entry) + '</td><td>' + _journal_value(item.current_ltp) + '</td>'
         '<td class="journal-pnl ' + ('positive' if (item.position_gross_pnl or 0) > 0 else 'negative' if (item.position_gross_pnl or 0) < 0 else '') + '">'
-        + _journal_value(item.position_gross_pnl, money=True) + '</td>'
+        + ('UNKNOWN' if item.monetary_pnl_state == 'UNKNOWN' else _journal_value(item.position_gross_pnl, money=True)) + '</td>'
         '<td>' + _journal_value(item.target) + '</td><td>' + escape(_journal_distance(item, True)) + '</td>'
         '<td>' + _journal_value(item.stop) + '</td><td>' + escape(_journal_distance(item, False)) + '</td>'
         '<td class="journal-monitor ' + escape(item.monitoring_state) + '">' + escape(_journal_monitoring(item)) + '</td></tr>'
@@ -3454,7 +3483,7 @@ def _journal_observation_section(
     active = sum(item.operational_route is ObservationOperationalRoute.ACTIVE for item in records)
     complete = len(records) - active
     rows = ''.join(
-        '<tr><td><a href="/journal?product=SWING&amp;record=' + escape(item.decision_identity)
+        '<tr><td><a href="/journal?product=SWING&amp;record=' + quote(item.decision_identity, safe="")
         + '">' + escape(item.instrument) + '</a></td>'
         '<td class="journal-side ' + item.direction.value + '">' + item.direction.value + '</td>'
         '<td>' + escape(_journal_status(item)) + '</td><td>' + _journal_value(item.entry) + '</td>'
@@ -3477,7 +3506,7 @@ def _journal_observation_section(
 
 def _journal_detail(item: ObservationOperationalHandoffV2) -> str:
     values = (
-        ("Sponsor Decision", item.mode.value), ("Step-31 severity", item.step31_severity.value),
+        ("Sponsor Decision", item.mode.value), ("Step-31 severity", "UNAVAILABLE" if item.step31_severity is None else item.step31_severity.value),
         ("Risk at decision", item.risk_state), ("Position activation", item.activation_disposition.value),
         ("Observation / actual entry", _journal_value(item.entry)), ("LTP", _journal_value(item.current_ltp)),
         ("Stop", _journal_value(item.stop)), ("Target", _journal_value(item.target)),
@@ -3485,17 +3514,57 @@ def _journal_detail(item: ObservationOperationalHandoffV2) -> str:
         ("Monitoring", _journal_monitoring(item)), ("Status", _journal_status(item)),
     )
     values += _paper_history_fields(item)
+    if item.exact_contract_expiry is not None:
+        values += (("Selected future expiry", item.exact_contract_expiry),
+                   ("Lots", str(item.position_lots)),
+                   ("Actual entry time", "UNAVAILABLE" if item.actual_entry_at is None else item.actual_entry_at.isoformat()),
+                   ("Rupee P&L and costs", "UNKNOWN"),)
     fields = ''.join(
         '<div><span>' + escape(label) + '</span><strong>' + escape(value) + '</strong></div>'
         for label, value in values
     )
-    evidence = (
-        '<details class="native-diagnostics"><summary>GOVERNED EVIDENCE</summary>'
-        '<div class="v1-context-row"><span>Decision</span><strong>'
-        + escape(item.decision_identity) + '</strong></div><div class="v1-context-row"><span>Projection</span><strong>'
-        + escape(item.projection_contract_identity + ' / ' + item.projection_contract_version)
-        + '</strong></div></details>'
+    lineage = (
+        ("Run", item.native_run_identity),
+        ("Assessment SHA-256", item.native_assessment_sha256),
+        ("Decision snapshot", item.decision_snapshot_identity),
+        ("Plan", item.trade_plan_identity),
+        ("Plan SHA-256", item.trade_plan_sha256),
+        ("Sponsor decision", item.decision_identity),
+        ("Activation", item.activation_identity),
+        ("Position", item.sponsor_position_identity),
+        ("Paper Observation Track", item.paper_track_identity),
+        ("Research record", item.research_record_identity),
+        ("Step-33 record", item.step33_record_identity),
+        ("Monitoring session", item.monitoring_session_identity),
+        ("Accepted observation", item.monitoring_observation_identity),
     )
+    evidence_rows = ''.join(
+        '<div class="v1-context-row"><span>' + escape(label) + '</span><strong>'
+        + escape(value if value is not None else "UNAVAILABLE") + '</strong></div>'
+        for label, value in lineage
+    )
+    evidence_rows += ''.join(
+        '<div class="v1-context-row"><span>Source ' + escape(kind)
+        + '</span><strong>' + escape(identity + ' · ' + version) + '</strong></div>'
+        for kind, identity, version in item.source_events
+    ) or '<div class="v1-context-row"><span>Source events</span><strong>UNAVAILABLE</strong></div>'
+    evidence_rows += ''.join(
+        '<div class="v1-context-row"><span>Version</span><strong>'
+        + escape(identity + ' / ' + version) + '</strong></div>'
+        for identity, version in item.source_versions
+    )
+    evidence_rows += (
+        '<div class="v1-context-row"><span>Projection</span><strong>'
+        + escape(item.projection_contract_identity + ' / ' + item.projection_contract_version)
+        + '</strong></div>'
+    )
+    links = ('<a class="button" href="/journal?product=SWING&amp;record='
+             + quote(item.decision_identity, safe="") + '">EXACT OPERATIONAL RECORD</a>')
+    if item.step33_record_identity is not None:
+        links += ('<a class="button" href="/journal?view=research&amp;record='
+                  + quote(item.step33_record_identity, safe="") + '">EXACT STEP-33 HISTORY</a>')
+    evidence = ('<details class="native-diagnostics"><summary>GOVERNED EVIDENCE</summary>'
+                + evidence_rows + links + '</details>')
     return '<section class="journal-detail"><h2>' + escape(item.instrument) + ' · READ-ONLY DETAIL</h2><div class="journal-detail-grid">' + fields + '</div>' + evidence + '</section>'
 
 
@@ -6268,6 +6337,7 @@ def render_notifications(
     operational: SponsorNotificationProjection | None = None,
     notice: str = "",
     intraday_indicators: dict[str, str] | None = None,
+    swing_revision: str | None = None,
 ) -> str:
     """Render one durable management surface over product-owned records."""
 
@@ -6278,7 +6348,7 @@ def render_notifications(
     if operational is not None:
         if type(operational) is not SponsorNotificationProjection:
             raise TypeError("SPONSOR_NOTIFICATION_PROJECTION_INVALID")
-        return _render_operational_notifications(snapshot, operational, notice, selected_product, intraday_indicators)
+        return _render_operational_notifications(snapshot, operational, notice, selected_product, intraday_indicators, swing_revision)
     if selected_product is NotificationProduct.INTRADAY:
         return _render_intraday_notifications(snapshot)
     tabs = '<nav class="notification-tabs">' + "".join(
@@ -6341,6 +6411,7 @@ def _render_operational_notifications(
     notice: str,
     selected_product: NotificationProduct | None = None,
     intraday_indicators: dict[str, str] | None = None,
+    swing_revision: str | None = None,
 ) -> str:
     product = "INTRADAY" if selected_product is NotificationProduct.INTRADAY else "SWING"
     route = "/notifications/" + product.lower()
@@ -6413,7 +6484,7 @@ def _render_operational_notifications(
             + ''.join(links) + '</div>'
         )
     polling = (
-        '<script>const notificationRevision="' + centre.revision + '";'
+        '<script>const notificationRevision="' + (swing_revision or centre.revision) + '";'
         'setInterval(async()=>{try{const r=await fetch("/notifications/status",{cache:"no-store"});'
         'if(!r.ok)return;const s=await r.json();if(s.revision!==notificationRevision)globalThis.kronosReloadWhenNavigationIdle();'
         '}catch(_e){}},1500);</script>'
@@ -6483,6 +6554,10 @@ def _operational_notification_row(item: SponsorNotificationRecord, monitoring: s
         + '<button class="notification-icon" type="submit" title="DELETE NOTIFICATION" '
         'aria-label="DELETE NOTIFICATION">🗑</button></form>'
     )
+    if item.product == "SWING":
+        actions.append('<a class="button" href="/notifications/swing/evidence/'
+            + escape(item.source_kind) + '/' + escape(item.source_identity)
+            + '">UPSTREAM EVIDENCE</a>')
     history = ''.join(
         '<li>' + escape(event.event_type) + ' · '
         + event.occurred_at.astimezone(_KOLKATA).strftime("%d %b %Y %H:%M IST")
@@ -6496,9 +6571,13 @@ def _operational_notification_row(item: SponsorNotificationRecord, monitoring: s
         '<span class="notification-centre-subject">' + escape(subject) + '</span>'
         '<span class="notification-centre-message" title="' + escape(item.summary) + '">'
         + escape(item.summary) + '</span><span class="notification-centre-next">'
-        + escape(next_reminder) + monitoring_badge + '</span><span class="notification-centre-actions">'
+        + escape(next_reminder) + monitoring_badge
+        + (('<span>TELEGRAM · ' + escape(item.telegram_delivery) + '</span>')
+           if item.product == "SWING" and item.telegram_delivery else '')
+        + '</span><span class="notification-centre-actions">'
         + ''.join(actions) + '</span><details class="notification-centre-detail">'
-        '<summary>GOVERNED EVIDENCE · ' + escape(item.notification_type.replace('_', ' '))
+        '<summary>' + ('PRESENTATION HISTORY · ' if item.product == "SWING" else 'GOVERNED EVIDENCE · ')
+        + escape(item.notification_type.replace('_', ' '))
         + '</summary><ul>' + history + '</ul></details></article>'
     )
 
@@ -7314,3 +7393,22 @@ def render_portfolio(snapshot, rows=(), *, product="SWING", search="", direction
                 + '</div>' + filters + '</div>')
     return _page(title="Portfolio", subtitle="Current governed model exposure.", snapshot=snapshot,
                  active_nav="Portfolio", active_tab="", body=tabs + body)
+
+
+def render_swing_notification_evidence(snapshot, document) -> str:
+    """Exact retained binding; absence is visible and never resolved by alias."""
+    def fields(value):
+        if value is None:
+            return '<p>UNAVAILABLE</p>'
+        return '<dl>' + ''.join('<dt>' + escape(str(key).replace('_', ' ').upper())
+            + '</dt><dd>' + escape('UNAVAILABLE' if item is None else str(item)) + '</dd>'
+            for key, item in value.items()) + '</dl>'
+    body = ('<h2>' + escape(document['currentness']) + '</h2>'
+        + '<p>' + escape(document['upstream_status']) + '</p>'
+        + '<h3>UPSTREAM EVENT / RETAINED SOURCE BINDING</h3>' + fields(document['upstream'])
+        + '<h3>NOTIFICATION DELIVERY RECORD</h3>' + fields(document['notification_event'])
+        + '<p>Presentation history is separate from upstream evidence. Historical evidence '
+        'does not establish current eligibility or monitoring continuity.</p>'
+        + '<a href="/notifications/swing">Notifications</a>')
+    return _page(title="Swing Notification Evidence", subtitle="Exact retained source identity.",
+        snapshot=snapshot, active_nav="Notifications", active_tab="", body=body)

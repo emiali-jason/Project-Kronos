@@ -119,7 +119,7 @@ def test_compact_swing_centre_projects_live_expired_families_and_ws(tmp_path: Pa
     for value in (
         "SWING", "INTRADAY", "WS ● CONNECTED", "LIVE 3", "EXPIRED 1",
         "notification-centre-row", "NEXT 12:15", "REFRESH", "OPEN", "🗑",
-        "DELETE NOTIFICATION", "GOVERNED EVIDENCE",
+        "DELETE NOTIFICATION", "PRESENTATION HISTORY", "UPSTREAM EVIDENCE",
     ):
         assert value in html
     assert "KITE CONNECTED" not in html

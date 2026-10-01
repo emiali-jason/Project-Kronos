@@ -7,6 +7,7 @@ import base64
 import binascii
 from contextlib import nullcontext
 from copy import deepcopy
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from email.parser import BytesParser
@@ -50,7 +51,9 @@ from kronos.application.notification_centre import (
     project_sponsor_notifications,
 )
 from kronos.application.intraday_wo09_notifications import Wo09NotificationSource
-from kronos.application.swing_notifications import project_swing_notification_workspace
+from kronos.application.swing_notifications import (
+    project_swing_notification_workspace, monitoring_indicator, notification_revision,
+)
 from kronos.application.swing_ux10 import (
     SwingUx10NotificationService,
     Ux10NotificationStore,
@@ -156,6 +159,7 @@ from kronos.browser.views import (
     render_native_analysis_details,
     render_native_trade_window,
     render_notifications,
+    render_swing_notification_evidence,
     render_reports,
     render_trade_candidates,
     render_v1_review,
@@ -711,6 +715,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
         self.trade_window.restore(self.visual_v3.completed_snapshot())
         self.native_review.journal_snapshot()
         self.trade_window.synchronize_downstream(self.native_review.snapshot())
+        self._next_swing_journal_reconciliation = 0.0
+        self._swing_step33_reconciliation_failure: str | None = None
+        self._swing_v2_reconciliation_failure: str | None = None
         self.reconcile_progression()
         self._request_slots = BoundedSemaphore(_MAX_ACTIVE_BROWSER_REQUESTS)
         self._request_capacity_lock = Lock()
@@ -752,6 +759,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 completion=self._complete_bulk_import,
             )
             self.bulk_import.bind_maintenance_admission(self.maintenance_admission)
+        self._swing_notification_lock = RLock()
+        self._swing_notification_failure = None
+        self.synchronize_swing_notifications()
         super().__init__(address, _BrowserHandler)
         if self.bulk_import is not None:
             self.bulk_import.start()
@@ -899,6 +909,26 @@ class KronosBrowserServer(ThreadingHTTPServer):
         super().service_actions()
 
     def _service_actions_admitted(self) -> None:
+        # Reuse the admitted server maintenance pulse. Notification GETs never
+        # synchronize sources, expire cards or append reminder history.
+        if hasattr(self, "_swing_notification_lock"):
+            with self._swing_notification_lock:
+                try:
+                    self._synchronize_swing_notifications_owned()
+                    self._swing_notification_failure = None
+                except (ValueError, OSError, TypeError, RuntimeError):
+                    self._swing_notification_failure = "SWING_NOTIFICATION_SOURCE_UNAVAILABLE"
+                # Intraday owner-approved legacy relocation. Construction is not
+                # a legacy-mode signal: the launcher attaches its modern owner
+                # after creating this server. Never invoke this fallback in GET.
+                if getattr(self, "intraday_notifications", None) is None:
+                    try:
+                        self.notification_centre.synchronize_wo09(
+                            self.intraday_wo09_notification_sources(),
+                            websocket_state=self.swing_notification_status().websocket_state)
+                        self._legacy_notification_failure = None
+                    except (ValueError, OSError, TypeError, KeyError, RuntimeError):
+                        self._legacy_notification_failure = "LEGACY_WO09_NOTIFICATION_SOURCE_UNAVAILABLE"
         housekeeping = getattr(self, "housekeeping", None)
         if housekeeping is not None:
             try:
@@ -913,6 +943,20 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 lifecycle.request_pulse()
             except (ValueError, OSError, TypeError, KeyError, RuntimeError):
                 lifecycle.last_failure = "WO11_RUNTIME_SERVICE_UNAVAILABLE"
+        if observed >= self._next_swing_journal_reconciliation:
+            self._next_swing_journal_reconciliation = observed + 5.0
+            try:
+                self.native_review.journal_snapshot()
+            except (ValueError, OSError, TypeError, KeyError):
+                self._swing_step33_reconciliation_failure = "SOURCE_UNAVAILABLE"
+            else:
+                self._swing_step33_reconciliation_failure = None
+            try:
+                self.trade_window.reconcile_journal_read_models()
+            except (ValueError, OSError, TypeError, KeyError):
+                self._swing_v2_reconciliation_failure = "SOURCE_UNAVAILABLE"
+            else:
+                self._swing_v2_reconciliation_failure = None
 
     def server_close(self) -> None:
         self._close_domain_owners()
@@ -1181,9 +1225,22 @@ class KronosBrowserServer(ThreadingHTTPServer):
         return snapshot
 
     def sponsor_notification_snapshot(self):  # type: ignore[no-untyped-def]
-        """Compose current sources with durable Sponsor lifecycle and actual WS."""
+        """Compatibility read: the maintenance owner composes durable state."""
+        return self.swing_notification_status()
 
-        watches = project_swing_notification_workspace(self.progression_snapshot())
+    def synchronize_swing_notifications(self):
+        with self._swing_notification_lock:
+            return self._synchronize_swing_notifications_owned()
+
+    def _synchronize_swing_notifications_owned(self):
+        """Single existing maintenance owner; Swing-only persistence boundary."""
+
+        progression = self.progression_snapshot()
+        watches = project_swing_notification_workspace(progression)
+        hidden = {watch.watch_id for watch in progression.watches if watch.workspace_hidden}
+        ux10 = self.ux10_notifications.snapshot()
+        ux10 = type(ux10)(tuple(event for event in ux10.records
+            if not (event.family.value == "PROMOTION_WATCH" and event.watch_identity in hidden)))
         try:
             run, _ = self.application.current_run_control_authority()
         except (OSError, ValueError):
@@ -1194,16 +1251,62 @@ class KronosBrowserServer(ThreadingHTTPServer):
         )
         self.notification_centre.synchronize(
             watches,
-            self.ux10_notifications.snapshot(),
+            ux10,
             current_run_identity=None if run is None else run.run_identity,
             websocket_state=websocket.value,
         )
-        if getattr(self, "intraday_notifications", None) is not None:
-            return self.notification_centre.snapshot(product="SWING", websocket_state=websocket.value)
-        return self.notification_centre.synchronize_wo09(
-            self.intraday_wo09_notification_sources(),
-            websocket_state=websocket.value,
-        )
+        return self.notification_centre.snapshot(product="SWING", websocket_state=websocket.value)
+
+    def swing_notification_indicators(self, centre):
+        events = {item.notification_id: item for item in self.ux10_notifications.snapshot().records}
+        indicators = {}
+        for item in centre.records:
+            evidence = None
+            if item.source_kind == "UX08_WATCH":
+                evidence = self.progression_watches.notification_monitoring_evidence(item.source_identity)
+            elif item.source_kind == "UX10_EVENT":
+                event = events.get(item.source_identity)
+                if event is not None:
+                    if event.notification_type.value in {"STOP_LEVEL_TOUCHED", "TARGET_LEVEL_TOUCHED",
+                            "REFRESH_ANALYSIS_REMINDER", "WEBSOCKET_RESTORED"}:
+                        indicators[item.notification_identity] = "NOT_REQUIRED"
+                        continue
+                    if event.notification_type.value == "ACTIVE_TRADE_MONITORING_ACTIVATED":
+                        evidence = self.native_review.notification_monitoring_evidence(event.lifecycle_event_identity)
+                    elif event.watch_identity is not None:
+                        evidence = self.progression_watches.notification_monitoring_evidence(event.watch_identity)
+            indicators[item.notification_identity] = monitoring_indicator(evidence)
+        return indicators
+
+    def swing_notification_evidence(self, kind, identity):
+        """Resolve the requested retained identity, never substitute current run."""
+        if kind == "UX08_WATCH":
+            watch = next((w for w in self.progression_snapshot().watches if w.watch_id == identity), None)
+            binding = None if watch is None else dict(kind="PROGRESSION_WATCH",
+                watch_identity=watch.watch_id, run_identity=watch.requirement.native_run_identity,
+                instrument=watch.requirement.canonical_instrument,
+                requirement_identity=watch.requirement.requirement_id, state=watch.state.value,
+                event_identities=[event.event_id for event in watch.history])
+            event = None
+        else:
+            event = next((e for e in self.ux10_notifications.snapshot().records if e.notification_id == identity), None)
+            binding = None if event is None else self.ux10_notifications.evidence(identity)
+        try:
+            run, _ = self.application.current_run_control_authority()
+        except (OSError, ValueError):
+            run = None
+        retained_run = (binding or {}).get("run_identity") or (None if event is None else event.run_identity)
+        currentness = ("CURRENT RUN" if run is not None and retained_run == run.run_identity
+            else "HISTORICAL RUN" if retained_run is not None and run is not None
+            else "CURRENTNESS UNAVAILABLE" if retained_run is not None else "RETAINED EVENT")
+        return dict(kind=kind, identity=identity, currentness=currentness,
+            upstream=binding, upstream_status="RETAINED SOURCE BINDING" if binding else "UPSTREAM EVIDENCE UNAVAILABLE",
+            notification_event=None if event is None else dict(notification_id=event.notification_id,
+                source_event_identity=event.source_event_identity, run_identity=event.run_identity,
+                instrument=event.instrument, watch_identity=event.watch_identity,
+                trade_identity=event.trade_identity, lifecycle_event_identity=event.lifecycle_event_identity,
+                delivery=event.telegram_delivery_state.value,
+                attempt_identity=event.delivery_attempt_identity))
 
     def active_live_monitoring_count(self) -> int:
         """Count owned live subscriptions without changing retained watch truth."""
@@ -2357,8 +2460,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             product = parse_qs(urlsplit(self.path).query).get("product", ["SWING"])[0]
             centre = (self.server.notification_centre.snapshot(product="INTRADAY") if product == "INTRADAY"
                       else self.server.swing_notification_status())
+            indicators = {} if product == "INTRADAY" else self.server.swing_notification_indicators(centre)
             self._json({
-                "revision": centre.revision,
+                "revision": centre.revision if product == "INTRADAY" else notification_revision(centre, indicators),
                 "count": len(centre.visible),
                 "live": centre.live_count,
                 "expired": centre.expired_count,
@@ -2401,6 +2505,11 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             except (OSError, ValueError) as error:
                 self._swing_page_unavailable(error)
             return
+        notification_evidence = re.fullmatch(r"/notifications/swing/evidence/(UX08_WATCH|UX10_EVENT)/([0-9a-f]{64})", path)
+        if notification_evidence:
+            document = self.server.swing_notification_evidence(*notification_evidence.groups())
+            self._html(render_swing_notification_evidence(self.server.application.snapshot(), document))
+            return
         if path in {"/notifications", "/notifications/swing", "/notifications/intraday"}:
             selected = {
                 "/notifications": NotificationProduct.SWING,
@@ -2437,7 +2546,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             service = getattr(self.server, "intraday_notifications", None)
             indicators = {r.notification_identity: service.indicator(json.loads(r.intraday_details))
                           if service is not None and r.intraday_details else "UNAVAILABLE"
-                          for r in centre.records} if selected is NotificationProduct.INTRADAY else None
+                          for r in centre.records} if selected is NotificationProduct.INTRADAY else self.server.swing_notification_indicators(centre)
             self._html(render_notifications(
                 self.server.application.snapshot(),
                 project_swing_notification_workspace(self.server.progression_snapshot()),
@@ -2446,6 +2555,8 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 operational=operational,
                 notice=notice,
                 intraday_indicators=indicators,
+                swing_revision=(None if selected is NotificationProduct.INTRADAY
+                    else notification_revision(centre, indicators)),
             ))
             return
         details_match = _ANALYSIS_DETAILS_ROUTE.fullmatch(path)
@@ -2746,16 +2857,42 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                     self._text(HTTPStatus.SERVICE_UNAVAILABLE, "Intraday factual source unavailable.")
                     return
             else:
-                preliminary = self.server.trade_window.observation_operational_handoffs_v2(
-                    governed_current_trading_date=governed_date,
-                )
-                operational = with_completion_trading_dates(
-                    preliminary, governed_date,
-                    self.server.application.swing_trading_date_for,
-                )
+                # Reconciliation belongs to the admitted server pulse. A readable
+                # cache cannot override either owner's retained failure state.
+                if self.server._swing_step33_reconciliation_failure is not None:
+                    self._text(HTTPStatus.SERVICE_UNAVAILABLE,
+                               "Swing Step-33 reconciliation unavailable; Reports history currentness is unknown.")
+                    return
+                if self.server._swing_v2_reconciliation_failure is not None:
+                    self._text(HTTPStatus.SERVICE_UNAVAILABLE,
+                               "Swing V2 reconciliation unavailable; Reports history currentness is unknown.")
+                    return
+                try:
+                    preliminary = self.server.trade_window.observation_operational_handoffs_v2(
+                        governed_current_trading_date=governed_date,
+                    )
+                    operational = with_completion_trading_dates(
+                        preliminary, governed_date,
+                        self.server.application.swing_trading_date_for,
+                    )
+                    journal = self.server.native_review.journal_current_snapshot()
+                except (ValueError, OSError, KeyError, TypeError):
+                    self._text(HTTPStatus.SERVICE_UNAVAILABLE,
+                               "Swing Reports source evidence unavailable; records are not empty.")
+                    return
+                # An admitted reconciliation may have failed while these reads
+                # were in progress. Do not publish the previously readable cache.
+                if self.server._swing_step33_reconciliation_failure is not None:
+                    self._text(HTTPStatus.SERVICE_UNAVAILABLE,
+                               "Swing Step-33 reconciliation unavailable; Reports history currentness is unknown.")
+                    return
+                if self.server._swing_v2_reconciliation_failure is not None:
+                    self._text(HTTPStatus.SERVICE_UNAVAILABLE,
+                               "Swing V2 reconciliation unavailable; Reports history currentness is unknown.")
+                    return
                 projection = project_historical_reports(
                     operational,
-                    self.server.native_review.journal_snapshot(),
+                    journal,
                     reports_query,
                     governed_current_trading_date=governed_date,
                 )
@@ -2839,7 +2976,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 projection = journal.snapshot(search=search[0], truth=truth[0], status=status[0],
                                               monitoring=monitoring[0], scope=scope[0])
                 self._html(render_trade_journal(
-                    snapshot, self.server.native_review.journal_snapshot(), operational=(),
+                    snapshot, None, operational=(),
                     selected_product="INTRADAY", search=search[0], selected_record_id=selected_record[0],
                     intraday=projection, intraday_filters={"truth": truth[0], "status": status[0],
                                                           "monitoring": monitoring[0], "scope": scope[0]},
@@ -2875,11 +3012,17 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 self._text(HTTPStatus.BAD_REQUEST, "Journal filter is invalid.")
                 return
             if view[0] == "operational":
+                source_status = (
+                    self.server._swing_step33_reconciliation_failure
+                    or self.server._swing_v2_reconciliation_failure
+                    or "AVAILABLE"
+                )
                 try:
                     governed_date = self.server.application.current_swing_trading_date()
                 except ValueError:
                     governed_date = None
                     operational = ()
+                    source_status = "DATE_UNAVAILABLE"
                 else:
                     facts: dict[str, CurrentMarketFactV2] = {}
                     for tick in self.server.swing_monitoring_hub.latest_market_ticks:
@@ -2895,18 +3038,65 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                                     tick.source,
                                     True,
                                 )
-                    preliminary = self.server.trade_window.observation_operational_handoffs_v2(
-                        current_facts=facts,
-                        governed_current_trading_date=governed_date,
-                    )
-                    operational = with_completion_trading_dates(
-                        preliminary, governed_date,
-                        self.server.application.swing_trading_date_for,
-                    )
+                    try:
+                        preliminary = self.server.trade_window.observation_operational_handoffs_v2(
+                            current_facts=facts,
+                            governed_current_trading_date=governed_date,
+                        )
+                        current_records = with_completion_trading_dates(
+                            preliminary, governed_date,
+                            self.server.application.swing_trading_date_for,
+                        )
+                        operational = tuple(
+                            replace(item, monitoring_state=owner[0],
+                                    monitoring_session_identity=owner[1],
+                                    monitoring_observation_identity=owner[2])
+                            for item in current_records
+                            for owner in [(
+                                self.server.trade_window.paper_observation_journal_monitoring_evidence(
+                                    item.paper_track_identity)
+                                if item.paper_track_identity is not None else
+                                self.server.native_review.journal_position_monitoring_evidence(
+                                    item.sponsor_position_identity)
+                                if item.sponsor_position_identity is not None else
+                                ("UNKNOWN", None, None)
+                            )]
+                        )
+                        mcx = getattr(self.server, 'mcx_v1_control', None)
+                        if mcx is not None:
+                            from kronos.application.swing_mcx_journal import mcx_journal_handoffs
+                            mcx_rows = mcx_journal_handoffs(mcx, governed_date)
+                            existing_positions = {item.sponsor_position_identity for item in operational}
+                            if any(item.sponsor_position_identity in existing_positions for item in mcx_rows):
+                                raise ValueError('MCX_JOURNAL_DUPLICATE_POSITION')
+                            operational += mcx_rows
+                    except (ValueError, OSError, KeyError, TypeError):
+                        operational = ()
+                        source_status = "SOURCE_UNAVAILABLE"
+                try:
+                    journal = self.server.native_review.journal_current_snapshot()
+                except (ValueError, OSError, KeyError, TypeError):
+                    source_status = "SOURCE_UNAVAILABLE"
+                    journal = None
+                if journal is not None:
+                    by_position = {
+                        (record.native_run_identity, record.sponsor_position_id,
+                         record.trade_plan_id):
+                        record.journal_record_id
+                        for record in journal.records
+                        if record.sponsor_position_id is not None
+                    }
+                    operational = tuple(replace(
+                        item, step33_record_identity=by_position.get((
+                            item.native_run_identity, item.sponsor_position_identity,
+                            item.trade_plan_identity,
+                        )),
+                    ) for item in operational)
                 self._html(render_trade_journal(
                     snapshot,
-                    self.server.native_review.journal_snapshot(),
+                    journal,
                     operational=operational,
+                    operational_source_status=source_status,
                     operational_websocket_state=websocket_presentation_state(
                         monitoring_required=(
                             self.server.swing_monitoring_hub.subscription_count > 0
@@ -2921,14 +3111,25 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                     selected_record_id=selected_record[0],
                 ))
                 return
+            if self.server._swing_step33_reconciliation_failure is not None:
+                self._text(HTTPStatus.SERVICE_UNAVAILABLE,
+                           "Swing Step-33 reconciliation unavailable; retained history currentness is unknown.")
+                return
+            try:
+                journal = self.server.native_review.journal_current_snapshot()
+                observations = self.server.trade_window.observation_research_snapshot(
+                    observation_query
+                )
+            except (ValueError, OSError, KeyError, TypeError):
+                self._text(HTTPStatus.SERVICE_UNAVAILABLE,
+                           "Swing Journal source evidence unavailable; records are not empty.")
+                return
             self._html(render_trade_journal(
                 snapshot,
-                self.server.native_review.journal_snapshot(),
+                journal,
                 selected_filter=selected[0],
                 selected_record_id=selected_record[0],
-                observations=self.server.trade_window.observation_research_snapshot(
-                    observation_query
-                ),
+                observations=observations,
                 observation_choice=observation_choice[0],
                 observation_activation=observation_activation[0],
                 observation_severity=observation_severity[0],
@@ -3696,9 +3897,23 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 set(fields) != {"watch_id"}
                 or len(values) != 1
                 or re.fullmatch(r"[0-9a-f]{64}", values[0]) is None
-                or not operation(values[0])
             ):
                 raise ValueError
+            with self.server._swing_notification_lock:
+                if not operation(values[0]):
+                    raise ValueError
+                if action == "delete":
+                    # Legacy watch management explicitly hides its source. Its
+                    # corresponding presentation cards follow that action; the
+                    # centre's own dismissal never invokes this owner workflow.
+                    source_ids = {values[0]} | {event.notification_id
+                        for event in self.server.ux10_notifications.snapshot().records
+                        if event.watch_identity == values[0]
+                        and event.family.value == "PROMOTION_WATCH"}
+                    for item in self.server.notification_centre.snapshot(product="SWING").records:
+                        if item.source_identity in source_ids and not item.dismissed:
+                            self.server.notification_centre.dismiss(
+                                item.notification_identity, item.integrity_sha256)
         except (AttributeError, UnicodeDecodeError, ValueError):
             self._text(HTTPStatus.CONFLICT, "Notification action is not available.")
             return

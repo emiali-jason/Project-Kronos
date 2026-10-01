@@ -1,5 +1,15 @@
 # KRONOS Architecture Repository
 
+The combined Notifications and Journal source integration is described in the
+[WO13 and WO14 engineering record](../engineering/WO-SWING-NEXT-13-14-COMBINED-INTEGRATION.md).
+It preserves deployed MCX V1 and separates source review, combined protected
+qualification and genuine live acceptance. This entry grants no architecture approval.
+
+Swing Notifications R3 integration after MCX deployment is recorded in the
+[engineering integration record](../engineering/WO-SWING-NEXT-13-R3-INTEGRATION.md).
+It is a source candidate for review; publication and runtime acceptance remain
+separate. This index entry grants no new architecture or production authority.
+
 [ADR-0059](adr/ADR-0059-GENERATION-BOUND-MAINTENANCE-ADMISSION-AND-V2-DRAIN-HANDOFF.md)
 records the approved shared maintenance V2 drain contract. Its qualified R2
 source is published separately from launcher installation and runtime acceptance.

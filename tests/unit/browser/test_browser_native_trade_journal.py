@@ -129,7 +129,8 @@ def test_actual_browser_journal_route_restores_records_and_filters_without_mutat
         body = response.read().decode("utf-8")
         connection.close()
         assert response.status == 200
-        assert "NO ACTIVE SWING TRADES OR OBSERVATIONS" in body
+        assert "SWING JOURNAL SOURCE UNAVAILABLE" in body
+        assert "Current positions cannot be determined" in body
         assert "OBSERVATION RESEARCH" not in body
         assert journal.records[0].instrument not in body
     finally:
@@ -147,7 +148,7 @@ def test_selected_historical_journal_detail_uses_actual_ledger_without_active_ow
     assert 'HISTORICAL_DETAIL_UNAVAILABLE' in html
     assert records[0].paper_last_observation_at.isoformat() in html
     assert 'OUTCOME_NOT_ESTABLISHED' in html
-    assert 'NO ACTIVE SWING TRADES OR OBSERVATIONS' in html
+    assert 'NO CURRENT SWING TRADES OR OBSERVATIONS' in html
     assert before=={str(p):p.read_bytes() for p in tmp_path.rglob('*') if p.is_file()}
     intraday=render_trade_journal(_ready(),object(),operational=records,selected_product='INTRADAY')
     assert 'COMPACT_HISTORICAL' not in intraday and 'Last factual observation' not in intraday

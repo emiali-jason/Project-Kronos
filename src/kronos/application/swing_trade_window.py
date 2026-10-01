@@ -1969,6 +1969,16 @@ class SwingTradeWindowWorkflow:
         self._observation_research_v2.synchronize()
         return self._observation_research_v2.snapshot(query)
 
+    def reconcile_journal_read_models(self) -> None:
+        """Admitted maintenance/event boundary for lagging V2 Track links."""
+
+        self._observation_research_v2.synchronize()
+
+    def paper_observation_journal_monitoring_evidence(
+        self, track_identity: str
+    ) -> tuple[str, str | None, str | None]:
+        return self._paper_observation_tracking.journal_monitoring_evidence(track_identity)
+
     def observation_research_v2_export_json(
         self, query: ObservationResearchQueryV2 | None = None
     ) -> str:
@@ -2012,6 +2022,10 @@ class SwingTradeWindowWorkflow:
                     sponsor_position_identity=position.position_id,
                     mode=position.mode,
                     state="CLOSED" if closure is not None else position.state.value,
+                    prior_state=(
+                        None if closure is not None or position.prior_state is None
+                        else position.prior_state.value
+                    ),
                     actual_entry=(
                         position.actual_entry
                         if closure is None else closure.actual_entry
@@ -2024,6 +2038,10 @@ class SwingTradeWindowWorkflow:
                     source_integrity_sha256=(
                         position.integrity_hash
                         if closure is None else closure.integrity_hash
+                    ),
+                    lifecycle_event_ids=(
+                        position.lifecycle_event_ids if closure is None
+                        else closure.lifecycle_event_ids
                     ),
                 )
             )
