@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, replace
 from datetime import datetime
 import gzip
@@ -584,7 +584,36 @@ def _worker(
         connection.close()
 
 
-def _run_worker(
+@contextmanager
+def _analysis_result_directory(proof):
+    """Retain the failure while certifying successful directory cleanup."""
+    failure = None
+    try:
+        with tempfile.TemporaryDirectory(prefix="kronos-swing-analysis-") as directory:
+            try:
+                yield directory
+            except BaseException as error:
+                failure = (error, error.__traceback__)
+    except BaseException as cleanup_error:
+        if failure is not None:
+            raise cleanup_error from failure[0]
+        raise
+    proof["directory_removed"] = True
+    if failure is not None:
+        raise failure[0].with_traceback(failure[1])
+
+
+def _run_worker(*args, cleanup_observer, **kwargs):
+    """Attest resource cleanup separately from the retained analysis outcome."""
+    proof = {"worker_stopped": False, "directory_removed": False}
+    try:
+        return _run_worker_body(*args, cleanup_proof=proof, **kwargs)
+    finally:
+        complete = proof["worker_stopped"] and proof["directory_removed"]
+        cleanup_observer("COMPLETE" if complete else "INCOMPLETE")
+
+
+def _run_worker_body(
     capability,
     publication,
     calendar_publisher,
@@ -603,6 +632,7 @@ def _run_worker(
     install_result,
     timeout_seconds,
     status_update,
+    cleanup_proof,
     mcx_handoff=None,
 ):
     spec = _PublicationSpec(
@@ -618,7 +648,7 @@ def _run_worker(
     provider_calls = 0
     provider_bytes = 0
     historical_calls = 0
-    with tempfile.TemporaryDirectory(prefix="kronos-swing-analysis-") as directory:
+    with _analysis_result_directory(cleanup_proof) as directory:
         result_path = Path(directory) / "result.pickle"
         process = context.Process(
             target=_worker,
@@ -958,6 +988,9 @@ def _run_worker(
                         provider_response_bytes=provider_bytes,
                     ),
                 )
+            child.close()
+            process.close()
+            cleanup_proof["worker_stopped"] = True
 
 
 class SwingAnalysisProcessOwner:
@@ -978,6 +1011,7 @@ class SwingAnalysisProcessOwner:
         self._generation = None
         self._failure = None
         self._failure_diagnostic = None
+        self._cleanup_state = "COMPLETE"
         self._last_provider_calls = 0
         self._last_provider_bytes = 0
         self._last_result_bytes = 0
@@ -998,6 +1032,7 @@ class SwingAnalysisProcessOwner:
                     if self._failure_diagnostic is None
                     else self._failure_diagnostic.projection()
                 ),
+                "cleanup_state": self._cleanup_state,
                 "owned_workers": int(self._active),
                 "maximum_owned_workers": 1,
                 "queued_jobs": 0,
@@ -1053,6 +1088,12 @@ class SwingAnalysisProcessOwner:
             self._generation = generation
             self._failure = None
             self._failure_diagnostic = None
+            self._cleanup_state = "PENDING"
+
+        def cleanup_observer(state):
+            with self._lock:
+                if self._generation == generation:
+                    self._cleanup_state = state
 
         def update(state, pid, failure):
             with self._lock:
@@ -1097,6 +1138,7 @@ class SwingAnalysisProcessOwner:
                 install_result=install_result,
                 timeout_seconds=self._timeout_seconds,
                 status_update=update,
+                cleanup_observer=cleanup_observer,
                 **({} if mcx_handoff is None else {"mcx_handoff": mcx_handoff}),
             )
         except SwingAnalysisProcessCleanupError as error:
@@ -1142,7 +1184,7 @@ class SwingAnalysisProcessOwner:
         with self._lock:
             if self._generation != generation:
                 return
-            if self._state == "CLEANUP_FAILED":
+            if self._state == "CLEANUP_FAILED" or self._cleanup_state != "COMPLETE":
                 return
             self._active = False
             self._generation = None

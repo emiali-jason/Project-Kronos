@@ -1878,6 +1878,24 @@ class KronosBrowserServer(ThreadingHTTPServer):
             and int(status.get("queued_items", status.get("queued_jobs", 0))) == 0
         )
 
+    @staticmethod
+    def _analysis_execution_drained(status: dict[str, object] | None) -> bool:
+        """A failed result is history; only proved resource completion is idle."""
+        if status is None:
+            return False
+        if status.get("state") != "FAILED":
+            return (KronosBrowserServer._work_owner_idle(status)
+                    and status.get("cleanup_state", "COMPLETE") == "COMPLETE")
+        return (
+            status.get("cleanup_state") == "COMPLETE"
+            and "pid" in status and status["pid"] is None
+            and "generation" in status and status["generation"] is None
+            and type(status.get("owned_workers")) is int
+            and status["owned_workers"] == 0
+            and type(status.get("queued_jobs")) is int
+            and status["queued_jobs"] == 0
+        )
+
     def maintenance_replacement_idle(self, *, allow_drainable: bool = False) -> bool:
         """Recheck every shared work owner immediately before a handoff."""
 
@@ -1907,11 +1925,18 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 )
             ):
                 return False
-            for status in (self.application.analysis_work_status(),
-                           self.application.analysis_execution_status()):
-                if not self._work_owner_idle(status):
+            for status, drained in (
+                (self.application.analysis_work_status(), self._work_owner_idle),
+                (self.application.analysis_execution_status(),
+                 KronosBrowserServer._analysis_execution_drained),
+            ):
+                if not drained(status):
                     if (not analysis_owned or status is None
-                            or status.get("state") in {"FAILED", "CLEANUP_FAILED"}
+                            or status.get("state") not in {
+                                "ADMITTING", "RUNNING", "PUBLISHING", "RECONCILING",
+                                "CANCELLATION_REQUESTED", "STARTING", "PREPARED",
+                                "COMMITTING", "COMPLETED",
+                            }
                             or not int(status.get("owned_workers",
                                                   status.get("owned_work_count", 0)))):
                         return False
@@ -2042,7 +2067,8 @@ class KronosBrowserServer(ThreadingHTTPServer):
             )
             if not self._work_owner_idle(self.application.analysis_work_status()):
                 return False
-            if not self._work_owner_idle(self.application.analysis_execution_status()):
+            if not KronosBrowserServer._analysis_execution_drained(
+                    self.application.analysis_execution_status()):
                 return False
         except (AttributeError, KeyError, TypeError, ValueError, OSError):
             return False
@@ -2050,6 +2076,10 @@ class KronosBrowserServer(ThreadingHTTPServer):
 
     def _maintenance_drain_attestation(self) -> dict[str, object]:
         """Capture only bounded zero-owner facts for the signed handoff."""
+        if (not self._work_owner_idle(self.application.analysis_work_status())
+                or not KronosBrowserServer._analysis_execution_drained(
+                    self.application.analysis_execution_status())):
+            raise ValueError("MAINTENANCE_DRAIN_ATTESTATION_NOT_ZERO")
         lifecycle = self.intraday_lifecycle.work_status()
         wo17 = self.intraday_wo17_monitoring.work_status()
         house = self.housekeeping.status_document()

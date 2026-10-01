@@ -89,6 +89,16 @@ from tests.unit.swing.v1.test_mcx_step31_prepared_handoff import _current
 from tests.unit.swing.v1.test_opportunity_continuity import later, scenario
 
 
+def _cleaned_fixture_worker(operation):
+    # No child/channel/result directory is allocated by these substitutes.
+    def run(*args, **kwargs):
+        try:
+            return operation(*args, **kwargs)
+        finally:
+            kwargs["cleanup_observer"]("COMPLETE")
+    return run
+
+
 CHOICE_TIME = datetime(2026, 8, 20, 10, 0, tzinfo=ZoneInfo("Asia/Kolkata"))
 PLAN_NOW = datetime(2026, 8, 25, 10, 0, tzinfo=ZoneInfo("Asia/Kolkata"))
 
@@ -521,7 +531,7 @@ def test_reserved_choices_reach_actual_application_process_dispatch_and_fail_cle
         seen.append((kwargs["mcx_handoff"], kwargs["swing_run_identity"], kwargs["now"]))
         raise process.SwingAnalysisProcessError("ISOLATED_MCX_WORKER_FAILURE")
 
-    monkeypatch.setattr(process, "_run_worker", fail_after_dispatch)
+    monkeypatch.setattr(process, "_run_worker", _cleaned_fixture_worker(fail_after_dispatch))
     expected_handoff = workflow.process_handoff()
     for malformed in (
         urlencode({"run": run, "handoff_sha256": "0" * 64}).encode(),
@@ -642,7 +652,7 @@ def test_delayed_reserved_analysis_publishes_one_epoch_and_rejects_alteration(
         result = process.SwingAnalysisProcessResult(completed, committed, 0, 0, 0, 0, 0)
         assert kwargs["install_result"](result)
         return result
-    monkeypatch.setattr(process, "_run_worker", worker)
+    monkeypatch.setattr(process, "_run_worker", _cleaned_fixture_worker(worker))
     assert application.run_analysis(workflow)
     queued.pop(0)()
     assert len(dispatched) == 1
@@ -748,7 +758,7 @@ def test_reserved_analysis_replay_does_not_fail_queued_owner(
             assert kwargs["install_result"](result)
         return result
 
-    monkeypatch.setattr(process, "_run_worker", completed_worker)
+    monkeypatch.setattr(process, "_run_worker", _cleaned_fixture_worker(completed_worker))
     worker = Thread(target=queued.pop(0))
     worker.start()
     assert started.wait(10)
@@ -863,7 +873,7 @@ def test_browser_to_reserved_process_review_held_plan_and_historical_lifecycle(
         seen.append(kwargs["swing_run_identity"])
         return worker_result
 
-    monkeypatch.setattr(process, "_run_worker", isolated_worker)
+    monkeypatch.setattr(process, "_run_worker", _cleaned_fixture_worker(isolated_worker))
     owner = process.SwingAnalysisProcessOwner(timeout_seconds=12)
     assert owner.execute(
         object(), workflow.publication, object(), workflow.reservation_token,

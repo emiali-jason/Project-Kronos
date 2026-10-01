@@ -19,6 +19,17 @@ from kronos.provider.exceptions.connectivity import (
 )
 
 
+def _cleaned_fixture_worker(operation):
+    # These deterministic worker substitutes own no process/channel/temp file.
+    # Attest only after the substitute returns or fails, like the real owner.
+    def run(*args, **kwargs):
+        try:
+            return operation(*args, **kwargs)
+        finally:
+            kwargs["cleanup_observer"]("COMPLETE")
+    return run
+
+
 def _execute(owner, **overrides):
     arguments = {
         "generation": 7,
@@ -57,7 +68,7 @@ def test_owner_has_one_worker_no_queue_and_releases_completed_generation(
         assert kwargs["install_result"](expected)
         return expected
 
-    monkeypatch.setattr(process, "_run_worker", run)
+    monkeypatch.setattr(process, "_run_worker", _cleaned_fixture_worker(run))
     assert _execute(owner) is expected
     completed = owner.status()
     assert completed["state"] == "COMPLETED"
@@ -102,8 +113,89 @@ def test_unproved_cleanup_remains_owned_and_refuses_retry(monkeypatch) -> None:
         "provider_response_bytes": 0,
     }
     assert status["owned_workers"] == 1
+    assert status["cleanup_state"] != "COMPLETE"
     with pytest.raises(process.SwingAnalysisProcessError, match="CAPACITY"):
         _execute(owner, generation=8)
+
+
+def test_missing_cleanup_attestation_keeps_failed_generation_owned(monkeypatch):
+    owner = process.SwingAnalysisProcessOwner()
+    monkeypatch.setattr(process, '_run_worker', lambda *_a, **_k: (
+        _ for _ in ()).throw(process.SwingAnalysisProcessError('ISOLATED_UNKNOWN_CLEANUP')))
+    with pytest.raises(process.SwingAnalysisProcessError):
+        _execute(owner)
+    owner.release(7)
+    status = owner.status()
+    assert status['state'] == 'FAILED'
+    assert status['cleanup_state'] == 'PENDING'
+    assert status['owned_workers'] == 1 and status['generation'] == 7
+    with pytest.raises(process.SwingAnalysisProcessError, match='CAPACITY'):
+        _execute(owner, generation=8)
+
+
+def test_directory_cleanup_error_after_removal_cannot_attest_completion(monkeypatch):
+    original = process.tempfile.TemporaryDirectory
+    class FailingDirectory(original):
+        def __exit__(self, *args):
+            super().__exit__(*args)
+            raise OSError('ISOLATED_DIRECTORY_CLEANUP_FAILURE')
+    def body(*_args, cleanup_proof, **_kwargs):
+        with process._analysis_result_directory(cleanup_proof):
+            cleanup_proof['worker_stopped'] = True
+            raise process.SwingAnalysisProcessError('ISOLATED_ORIGINAL_FAILURE')
+    monkeypatch.setattr(process.tempfile, 'TemporaryDirectory', FailingDirectory)
+    monkeypatch.setattr(process, '_run_worker_body', body)
+    owner = process.SwingAnalysisProcessOwner()
+    with pytest.raises(process.SwingAnalysisProcessError) as error:
+        _execute(owner)
+    assert isinstance(error.value.__cause__, OSError)
+    assert isinstance(error.value.__cause__.__cause__, process.SwingAnalysisProcessError)
+    owner.release(7)
+    assert owner.status()['cleanup_state'] == 'INCOMPLETE'
+    assert owner.status()['owned_workers'] == 1
+
+
+def test_late_cleanup_callback_cannot_certify_new_generation(monkeypatch):
+    owner = process.SwingAnalysisProcessOwner()
+    callbacks = []
+    def first(*_args, **kwargs):
+        callbacks.append(kwargs['cleanup_observer'])
+        kwargs['cleanup_observer']('COMPLETE')
+        raise process.SwingAnalysisProcessError('ISOLATED_FIRST_FAILURE')
+    monkeypatch.setattr(process, '_run_worker', first)
+    with pytest.raises(process.SwingAnalysisProcessError):
+        _execute(owner)
+    owner.release(7)
+    def second(*_args, **kwargs):
+        callbacks[0]('COMPLETE')
+        assert owner.status()['cleanup_state'] == 'PENDING'
+        raise process.SwingAnalysisProcessError('ISOLATED_SECOND_FAILURE')
+    monkeypatch.setattr(process, '_run_worker', second)
+    with pytest.raises(process.SwingAnalysisProcessError):
+        _execute(owner, generation=8)
+    owner.release(8)
+    assert owner.status()['generation'] == 8
+    assert owner.status()['owned_workers'] == 1
+
+
+def test_stale_release_cannot_clear_failed_or_active_cleanup(monkeypatch):
+    owner = process.SwingAnalysisProcessOwner()
+    def run(*_args, **kwargs):
+        assert owner.status()['cleanup_state'] == 'PENDING'
+        owner.release(6)
+        assert owner.status()['owned_workers'] == 1
+        kwargs['cleanup_observer']('COMPLETE')
+        raise process.SwingAnalysisProcessError('ISOLATED_TERMINAL_FAILURE')
+    monkeypatch.setattr(process, '_run_worker', run)
+    with pytest.raises(process.SwingAnalysisProcessError):
+        _execute(owner)
+    owner.release(6)
+    assert owner.status()['owned_workers'] == 1
+    owner.release(7)
+    before = owner.status()
+    owner.release(7)
+    assert owner.status() == before
+    assert before['owned_workers'] == 0 and before['cleanup_state'] == 'COMPLETE'
 
 
 def test_completion_failure_is_visible_after_proved_worker_exit(monkeypatch) -> None:
@@ -111,11 +203,11 @@ def test_completion_failure_is_visible_after_proved_worker_exit(monkeypatch) -> 
     monkeypatch.setattr(
         process,
         "_run_worker",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        _cleaned_fixture_worker(lambda *_args, **_kwargs: (_ for _ in ()).throw(
             process.SwingAnalysisProcessCompletionError(
                 "SWING_ANALYSIS_WORKER_RESULT_INVALID"
             )
-        ),
+        )),
     )
     with pytest.raises(process.SwingAnalysisProcessCompletionError):
         _execute(owner)
@@ -203,11 +295,11 @@ def test_owner_retains_worker_envelope_and_failure_metrics_after_release(
     monkeypatch.setattr(
         process,
         "_run_worker",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        _cleaned_fixture_worker(lambda *_args, **_kwargs: (_ for _ in ()).throw(
             process.SwingAnalysisProcessError(
                 "SWING_ANALYSIS_WORKER_FAILED", diagnostic=diagnostic
             )
-        ),
+        )),
     )
 
     with pytest.raises(process.SwingAnalysisProcessError) as failure:

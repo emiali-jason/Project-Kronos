@@ -211,6 +211,13 @@ def test_final_attestation_signs_same_valid_notification_checkpoint() -> None:
     zero_status = lambda: {"owned_workers": 0, "queued_items": 0}
     server = SimpleNamespace(
         maintenance_admission=MaintenanceAdmissionCoordinator(),
+        application=SimpleNamespace(
+            analysis_work_status=lambda: {"state": "IDLE", "owned_workers": 0,
+                                          "queued_items": 0},
+            analysis_execution_status=lambda: {"state": "IDLE", "pid": None,
+                "generation": None, "owned_workers": 0, "queued_jobs": 0,
+                "cleanup_state": "COMPLETE"}),
+        _work_owner_idle=KronosBrowserServer._work_owner_idle,
         intraday_lifecycle=SimpleNamespace(work_status=zero_status),
         intraday_wo17_monitoring=SimpleNamespace(work_status=zero_status),
         housekeeping=SimpleNamespace(status_document=lambda: {"owned_workers": 0}),
