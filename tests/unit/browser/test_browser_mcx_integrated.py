@@ -545,7 +545,7 @@ def test_reserved_choices_reach_actual_application_process_dispatch_and_fail_cle
     assert len(queued) == 1
     queued.pop(0)()
     assert seen == [(expected_handoff, workflow.run_identity,
-                     CHOICE_TIME + timedelta(seconds=2))]
+                     CHOICE_TIME)]
     assert workflow.publication.status()["latest_attempt"]["state"] == "FAILED"
     assert owner.status()["owned_workers"] == 0
     assert not queued
@@ -559,6 +559,111 @@ def test_reserved_choices_reach_actual_application_process_dispatch_and_fail_cle
     assert responses == [(HTTPStatus.CONFLICT, "MCX_RESERVED_ANALYSIS_REJECTED")]
     assert workflow.publication.status() == before_replay
     assert not queued
+
+
+@pytest.mark.parametrize("altered", (None, "observation", "source", "run"))
+def test_delayed_reserved_analysis_publishes_one_epoch_and_rejects_alteration(
+    tmp_path, scenario, monkeypatch, altered,
+):
+    # Reproduce the real failure shape: selection reserves the run, then the
+    # process starts 204.685826 seconds later. Acquisition is isolated, while
+    # the real analysis builder, continuity and publication owners are used.
+    from tests.unit.application.test_swing_opportunities import _real_completed
+    _real_completed(monkeypatch)
+    snapshot, bindings = scenario
+    publication, _, _, predecessor = make_checkpoint(
+        tmp_path / "publication", later(snapshot, 2), bindings)
+    run = "SWING-RUN-56C2E24455E94C82981E6CCCD5EB8FE9"
+    started = CHOICE_TIME + timedelta(seconds=204, microseconds=685826)
+    queued = []
+    owner = process.SwingAnalysisProcessOwner(timeout_seconds=12)
+    application = analysis_application.SwingOpportunitiesApplication(
+        _Provider, run_publication=publication,
+        market_calendar_publisher=MarketCalendarPublisher(),
+        analysis_process_owner=owner, clock=lambda: started,
+        background_runner=lambda operation, _name: queued.append(operation))
+    assert application.connect_provider()
+    queued.pop(0)()
+    facts = {family: _facts(family) for family in McxFamily}
+    workflow = SwingMcxIntegratedWorkflow.reserve(
+        publication, LocalMcxSponsorSelectionStore(tmp_path / "choices"),
+        LocalMcxPreparedPlanStore(tmp_path / "plans"), run, facts,
+        observed_at=CHOICE_TIME, sponsor_identity="ISOLATED-SPONSOR-FIXTURE")
+    for family in McxFamily:
+        offer = workflow.offers[family]
+        workflow.choose(family, offer.selectable()[0], offer.offer_sha256,
+                        recorded_at=CHOICE_TIME + timedelta(seconds=1))
+    selections = _inventory(tmp_path / "choices")
+    master = tuple(f.instrument for rows in facts.values() for f in rows)
+    class Instruments:
+        def __init__(self, _capability):
+            pass
+        def retrieve(self, exchange):
+            return master if exchange == "MCX" else ()
+    monkeypatch.setattr(analysis_application, "KiteInstrumentProvider", Instruments)
+    def factual(**kwargs):
+        return replace(snapshot, run_identity=kwargs["run_identity"],
+                       observed_at=kwargs["observed_at"])
+    monkeypatch.setattr(analysis_application, "build_same_run_mtf_fact_snapshot", factual)
+    original_selection = analysis_application.selected_mcx_instrument_before_acquisition
+    acquisitions = []
+    def selection(*args, **kwargs):
+        acquisitions.append(kwargs["acquired_at"])
+        return original_selection(*args, **kwargs)
+    monkeypatch.setattr(analysis_application, "selected_mcx_instrument_before_acquisition", selection)
+    dispatched = []
+    manifests = _inventory(publication.root / "manifests")
+    def worker(capability, co, calendar, token, **kwargs):
+        dispatched.append(kwargs)
+        completed = analysis_application.build_completed_swing_analysis(
+            capability, analysis_run_identity=kwargs["analysis_run_identity"],
+            swing_analysis_run_identity=run, run_created_at=kwargs["run_created_at"],
+            now=kwargs["now"], pace=lambda: None,
+            market_calendar_publisher=calendar, committed_predecessor=predecessor,
+            prepare_publication=True, completion_clock=kwargs["completion_clock"],
+            mcx_contract_choices=kwargs["mcx_handoff"].analysis_choices())
+        mtf = completed.mtf_fact_snapshot
+        if altered == "observation":
+            mtf = replace(mtf, observed_at=started)
+        elif altered == "source":
+            mtf = replace(mtf, provider_source_identity="KITE-MTF-FACTS-" + "f" * 64)
+        elif altered == "run":
+            mtf = replace(mtf, run_identity="SWING-RUN-" + "F" * 32)
+        provenance = analysis_application.SwingAnalysisRunProvenance(
+            run, kwargs["run_created_at"], completed.evidence.observation_boundary,
+            completed.evidence.market_data_snapshot_identity, started)
+        ref = co.prepare(token, mtf=mtf, native=completed.native_discovery_run,
+            relative=completed.relative_context_run, provenance=provenance,
+            continuity=completed.continuity_contribution)
+        with kwargs["commit_scope"]():
+            assert kwargs["authorize_commit"](ref, started)
+            committed = co.publish(token, ref, started)
+        assert co.publish(token, ref, started) is None  # No second publication.
+        result = process.SwingAnalysisProcessResult(completed, committed, 0, 0, 0, 0, 0)
+        assert kwargs["install_result"](result)
+        return result
+    monkeypatch.setattr(process, "_run_worker", worker)
+    assert application.run_analysis(workflow)
+    queued.pop(0)()
+    assert len(dispatched) == 1
+    assert acquisitions == [started] * 10  # Five pre-master + five exact-master fences.
+    assert _inventory(tmp_path / "choices") == selections
+    assert owner.status()["owned_workers"] == 0 and not queued
+    if altered is None:
+        assert publication.status()["latest_attempt"]["state"] == "SUCCEEDED"
+        committed = publication.current()
+        assert committed.mtf.observed_at == committed.native.observed_at == \
+            committed.relative.created_at == committed.provenance.run_created_at == CHOICE_TIME
+        assert committed.provenance.successful_completed_at == started
+        assert committed.mtf.run_identity == run
+    else:
+        assert publication.status()["latest_attempt"]["state"] == "FAILED"
+        assert publication.current().reference == predecessor.reference
+        assert application.snapshot().analysis_failure == "SWING_ANALYSIS_FAILED"
+        assert owner.status()["failure"] == (
+            "SWING_PUBLICATION_RUN_MISMATCH" if altered == "run"
+            else "SWING_PUBLICATION_BUNDLE_INVALID")
+        assert _inventory(publication.root / "manifests") == manifests
 
 
 @pytest.mark.parametrize("native_intake", ["GOLDM-LINEAGE"], indirect=True)

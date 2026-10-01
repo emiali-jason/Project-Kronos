@@ -2764,7 +2764,10 @@ class SwingOpportunitiesApplication:
             analysis_run_identity=work.attempt_id,
             swing_run_identity=work.run_identity,
             run_created_at=run_created_at,
-            now=(run_created_at if work.mcx_handoff is None else self.__aware_now()),
+            # The reserved run has one analytical epoch across provenance,
+            # MTF, native and relative artifacts. Expiry/acquisition checks
+            # still use the live completion_clock below, including queued work.
+            now=run_created_at,
             pace=self.__pace,
             progress_observer=observe,
             completion_clock=self.__aware_now,
