@@ -1,7 +1,8 @@
 """Retained Provider identity is factual evidence, not MCX entry authority."""
 
 from dataclasses import replace
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -89,3 +90,32 @@ def test_all_five_v1_offers_retain_two_listed_contracts_and_snapshot_time(tmp_pa
         assert offer.near.master_valid_until is None
         assert offer.near.effective_specification_sha256 is None
     assert path.read_bytes() == before
+
+
+def test_retained_master_offer_uses_expiry_session_before_selecting_two(tmp_path):
+    rows = []
+    for index, family in enumerate(McxFamily):
+        expiries = [("OCT", date(2026, 10, 30)), ("NOV", date(2026, 11, 30))]
+        if family is McxFamily.COPPER:
+            expiries.insert(0, ("SEP", date(2026, 9, 30)))
+        for offset, (month, expiry) in enumerate(expiries):
+            rows.append(_source(2000 + index * 10 + offset,
+                f"{family.value}26{month}FUT", exchange="MCX", segment="MCX-FUT",
+                name=family.value, instrument_type="FUT", expiry=expiry, lot=1, tick="0.05"))
+    snapshot = _snapshot(tuple(rows))
+    store = ProviderInstrumentSnapshotStore(tmp_path / "master")
+    store.retain(snapshot)
+    before = {str(p): (p.read_bytes(), p.stat().st_mtime_ns, p.stat().st_ctime_ns)
+              for p in tmp_path.rglob("*") if p.is_file()}
+    observed = datetime(2026, 9, 30, 23, 20, 4, tzinfo=ZoneInfo("Asia/Kolkata"))
+    for _ in range(2):
+        offers = listed_v1_mcx_offers(store, snapshot_identity=snapshot.snapshot_identity,
+            run_identity="SWING-RUN-0123456789ABCDEF0123456789ABCDEF", observed_at=observed)
+        for family, offer in offers.items():
+            assert offer.near.instrument.trading_symbol == f"{family.value}26OCTFUT"
+            assert offer.next_eligible.instrument.trading_symbol == f"{family.value}26NOVFUT"
+            assert len(offer.selectable()) == 2
+        assert offers[McxFamily.COPPER].withheld_contracts == (
+            ("COPPER26SEPFUT", ("MCX_EXPIRY_SESSION_CLOSED",)),)
+    assert {str(p): (p.read_bytes(), p.stat().st_mtime_ns, p.stat().st_ctime_ns)
+            for p in tmp_path.rglob("*") if p.is_file()} == before

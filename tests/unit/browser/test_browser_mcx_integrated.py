@@ -222,6 +222,71 @@ def test_v1_offer_get_shows_both_listed_futures_snapshot_and_known_hold():
     assert "broker restrictions UNKNOWN" in html
 
 
+@pytest.mark.parametrize("native_intake", ["GOLDM-LINEAGE"], indirect=True)
+def test_expiry_boundary_get_and_stale_choice_are_write_free(
+    tmp_path, scenario, native_intake,
+):
+    workflow, _ = _workflow(tmp_path, scenario, native_intake)
+    before_close = datetime(2026, 9, 30, 16, 59, 58,
+                            tzinfo=ZoneInfo("Asia/Kolkata"))
+    facts = tuple(replace(_fact(McxFamily.COPPER, expiry), entry_until=None)
+                  for expiry in (date(2026, 9, 30), date(2026, 10, 30), date(2026, 11, 30)))
+    offer = prepare_mcx_contract_offer(workflow.run_identity, McxFamily.COPPER,
+        facts, observed_at=before_close, selection_policy=V1_ADVISORY_SELECTION)
+    workflow.offers[McxFamily.COPPER] = offer
+    workflow.clock = lambda: before_close + timedelta(seconds=2)
+    retained = _inventory(tmp_path)
+    for _ in range(2):
+        handler, responses = _handler(workflow, "/swing/mcx-contract-offer?family=COPPER")
+        handler._mcx_contract_offer()
+        assert responses[0][0] == HTTPStatus.OK
+        html = responses[0][1]
+        assert "MCX_EXPIRY_SESSION_CLOSED" in html
+        assert "Select NEAR COPPER26SEPFUT" not in html
+        assert "Select NEXT_ELIGIBLE COPPER26OCTFUT" in html
+        assert workflow.offers[McxFamily.COPPER] == offer
+        assert _inventory(tmp_path) == retained
+    fields = dict(run=workflow.run_identity, family="COPPER", role="NEAR",
+                  offer_sha256=offer.offer_sha256)
+    handler, responses = _handler(workflow, "/swing/mcx-contract-choice", urlencode(fields).encode())
+    handler._mcx_contract_choice()
+    assert responses == [(HTTPStatus.CONFLICT, "MCX_CONTRACT_CHOICE_REJECTED")]
+    assert _inventory(tmp_path) == retained
+    assert not workflow.selections._path(workflow.run_identity, McxFamily.COPPER).exists()
+
+
+@pytest.mark.parametrize("native_intake", ["GOLDM-LINEAGE"], indirect=True)
+def test_expiry_boundary_stale_analysis_post_rejects_before_dispatch_or_acquisition(
+    tmp_path, scenario, native_intake,
+):
+    workflow, _ = _workflow(tmp_path, scenario, native_intake)
+    before_close = datetime(2026, 9, 30, 16, 59, 58,
+                            tzinfo=ZoneInfo("Asia/Kolkata"))
+    clock = [before_close + timedelta(seconds=1)]
+    workflow.clock = lambda: clock[0]
+    for family in McxFamily:
+        expiries = ((date(2026, 9, 30), date(2026, 10, 30), date(2026, 11, 30))
+                    if family is McxFamily.COPPER else (date(2026, 10, 30), date(2026, 11, 30)))
+        offer = prepare_mcx_contract_offer(workflow.run_identity, family,
+            tuple(replace(_fact(family, expiry), entry_until=None) for expiry in expiries),
+            observed_at=before_close, selection_policy=V1_ADVISORY_SELECTION)
+        workflow.offers[family] = offer
+        workflow.choose(family, McxSelectionRole.NEAR, offer.offer_sha256,
+                        recorded_at=clock[0])
+    handoff = workflow.process_handoff()
+    clock[0] += timedelta(seconds=1)
+    calls = []
+    application = SimpleNamespace(run_analysis=lambda *_args: calls.append("dispatch"))
+    before = _inventory(tmp_path)
+    handler, responses = _handler(workflow, "/swing/mcx-reserved-analysis", urlencode(
+        dict(run=workflow.run_identity, handoff_sha256=handoff.integrity_sha256)).encode(), application)
+    handler._mcx_reserved_analysis()
+    assert responses == [(HTTPStatus.CONFLICT, "MCX_RESERVED_ANALYSIS_REJECTED")]
+    assert calls == []
+    assert _inventory(tmp_path) == before
+    assert workflow.selections.load(workflow.run_identity, McxFamily.COPPER).trading_symbol == "COPPER26SEPFUT"
+
+
 def _facts(family):
     near = replace(
         _fact(family, date(2026, 8, 28)),

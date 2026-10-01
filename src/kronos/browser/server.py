@@ -5737,15 +5737,19 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             self._text(HTTPStatus.CONFLICT, "MCX_CONTRACT_OFFER_UNAVAILABLE")
             return
         forms = []
+        displayed_at = workflow.clock() if callable(getattr(workflow, "clock", None)) else offer.observed_at
         if offer.selection_policy == "MCX_V1_ADVISORY_SELECTION":
-            # Display both listed futures even when a known factual restriction
-            # prevents selecting one. GET never writes or repairs authority.
+            # Retained offers stay immutable. A later GET can display expiry
+            # without persisting a transition or silently substituting a future.
+            for symbol, reasons in offer.withheld_contracts:
+                forms.append(f'<p>WITHHELD: {escape(symbol)}; '
+                             f'{escape(", ".join(reasons))}</p>')
             for role, fact in ((McxSelectionRole.NEAR, offer.near),
                                (McxSelectionRole.NEXT_ELIGIBLE,
                                 offer.next_eligible)):
                 if fact is None:
                     continue
-                reasons = fact.v1_reasons(offer.observed_at)
+                reasons = fact.v1_reasons(displayed_at)
                 forms.append(
                     f'<p>{escape(role.value)}: '
                     f'{escape(fact.instrument.trading_symbol)} '
@@ -5755,7 +5759,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                     f'snapshot {escape(fact.provider_snapshot_identity or "UNKNOWN")}; '
                     f'{escape(", ".join(reasons) if reasons else "listed; broker restrictions UNKNOWN")}'
                     '</p>')
-        for role in offer.selectable() if reserved else ():
+        for role in offer.selectable(displayed_at) if reserved else ():
             chosen = offer.near if role is McxSelectionRole.NEAR else offer.next_eligible
             if chosen is None:
                 continue

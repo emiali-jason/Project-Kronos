@@ -53,6 +53,35 @@ def _hex(value: object) -> bool:
     return type(value) is str and len(value) == 64 and all(c in "0123456789abcdef" for c in value)
 
 
+def _v1_expiry_session_reasons(
+    family: McxFamily, expiry: date | None, observed_at: datetime,
+) -> tuple[str, ...]:
+    """Swing new-selection adapter; DOMAIN-008 candle semantics stay unchanged.
+
+    Ordinary overnight closure cannot expire a later contract. On expiry day,
+    use only the governed family/expiry boundary, never generic MCX hours. The
+    close is exclusive for new selection even though a candle can complete at
+    that exact boundary. This read acquires no business or Provider lock.
+    """
+    today = observed_at.astimezone(_IST).date()
+    if expiry is None or today > expiry:
+        return ("MCX_CONTRACT_EXPIRED",)
+    if today < expiry:
+        return ()
+    from kronos.market.calendar import MarketCalendarPublisher
+
+    try:
+        profile = MarketCalendarPublisher().mcx_contract_session_profile(
+            contract_family=family.value, contract_expiry=expiry,
+            trading_date=today, observed_at=observed_at,
+        )
+    except (OSError, ValueError):
+        return ("MCX_EXPIRY_SESSION_UNAVAILABLE",)
+    if observed_at >= profile.expiry_eligibility_boundary:
+        return ("MCX_EXPIRY_SESSION_CLOSED",)
+    return ()
+
+
 class McxSelectionRole(StrEnum):
     NEAR = "NEAR"
     NEXT_ELIGIBLE = "NEXT_ELIGIBLE"
@@ -131,9 +160,8 @@ class McxContractAdmissionFacts:
         reasons = []
         if not self.provider_snapshot_identity or not self.provider_record_identity:
             reasons.append("MCX_AUTHENTICATED_CONTRACT_UNAVAILABLE")
-        expiry = self.instrument.expiry
-        if expiry is None or observed_at.astimezone(_IST).date() > expiry:
-            reasons.append("MCX_CONTRACT_EXPIRED")
+        reasons.extend(_v1_expiry_session_reasons(
+            self.family, self.instrument.expiry, observed_at))
         if self.entry_until is not None and observed_at >= self.entry_until:
             reasons.append("MCX_KNOWN_ENTRY_SESSION_CLOSED")
         return tuple(reasons)
@@ -169,6 +197,7 @@ class McxContractOffer:
     next_eligible: McxContractAdmissionFacts | None
     offer_sha256: str
     selection_policy: str = "STRICT_VERIFIED_ENTRY"
+    withheld_contracts: tuple[tuple[str, tuple[str, ...]], ...] = ()
 
     def __post_init__(self) -> None:
         if (
@@ -180,6 +209,13 @@ class McxContractOffer:
             or type(self.days_to_verified_expiry) is not int
             or self.days_to_verified_expiry < 0
             or self.selection_policy not in {"STRICT_VERIFIED_ENTRY", V1_ADVISORY_SELECTION}
+            or type(self.withheld_contracts) is not tuple
+            or (self.selection_policy == "STRICT_VERIFIED_ENTRY" and self.withheld_contracts)
+            or any(type(item) is not tuple or len(item) != 2
+                   or type(item[0]) is not str or not item[0]
+                   or type(item[1]) is not tuple or not item[1]
+                   or any(type(reason) is not str or not reason for reason in item[1])
+                   for item in self.withheld_contracts)
             or (self.selection_policy == "STRICT_VERIFIED_ENTRY"
                 and self.near.verified_expiry is None)
             or self.days_to_verified_expiry != (
@@ -214,15 +250,21 @@ class McxContractOffer:
         }
         if self.selection_policy != "STRICT_VERIFIED_ENTRY":
             fields["selection_policy"] = self.selection_policy
+        if self.withheld_contracts:
+            fields["withheld_contracts"] = self.withheld_contracts
         return _digest(fields)
 
-    def selectable(self) -> tuple[McxSelectionRole, ...]:
+    def selectable(self, observed_at: datetime | None = None) -> tuple[McxSelectionRole, ...]:
+        observed_at = self.observed_at if observed_at is None else observed_at
+        if not _aware(observed_at) or observed_at < self.observed_at:
+            raise ValueError("MCX_CONTRACT_OBSERVATION_INVALID")
         roles = []
-        if not self.near_reasons:
+        if (not self.near_reasons and (self.selection_policy == "STRICT_VERIFIED_ENTRY"
+                                      or not self.near.v1_reasons(observed_at))):
             roles.append(McxSelectionRole.NEAR)
         if (self.next_eligible is not None
                 and (self.selection_policy == "STRICT_VERIFIED_ENTRY"
-                     or not self.next_eligible.v1_reasons(self.observed_at))):
+                     or not self.next_eligible.v1_reasons(observed_at))):
             roles.append(McxSelectionRole.NEXT_ELIGIBLE)
         return tuple(roles)
 
@@ -246,6 +288,12 @@ def prepare_mcx_contract_offer(
         raise ValueError("MCX_CONTRACT_EXPIRY_AMBIGUOUS")
     today = observed_at.astimezone(_IST).date()
     future = tuple(item for item in ordered if item.instrument.expiry >= today)
+    withheld = ()
+    if selection_policy == V1_ADVISORY_SELECTION:
+        evaluated = tuple((item, item.v1_reasons(observed_at)) for item in future)
+        withheld = tuple((item.instrument.trading_symbol, reasons)
+                         for item, reasons in evaluated if reasons)
+        future = tuple(item for item, reasons in evaluated if not reasons)
     if not future:
         raise ValueError("MCX_CONTRACT_EXPIRY_UNAVAILABLE")
     near = future[0]
@@ -268,7 +316,7 @@ def prepare_mcx_contract_offer(
     values = dict(run_identity=run_identity, family=family, observed_at=observed_at,
                   near=near, days_to_verified_expiry=days,
                   near_reasons=reasons, next_eligible=next_eligible,
-                  selection_policy=selection_policy)
+                  selection_policy=selection_policy, withheld_contracts=withheld)
     digest_fields = {
         "schema": SCHEMA, "run_identity": run_identity, "family": family.value,
         "observed_at": observed_at.isoformat(), "near": near.identity,
@@ -277,6 +325,8 @@ def prepare_mcx_contract_offer(
     }
     if selection_policy != "STRICT_VERIFIED_ENTRY":
         digest_fields["selection_policy"] = selection_policy
+    if withheld:
+        digest_fields["withheld_contracts"] = withheld
     unsigned = _digest(digest_fields)
     return McxContractOffer(**values, offer_sha256=unsigned)
 

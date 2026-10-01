@@ -193,6 +193,17 @@ class SwingMcxIntegratedWorkflow:
                 self.run_identity, self.generation, self.offers, self.selections,
             )
             handoff.analysis_choices()
+            # A retained choice never gains a later expiry implicitly. Reject
+            # a closed V1 future before dispatch or any Provider acquisition.
+            checked_at = self.clock()
+            for family, offer in self.offers.items():
+                if offer.selection_policy != "MCX_V1_ADVISORY_SELECTION":
+                    continue
+                selected = self.selections.load(self.run_identity, family)
+                chosen = (offer.near if selected.role is McxSelectionRole.NEAR
+                          else offer.next_eligible)
+                if chosen is None or chosen.v1_reasons(checked_at):
+                    raise ValueError("MCX_CONTRACT_SELECTION_INELIGIBLE")
             return handoff
 
     def selected_contract(

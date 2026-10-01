@@ -2874,6 +2874,23 @@ def build_completed_swing_analysis(
     observe(AnalysisStage.UNIVERSE)
     universe = enabled_swing_phase1_universe()
     observe(AnalysisStage.DAILY_DATA)
+    # A queued selected-contract job can cross expiry before it starts. Check
+    # retained choices before even acquiring a Provider master, then recheck
+    # exact master identity and each candle request at the actual read boundary.
+    def selection_time():
+        return now if completion_clock is None else completion_clock()
+
+    if mcx_contract_choices is not None:
+        if set(mcx_contract_choices) != set(McxFamily):
+            raise ValueError("MCX_ANALYSIS_CONTRACT_SELECTION_INCOMPLETE")
+        for family, (offer, store) in mcx_contract_choices.items():
+            if offer.run_identity != swing_analysis_run_identity or offer.family is not family:
+                raise ValueError("MCX_ANALYSIS_CONTRACT_SELECTION_STALE")
+            selected_mcx_instrument_before_acquisition(
+                store, offer, tuple(fact.instrument for fact in
+                    (offer.near, offer.next_eligible) if fact is not None),
+                acquired_at=selection_time(),
+            )
     instruments = KiteInstrumentProvider(capability)  # type: ignore[arg-type]
     market_data = KiteMarketDataProvider(capability)  # type: ignore[arg-type]
     masters = {
@@ -2893,7 +2910,7 @@ def build_completed_swing_analysis(
             if offer.run_identity != swing_analysis_run_identity or offer.family is not family:
                 raise ValueError("MCX_ANALYSIS_CONTRACT_SELECTION_STALE")
             selected_mcx[family.value] = selected_mcx_instrument_before_acquisition(
-                store, offer, masters["MCX"], acquired_at=now,
+                store, offer, masters["MCX"], acquired_at=selection_time(),
             )
 
     def resolve(member: SwingUniverseMember):  # type: ignore[no-untyped-def]
@@ -2926,6 +2943,14 @@ def build_completed_swing_analysis(
         nonlocal historical_calls
         if historical_calls:
             pace()
+        if (mcx_contract_choices is not None
+                and request.instrument.exchange == "MCX"):
+            family = McxFamily(request.instrument.name)
+            offer, store = mcx_contract_choices[family]
+            exact = selected_mcx_instrument_before_acquisition(
+                store, offer, masters["MCX"], acquired_at=selection_time())
+            if exact != request.instrument:
+                raise ValueError("MCX_ANALYSIS_CONTRACT_SELECTION_STALE")
         historical_calls += 1
         return market_data.historical_candles(request)
 

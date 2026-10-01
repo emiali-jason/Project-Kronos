@@ -28,6 +28,61 @@ FAMILIES = tuple(McxFamily)
 PHYSICAL = {McxFamily.GOLDM, McxFamily.SILVERM, McxFamily.COPPER}
 
 
+def _expiry_day_v1_facts():
+    return tuple(replace(_fact(McxFamily.COPPER, expiry), entry_until=None)
+                 for expiry in (date(2026, 9, 30), date(2026, 10, 30),
+                                date(2026, 11, 30)))
+
+
+def test_expiry_session_offer_skips_closed_copper_before_taking_two():
+    facts = _expiry_day_v1_facts()
+    observed = datetime(2026, 9, 30, 23, 20, 4, tzinfo=ZoneInfo("Asia/Kolkata"))
+    offer = prepare_mcx_contract_offer(RUN, McxFamily.COPPER, facts,
+        observed_at=observed, selection_policy=V1_ADVISORY_SELECTION)
+    assert (offer.near.instrument.trading_symbol,
+            offer.next_eligible.instrument.trading_symbol) == (
+                "COPPER26OCTFUT", "COPPER26NOVFUT")
+
+
+def test_expiry_session_stale_offer_rejects_choice_without_write(tmp_path):
+    before_close = datetime(2026, 9, 30, 16, 59, 59,
+                            tzinfo=ZoneInfo("Asia/Kolkata"))
+    offer = prepare_mcx_contract_offer(RUN, McxFamily.COPPER,
+        _expiry_day_v1_facts(), observed_at=before_close,
+        selection_policy=V1_ADVISORY_SELECTION)
+    store = LocalMcxSponsorSelectionStore(tmp_path / "selection")
+    with pytest.raises(ValueError, match="CHOICE_REJECTED"):
+        choice = choose_mcx_contract(offer, McxSelectionRole.NEAR,
+            sponsor_authorization_identity="ISOLATED-SPONSOR",
+            recorded_at=before_close + timedelta(seconds=1))
+        store.retain(choice)
+    assert not list(tmp_path.rglob("*"))
+
+
+def test_expiry_session_selected_contract_rejects_acquisition_without_call(tmp_path):
+    before_close = datetime(2026, 9, 30, 16, 59, 58,
+                            tzinfo=ZoneInfo("Asia/Kolkata"))
+    facts = _expiry_day_v1_facts()
+    offer = prepare_mcx_contract_offer(RUN, McxFamily.COPPER, facts,
+        observed_at=before_close, selection_policy=V1_ADVISORY_SELECTION)
+    store = LocalMcxSponsorSelectionStore(tmp_path / "selection")
+    choice = choose_mcx_contract(offer, McxSelectionRole.NEAR,
+        sponsor_authorization_identity="ISOLATED-SPONSOR",
+        recorded_at=before_close + timedelta(seconds=1))
+    path = store.retain(choice)
+    retained = path.read_bytes()
+    metadata = (path.stat().st_mtime_ns, path.stat().st_ctime_ns)
+    calls = []
+    with pytest.raises(ValueError, match="SELECTION_INELIGIBLE"):
+        acquire_selected_mcx_evidence(store, offer,
+            tuple(fact.instrument for fact in facts),
+            acquired_at=before_close + timedelta(seconds=2),
+            acquire=lambda exact: calls.append(exact))
+    assert calls == []
+    assert path.read_bytes() == retained
+    assert (path.stat().st_mtime_ns, path.stat().st_ctime_ns) == metadata
+
+
 @pytest.mark.parametrize("family", FAMILIES)
 def test_v1_shows_two_nearest_unexpired_authentic_listings_without_invented_gates(family, tmp_path):
     expired = _fact(family, date(2026, 9, 27))
@@ -63,7 +118,7 @@ def test_v1_shows_two_nearest_unexpired_authentic_listings_without_invented_gate
     assert store.load(RUN, family) == choice
 
 
-def test_v1_shows_but_cannot_choose_known_closed_second_contract():
+def test_v1_skips_known_closed_second_contract_and_offers_later_contract():
     near = _fact(McxFamily.COPPER, date(2026, 10, 8))
     closed = replace(_fact(McxFamily.COPPER, date(2026, 11, 8)),
                      entry_until=NOW - timedelta(seconds=1))
@@ -71,11 +126,13 @@ def test_v1_shows_but_cannot_choose_known_closed_second_contract():
     offer = prepare_mcx_contract_offer(RUN, McxFamily.COPPER,
         (near, closed, later), observed_at=NOW,
         selection_policy=V1_ADVISORY_SELECTION)
-    assert offer.next_eligible == closed
-    assert offer.selectable() == (McxSelectionRole.NEAR,)
-    with pytest.raises(ValueError, match="CHOICE_REJECTED"):
-        choose_mcx_contract(offer, McxSelectionRole.NEXT_ELIGIBLE,
-            sponsor_authorization_identity="SPONSOR-V1-CHOICE", recorded_at=NOW)
+    assert offer.next_eligible == later
+    assert offer.selectable() == (McxSelectionRole.NEAR, McxSelectionRole.NEXT_ELIGIBLE)
+    assert offer.withheld_contracts == ((closed.instrument.trading_symbol,
+                                       ("MCX_KNOWN_ENTRY_SESSION_CLOSED",)),)
+    choice = choose_mcx_contract(offer, McxSelectionRole.NEXT_ELIGIBLE,
+        sponsor_authorization_identity="SPONSOR-V1-CHOICE", recorded_at=NOW)
+    assert choice.trading_symbol == later.instrument.trading_symbol
 
 
 def _fact(family, expiry, *, entry=True, broker=True, delivery=True,
@@ -96,6 +153,185 @@ def _fact(family, expiry, *, entry=True, broker=True, delivery=True,
         (NOW + timedelta(days=5) if delivery else None) if physical else None,
         NOW + timedelta(days=5) if broker else None,
     )
+
+
+@pytest.mark.parametrize("hour,minute,second,microsecond,expected", (
+    (16, 59, 59, 999999, ("SEP", "OCT")),
+    (17, 0, 0, 0, ("OCT", "NOV")),
+    (17, 0, 0, 1, ("OCT", "NOV")),
+    (23, 20, 4, 0, ("OCT", "NOV")),
+))
+def test_copper_expiry_session_exact_boundary(hour, minute, second, microsecond, expected):
+    observed = datetime(2026, 9, 30, hour, minute, second, microsecond,
+                        tzinfo=ZoneInfo("Asia/Kolkata"))
+    offer = prepare_mcx_contract_offer(RUN, McxFamily.COPPER,
+        _expiry_day_v1_facts(), observed_at=observed,
+        selection_policy=V1_ADVISORY_SELECTION)
+    assert (offer.near.instrument.trading_symbol,
+            offer.next_eligible.instrument.trading_symbol) == tuple(
+                f"COPPER26{month}FUT" for month in expected)
+    assert len(offer.selectable()) == 2
+    assert offer.withheld_contracts == (() if expected[0] == "SEP" else (
+        ("COPPER26SEPFUT", ("MCX_EXPIRY_SESSION_CLOSED",)),))
+
+
+@pytest.mark.parametrize("observed", (
+    datetime(2026, 9, 30, 11, 30, tzinfo=ZoneInfo("UTC")),
+    datetime(2026, 9, 30, 6, 30, tzinfo=ZoneInfo("America/Chicago")),
+    datetime(2026, 9, 30, 23, 59, 59, tzinfo=ZoneInfo("Asia/Kolkata")),
+    datetime(2026, 10, 1, 0, 0, tzinfo=ZoneInfo("Asia/Kolkata")),
+))
+def test_expiry_session_uses_ist_rollover_and_normalized_instants(observed):
+    offer = prepare_mcx_contract_offer(RUN, McxFamily.COPPER,
+        _expiry_day_v1_facts(), observed_at=observed,
+        selection_policy=V1_ADVISORY_SELECTION)
+    assert (offer.near.instrument.trading_symbol,
+            offer.next_eligible.instrument.trading_symbol) == (
+                "COPPER26OCTFUT", "COPPER26NOVFUT")
+
+
+def test_missing_expiry_session_withholds_only_same_day_contract(monkeypatch):
+    from kronos.market.calendar import MarketCalendarPublisher
+
+    def unavailable(*_args, **_kwargs):
+        raise ValueError("ISOLATED_MISSING_SESSION_PUBLICATION")
+
+    monkeypatch.setattr(MarketCalendarPublisher, "mcx_contract_session_profile", unavailable)
+    offer = prepare_mcx_contract_offer(RUN, McxFamily.COPPER,
+        _expiry_day_v1_facts(), observed_at=datetime(2026, 9, 30, 16, 0,
+            tzinfo=ZoneInfo("Asia/Kolkata")), selection_policy=V1_ADVISORY_SELECTION)
+    assert offer.near.instrument.trading_symbol == "COPPER26OCTFUT"
+    assert offer.next_eligible.instrument.trading_symbol == "COPPER26NOVFUT"
+    assert offer.withheld_contracts == (("COPPER26SEPFUT",
+                                        ("MCX_EXPIRY_SESSION_UNAVAILABLE",)),)
+
+
+@pytest.mark.parametrize("family", FAMILIES)
+def test_all_families_future_expiry_remains_selectable_overnight(family, monkeypatch):
+    from kronos.market.calendar import MarketCalendarPublisher
+
+    monkeypatch.setattr(MarketCalendarPublisher, "mcx_contract_session_profile",
+        lambda **_kwargs: pytest.fail("future-dated selection asked for today's market openness"))
+    observed = datetime(2026, 9, 30, 2, 0, tzinfo=ZoneInfo("Asia/Kolkata"))
+    facts = tuple(replace(_fact(family, expiry), entry_until=None)
+                  for expiry in (date(2026, 10, 30), date(2026, 11, 30)))
+    offer = prepare_mcx_contract_offer(RUN, family, facts, observed_at=observed,
+        selection_policy=V1_ADVISORY_SELECTION)
+    assert (offer.near, offer.next_eligible) == facts
+    assert len(offer.selectable()) == 2
+    assert offer.withheld_contracts == ()
+
+
+@pytest.mark.parametrize("family", tuple(f for f in FAMILIES if f is not McxFamily.COPPER))
+def test_other_families_use_governed_expiry_close_without_copper_cutoff(family):
+    facts = tuple(replace(_fact(family, expiry), entry_until=None)
+                  for expiry in (date(2026, 9, 30), date(2026, 10, 30), date(2026, 11, 30)))
+    for hour, minute, expected in ((17, 0, facts[:2]), (23, 30, facts[1:])):
+        offer = prepare_mcx_contract_offer(RUN, family, facts,
+            observed_at=datetime(2026, 9, 30, hour, minute,
+                tzinfo=ZoneInfo("Asia/Kolkata")), selection_policy=V1_ADVISORY_SELECTION)
+        assert (offer.near, offer.next_eligible) == expected
+
+
+def test_missing_session_at_choice_or_acquisition_rejects_without_mutation(tmp_path, monkeypatch):
+    from kronos.market.calendar import MarketCalendarPublisher
+    observed = datetime(2026, 9, 30, 16, 0, tzinfo=ZoneInfo("Asia/Kolkata"))
+    facts = _expiry_day_v1_facts()
+    offer = prepare_mcx_contract_offer(RUN, McxFamily.COPPER, facts,
+        observed_at=observed, selection_policy=V1_ADVISORY_SELECTION)
+    store = LocalMcxSponsorSelectionStore(tmp_path / "selection")
+    choice = choose_mcx_contract(offer, McxSelectionRole.NEAR,
+        sponsor_authorization_identity="ISOLATED-SPONSOR", recorded_at=observed)
+    path = store.retain(choice)
+    before = (path.read_bytes(), path.stat().st_mtime_ns, path.stat().st_ctime_ns)
+    monkeypatch.setattr(MarketCalendarPublisher, "mcx_contract_session_profile",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(ValueError("ISOLATED_MISSING_SESSION")))
+    with pytest.raises(ValueError, match="CHOICE_REJECTED"):
+        choose_mcx_contract(offer, McxSelectionRole.NEAR,
+            sponsor_authorization_identity="ISOLATED-SPONSOR",
+            recorded_at=observed + timedelta(seconds=1))
+    calls = []
+    # Losing session authority also invalidates the original offer's role.
+    with pytest.raises(ValueError, match="MCX_CONTRACT_SELECTION_STALE"):
+        acquire_selected_mcx_evidence(store, offer, tuple(f.instrument for f in facts),
+            acquired_at=observed + timedelta(seconds=1), acquire=lambda exact: calls.append(exact))
+    assert calls == []
+    assert (path.read_bytes(), path.stat().st_mtime_ns, path.stat().st_ctime_ns) == before
+
+
+def _selected_expiry_choices(tmp_path):
+    observed = datetime(2026, 9, 30, 16, 59, 58, tzinfo=ZoneInfo("Asia/Kolkata"))
+    choices = {}
+    master = []
+    for family in FAMILIES:
+        expiries = ((date(2026, 9, 30), date(2026, 10, 30), date(2026, 11, 30))
+                    if family is McxFamily.COPPER else (date(2026, 10, 30), date(2026, 11, 30)))
+        facts = tuple(replace(_fact(family, expiry), entry_until=None) for expiry in expiries)
+        offer = prepare_mcx_contract_offer(RUN, family, facts, observed_at=observed,
+            selection_policy=V1_ADVISORY_SELECTION)
+        store = LocalMcxSponsorSelectionStore(tmp_path / family.value)
+        store.retain(choose_mcx_contract(offer, McxSelectionRole.NEAR,
+            sponsor_authorization_identity="ISOLATED-SPONSOR",
+            recorded_at=observed + timedelta(seconds=1)))
+        choices[family] = offer, store
+        master.extend(f.instrument for f in facts)
+    return observed, choices, tuple(master)
+
+
+def test_queued_expiry_boundary_rejects_before_provider_master_or_adapter(tmp_path, monkeypatch):
+    observed, choices, _ = _selected_expiry_choices(tmp_path)
+    before = {str(p): (p.read_bytes(), p.stat().st_mtime_ns, p.stat().st_ctime_ns)
+              for p in tmp_path.rglob("*") if p.is_file()}
+    def unexpected_provider(*_args, **_kwargs):
+        pytest.fail("stale selected-contract job constructed a Provider adapter")
+    monkeypatch.setattr(app, "KiteInstrumentProvider", unexpected_provider)
+    monkeypatch.setattr(app, "KiteMarketDataProvider", unexpected_provider)
+    with pytest.raises(ValueError, match="SELECTION_INELIGIBLE"):
+        app.build_completed_swing_analysis(SimpleNamespace(active=True),
+            analysis_run_identity="ANALYSIS-000001", swing_analysis_run_identity=RUN,
+            now=observed + timedelta(seconds=1, microseconds=1), pace=lambda: None,
+            completion_clock=lambda: observed + timedelta(seconds=2),
+            mcx_contract_choices=choices)
+    assert {str(p): (p.read_bytes(), p.stat().st_mtime_ns, p.stat().st_ctime_ns)
+            for p in tmp_path.rglob("*") if p.is_file()} == before
+
+
+def test_candle_acquisition_rechecks_expiry_after_pacing(tmp_path, monkeypatch):
+    from kronos.provider.contracts.market_data import HistoricalCandleRequest, HistoricalInterval
+    observed, choices, master = _selected_expiry_choices(tmp_path)
+    clock = [observed + timedelta(seconds=1, microseconds=1)]
+    calls = []
+    class Instruments:
+        def __init__(self, _capability):
+            pass
+        def retrieve(self, exchange):
+            return master if exchange == "MCX" else ()
+    class MarketData:
+        def __init__(self, _capability):
+            pass
+        def historical_candles(self, request):
+            calls.append(request.instrument)
+            return ()
+    def pace():
+        clock[0] = observed + timedelta(seconds=2)
+    def daily(_universe, *, historical_candles, **_kwargs):
+        request = HistoricalCandleRequest(choices[McxFamily.COPPER][0].near.instrument,
+            observed - timedelta(days=1), observed, HistoricalInterval.DAY)
+        historical_candles(request)
+        with pytest.raises(ValueError, match="SELECTION_INELIGIBLE"):
+            historical_candles(request)
+        assert calls == [request.instrument]
+        raise RuntimeError("STOP_AFTER_ACQUISITION_FENCE")
+    monkeypatch.setattr(app, "KiteInstrumentProvider", Instruments)
+    monkeypatch.setattr(app, "KiteMarketDataProvider", MarketData)
+    monkeypatch.setattr(app, "build_swing_daily_dataset", daily)
+    before = {str(p): p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+    with pytest.raises(RuntimeError, match="STOP_AFTER_ACQUISITION_FENCE"):
+        app.build_completed_swing_analysis(SimpleNamespace(active=True),
+            analysis_run_identity="ANALYSIS-000001", swing_analysis_run_identity=RUN,
+            now=clock[0], pace=pace, completion_clock=lambda: clock[0],
+            mcx_contract_choices=choices)
+    assert {str(p): p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()} == before
 
 
 @pytest.mark.parametrize("family", FAMILIES)
