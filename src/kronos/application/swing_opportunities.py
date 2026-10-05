@@ -863,6 +863,8 @@ class SwingOpportunitiesApplication:
         self.__swing_run_identity_factory = swing_run_identity_factory
         self.__run_provenance_store = run_provenance_store
         self.__market_calendar_publisher = market_calendar_publisher
+        self.__research_capture = None
+        self.__research_capture_failure = None
         self.__mtf_fact_evidence_store = mtf_fact_evidence_store
         self.__native_discovery_evidence_store = native_discovery_evidence_store
         self.__relative_context_evidence_store = relative_context_evidence_store
@@ -991,6 +993,12 @@ class SwingOpportunitiesApplication:
     def committed_continuity(self):
         with self.__lock:
             return None if self.__committed_run is None else self.__committed_run.continuity
+
+    def committed_research_replay_history(self):
+        """Verified owner ancestry for an explicit research maintenance action."""
+        publication = self.__publication
+        return (() if publication is None or not publication.initialized
+                else publication.committed_history())
 
     @contextmanager
     def publication_mutation_guard(self):
@@ -1208,6 +1216,28 @@ class SwingOpportunitiesApplication:
             self.__successor_publication_transition = (
                 successor_publication_transition
             )
+
+    def register_research_capture(self, capture) -> None:
+        """Register a post-commit listener; startup reconciliation never invokes it."""
+        if not callable(capture):
+            raise TypeError("SWING_RESEARCH_CAPTURE_INVALID")
+        with self.__lock:
+            if self.__research_capture is not None:
+                raise ValueError("SWING_RESEARCH_CAPTURE_ALREADY_BOUND")
+            self.__research_capture = capture
+
+    def clear_research_capture(self, capture) -> None:
+        """Detach only this server's listener after its owner work has drained."""
+        with self.__lock:
+            if self.__research_capture is capture:
+                self.__research_capture = None
+
+    def research_capture_status(self) -> str | None:
+        with self.__lock:
+            return self.__research_capture_failure
+
+    def governed_calendar_publisher(self):
+        return self.__market_calendar_publisher
 
     def review_reconciliation_identity(self):
         """Immutable process identity only; no Review access or filesystem I/O."""
@@ -2592,6 +2622,18 @@ class SwingOpportunitiesApplication:
                     # never inherits the application lock. Swing page readers
                     # remain fenced until the coherent successor is prepared.
                     self.reconcile_committed_analysis()
+                # The owner event is committed. Research is independent of
+                # admission and is never invoked by startup/GET reconciliation.
+                capture = self.__research_capture
+                if capture is not None:
+                    try:
+                        capture(committed)
+                    except Exception:
+                        with self.__lock:
+                            self.__research_capture_failure = "CAPTURE_REPLAY_REQUIRED"
+                    else:
+                        with self.__lock:
+                            self.__research_capture_failure = None
                 return
             if not self.__analysis_work_current(work):
                 return

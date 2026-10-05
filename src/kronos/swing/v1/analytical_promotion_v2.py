@@ -1373,6 +1373,22 @@ class LocalV2PromotionStore:
         _require(current(source) is True, "V2_PUBLICATION_CHANGED")
         return record
 
+    def retained_records_for_research_replay(self) -> tuple[V2PromotionRecord, ...]:
+        """Read verified immutable events; never select a current alias or write."""
+        if not self.root.exists():
+            return ()
+        _require(not self.root.is_symlink(), "V2_STORAGE_UNAVAILABLE")
+        records = []
+        for path in sorted(self.root.glob("*/*.json")):
+            _require(not path.parent.is_symlink() and not path.is_symlink(),
+                     "V2_STORAGE_UNAVAILABLE")
+            record = V2PromotionRecord(self._read(path))
+            source = record.value["source"]
+            _require(path == self._path(source, record.value["input_sha256"]),
+                     "V2_SOURCE_BINDING_MISMATCH")
+            records.append(record)
+        return tuple(sorted(records, key=lambda item: (item.value["created_at"], item.identity)))
+
 
 __all__ = ["CONTRACT", "VERSION", "POLICY", "SCHEMA", "SCHEMA_SEAL_SHA256",
            "Disposition", "Promotion", "ConfirmationState", "V2PromotionRecord",

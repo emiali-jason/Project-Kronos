@@ -524,6 +524,8 @@ def render_opportunities(
         committed_continuity.contribution.validate()
         continuity_rows = {r.canonical_instrument: r for r in committed_continuity.contribution.rows}
     body = _analysis_run_strip(snapshot)
+    body += ('<p><a href="/swing/research">Swing Research · '
+             'UPDATE SWING RESEARCH</a></p>')
     if publication_status:
         control = publication_status.get("control")
         attempt = None if control is None else control["latest_attempt"]

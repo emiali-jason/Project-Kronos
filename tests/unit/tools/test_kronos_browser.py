@@ -268,9 +268,12 @@ def test_canonical_main_installs_real_mcx_owner_before_ready_without_acquisition
     assert events == ['owners-installed', 'ready', 'serve']
 
 
-@pytest.mark.parametrize("checkpoint_matches", (True, False))
+@pytest.mark.parametrize("checkpoint_matches,failure_stage", (
+    (True, None), (False, None), (True, "housekeeping"),
+    (True, "ready"), (True, "workspace"),
+))
 def test_canonical_startup_restores_pre_mcx_continuity_without_rewriting_it(
-    tmp_path, monkeypatch, checkpoint_matches,
+    tmp_path, monkeypatch, checkpoint_matches, failure_stage,
 ):
     """Real constructors/checkpoint/READY; only launch authority and roots are fixtures."""
     from dataclasses import asdict
@@ -344,14 +347,46 @@ def test_canonical_startup_restores_pre_mcx_continuity_without_rewriting_it(
 
     monkeypatch.setattr(kronos_browser, "create_browser_server", capture)
     monkeypatch.setattr(KronosBrowserServer, "serve_forever", serve)
+    ended = []
+    original_end = kronos_browser.SharedAuthenticatedProviderRuntime.end_kronos_session
+    def end_session(runtime):
+        ended.append(runtime)
+        return original_end(runtime)
+    monkeypatch.setattr(kronos_browser.SharedAuthenticatedProviderRuntime,
+                        "end_kronos_session", end_session)
+    def fail(*_args, **_kwargs):
+        raise RuntimeError("isolated " + failure_stage + " startup failure")
+    if failure_stage == "housekeeping":
+        monkeypatch.setattr(kronos_browser, "_compose_housekeeping", fail)
+    elif failure_stage == "ready":
+        monkeypatch.setattr("kronos.browser.runtime_state.complete_startup", fail)
+    elif failure_stage == "workspace":
+        monkeypatch.setattr(kronos_browser.webbrowser, "open_new_tab", fail)
+    args = ["--port", "0"] + ([] if failure_stage == "workspace" else ["--no-browser"])
     try:
-        if checkpoint_matches:
-            assert kronos_browser.main(["--port", "0", "--no-browser"]) == 0
+        if checkpoint_matches and failure_stage is None:
+            assert kronos_browser.main(args) == 0
             assert served == servers and len(served) == 1
         else:
-            with pytest.raises(ValueError, match="WO13_NOTIFICATION_CHECKPOINT_MISMATCH"):
-                kronos_browser.main(["--port", "0", "--no-browser"])
+            error = ValueError if failure_stage is None else RuntimeError
+            message = ("WO13_NOTIFICATION_CHECKPOINT_MISMATCH" if failure_stage is None
+                       else "isolated " + failure_stage + " startup failure")
+            with pytest.raises(error, match=message):
+                kronos_browser.main(args)
             assert not served
+            # Failure after server construction must clean canonical owners;
+            # the test's defensive finally must not hide a leaked listener.
+            assert len(servers) == 1
+            failed = servers[0]
+            assert failed.socket.fileno() == -1
+            assert failed.swing_research_control._worker_closed
+            assert failed.application._SwingOpportunitiesApplication__research_capture is None
+            assert all(owner._research_capture is None
+                       for owner, _callback in failed._research_owner_bindings
+                       if owner is not failed.application)
+            assert failed.mcx_v1_control.worker_status()["state"] == "CLOSED"
+            assert failed.maintenance_admission.snapshot()["owners"] == {}
+        assert len(ended) == 1
     finally:
         for server in servers:
             server.server_close()

@@ -27,6 +27,7 @@ def test_accepted_current_receipt_publishes_distinct_v2_without_get_writes(
     assert native_intake._v2_store.load_exact(
         value["source"], value["input_sha256"],
         current=native_intake._v2_current) == promotion
+    assert promotion in native_intake.retained_research_promotions()
     if market == "MCX":
         assert native_intake.snapshot()["rows"][0]["downstream"] == "UNSUPPORTED_CONTRACT"
     else:

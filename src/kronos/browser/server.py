@@ -163,6 +163,7 @@ from kronos.browser.views import (
     render_reports,
     render_trade_candidates,
     render_v1_review,
+    render_browser_page,
 )
 from kronos.browser.reports import (
     ReportProduct,
@@ -335,7 +336,11 @@ class KronosBrowserServer(ThreadingHTTPServer):
         mcx_v1_control: SwingMcxV1OperationalControl | None = None,
         native_intake: NativeReviewIntakeWorkflow | None = None,
         mcx_v1_composition_factory: Callable | None = None,
+        swing_research_control: SwingResearchControl | None = None,
     ) -> None:
+        # The research workbook imports the Browser package. Resolve its
+        # composition only when constructing a server, after module import.
+        from kronos.application.swing_research_control import SwingResearchControl
         if (
             address[0] != _LOOPBACK_HOST
             or not isinstance(application, SwingOpportunitiesApplication)
@@ -423,6 +428,8 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 and type(mcx_v1_control) is not SwingMcxV1OperationalControl)
             or (native_intake is not None
                 and type(native_intake) is not NativeReviewIntakeWorkflow)
+            or (swing_research_control is not None
+                and type(swing_research_control) is not SwingResearchControl)
         ):
             raise ValueError("BROWSER_SERVER_MUST_BIND_LOOPBACK")
         config = OpenAIChartAnalystV2Config.from_environment()
@@ -747,6 +754,56 @@ class KronosBrowserServer(ThreadingHTTPServer):
             ),
             review_owner=self.native_intake,
         )
+        if swing_research_control is None:
+            from kronos.application.swing_prospective_research import (
+                CANONICAL_ROOT as SWING_RESEARCH_ROOT, SwingProspectiveResearchApplication,
+            )
+            from kronos.application.swing_research_integration import SwingResearchEventCapture
+            from kronos.application.swing_research_inbox import SwingResearchInbox
+            from kronos.application.swing_nse_equity_basis import NseEquityBasisStore
+            from kronos.swing.v1.prospective_research import ProspectiveResearchStore
+            from kronos.application.swing_research_authority import ResearchReleaseVerifier
+            research = SwingProspectiveResearchApplication(
+                store=ProspectiveResearchStore(SWING_RESEARCH_ROOT / "evidence"),
+                publication_root=SWING_RESEARCH_ROOT)
+            capture = SwingResearchEventCapture(
+                research, require_commissioning=True,
+                inbox=SwingResearchInbox(SWING_RESEARCH_ROOT / "capture-inbox"))
+            swing_research_control = SwingResearchControl(
+                application=self.application, intake=self.native_intake,
+                research=research, capture=capture,
+                calendar=self.application.governed_calendar_publisher(),
+                native_review=self.native_review, trade_window=self.trade_window,
+                mcx_control=self.mcx_v1_control,
+                equity_basis=NseEquityBasisStore(SWING_RESEARCH_ROOT / "equity-basis"),
+                release_verifier=ResearchReleaseVerifier(
+                    Path(__file__).resolve().parents[3],
+                    lambda: (None if self.connection_governance is None else
+                             self.connection_governance.process.loaded_revision)))
+        self.swing_research_control = swing_research_control
+        capture = swing_research_control.capture
+        self._research_owner_bindings = []
+        def bind_research_owner(owner, callback):
+            owner.register_research_capture(callback)
+            self._research_owner_bindings.append((owner, callback))
+        bind_research_owner(self.application,
+            lambda bundle: (None if not capture.capture_enabled() or bundle.continuity is None else
+                            capture.retain_admission_event(
+                                bundle.continuity.contribution,
+                                ticks=self.swing_monitoring_hub.latest_market_ticks)))
+        if self.native_intake is not None:
+            bind_research_owner(self.native_intake,
+                lambda promotion: None if not capture.capture_enabled() else capture.retain_v2_event(
+                    self.application.committed_continuity().contribution,
+                    promotion, ticks=self.swing_monitoring_hub.latest_market_ticks))
+        def capture_owner_event(kind, value):
+            if not capture.capture_enabled():
+                return
+            capture.retain_owner_event(kind, value)
+        bind_research_owner(self.native_review, capture_owner_event)
+        bind_research_owner(self.trade_window, capture_owner_event)
+        if self.mcx_v1_control is not None:
+            bind_research_owner(self.mcx_v1_control, capture_owner_event)
         if self.native_intake is not None:
             self.native_intake.prepare_page_state()
         if self.native_intake is not None:
@@ -960,6 +1017,11 @@ class KronosBrowserServer(ThreadingHTTPServer):
 
     def server_close(self) -> None:
         self._close_domain_owners()
+        research_close = getattr(self.swing_research_control, "close", None)
+        if callable(research_close):
+            research_close()
+        for owner, callback in reversed(getattr(self, "_research_owner_bindings", ())):
+            owner.clear_research_capture(callback)
         if self.restart_control is not None:
             self.restart_control.remove()
         super().server_close()
@@ -2363,6 +2425,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:  # noqa: N802
         path = urlsplit(self.path).path
+        if path == "/swing/research":
+            self._swing_research_page()
+            return
         if path == "/swing/mcx-contract-offer":
             self._mcx_contract_offer()
             return
@@ -3310,6 +3375,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 self._dispatch_post(path)
                 if (path.startswith("/swing/") and path not in {
                         "/swing/analysis", "/swing/reconcile",
+                        "/swing/research/update",
                         "/swing/v1/native-chart", "/swing/v1/native-chart/remove",
                         "/swing/mcx-contract-choice", "/swing/mcx-reserved-analysis",
                         "/swing/mcx-v1/reserve", "/swing/mcx-v1/plan",
@@ -3321,7 +3387,132 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         finally:
             self.server.finish_sponsor_work()
 
+    def _swing_research_page(self) -> None:
+        """Presentation reads retained status only; no capture or Provider call."""
+        try:
+            status = self.server.swing_research_control.status()
+        except (OSError, ValueError):
+            self._text(HTTPStatus.SERVICE_UNAVAILABLE, "Swing research evidence unavailable.")
+            return
+        query = parse_qs(urlsplit(self.path).query)
+        outcome = query.get("outcome", [""])[0]
+        remaining = query.get("remaining", [""])[0]
+        permitted = {"PUBLISHED", "ALREADY_UP_TO_DATE", "ALREADY_APPLIED",
+                     "CATCHUP_INCOMPLETE", "CALENDAR_UNAVAILABLE",
+                     "ACQUISITION_UNAVAILABLE"}
+        notice = ("<p>Latest update: " + escape(outcome) +
+                  (" · Remaining candle requests: " + escape(remaining)
+                   if remaining.isdecimal() else "") + "</p>"
+                  if outcome in permitted else "")
+        months = ", ".join(escape(month) for month in status["verified_months"]) or "None"
+        pending = (status["admission_capture"] or status["v2_capture"]
+                   or status.get("decision_capture") or status.get("observation_capture")
+                   or status.get("mcx_capture") or "None")
+        operation = uuid4().hex
+        commissioned = status.get("commissioned_at")
+        running = status.get("operation") or {}
+        operation_notice = ("<p>Update " + escape(str(running.get("operation_identity", "")))
+                            + ": " + escape(str(running.get("state", "")))
+                            + " · " + escape(str(running.get("phase", "")))
+                            + (" · Result: " + escape(str(running["outcome"]))
+                               if running.get("outcome") else "") + "</p>"
+                            if running else "")
+        body = ("<section class=\"panel\"><h2>Prospective Swing research</h2>"
+                "<p>Research only. The update acquires missing, exact-contract historical "
+                "candles through the current read-only Provider capability and publishes "
+                "verified monthly workbooks. It does not admit or manage trades.</p>"
+                + notice
+                + operation_notice
+                + "<p>Admitted origins: " + str(status["origins"])
+                + " · V2 milestones: " + str(status["milestones"])
+                + " · Verified months: " + months + "</p>"
+                + "<p>Capture replay needed: " + escape(pending) + "</p>"
+                + ("<p>Release commissioning required before updates.</p>"
+                   if commissioned is None else "")
+                + '<form method="post" action="/swing/research/update">'
+                + '<input type="hidden" name="operation_identity" value="' + operation + '">'
+                + '<button type="submit"' + (" disabled" if commissioned is None else "")
+                + '>UPDATE SWING RESEARCH</button></form></section>')
+        self._html(render_browser_page(
+            title="Swing Research", subtitle="Explicit prospective direction research",
+            snapshot=self.server.application.snapshot(), active_nav="Swing",
+            active_tab="Opportunities", body=body,
+            back_link='<a href="/swing/opportunities">← Opportunities</a>'))
+
+    def _swing_research_update(self) -> None:
+        try:
+            length = int(self.headers.get("Content-Length", ""))
+            if (not 0 < length <= 256 or self.headers.get("Content-Type", "").split(";", 1)[0]
+                    != "application/x-www-form-urlencoded"):
+                raise ValueError("SWING_RESEARCH_REQUEST_INVALID")
+            fields = parse_qs(self.rfile.read(length).decode("ascii"), strict_parsing=True)
+            if (set(fields) != {"operation_identity"}
+                    or len(fields["operation_identity"]) != 1
+                    or re.fullmatch(r"[0-9a-f]{32}", fields["operation_identity"][0]) is None):
+                raise ValueError("SWING_RESEARCH_REQUEST_INVALID")
+            admitted = self.server.swing_research_control.submit_update(
+                fields["operation_identity"][0],
+                self.server._sponsor_tickets.current)
+        except (OSError, ValueError, TypeError):
+            self._swing_post_failed = True
+            self._text(HTTPStatus.SERVICE_UNAVAILABLE,
+                       "Swing research source or acquisition unavailable; verified workbooks retained.")
+            return
+        self._redirect("/swing/research?" + urlencode({
+            "operation": admitted["operation_identity"]}))
+
+    def _swing_research_authority(self, path: str) -> None:
+        """Explicit same-origin, authenticated, counted release/data-owner operations."""
+        control = self.server.restart_control
+        if (control is None or not control.owns_current_process()
+                or self.headers.get("Host") != f"{_LOOPBACK_HOST}:{self.server.server_port}"
+                or not control.authorized(
+                    process_id=self.headers.get("X-Kronos-Backend-Pid"),
+                    token=self.headers.get("X-Kronos-Restart-Token"))):
+            self._text(HTTPStatus.FORBIDDEN, "Request rejected.")
+            return
+        self._swing_post_failed = True  # Never trigger analysis reconciliation.
+        try:
+            import base64
+            def unique(pairs):
+                result = {}
+                for key, value in pairs:
+                    if key in result:
+                        raise ValueError("SWING_RESEARCH_REQUEST_INVALID")
+                    result[key] = value
+                return result
+            length = int(self.headers.get("Content-Length", ""))
+            if (not 0 < length <= 1500000 or urlsplit(self.path).query
+                    or self.headers.get("Content-Type", "").split(";", 1)[0] != "application/json"):
+                raise ValueError("SWING_RESEARCH_REQUEST_INVALID")
+            fields = json.loads(self.rfile.read(length), object_pairs_hook=unique)
+            owner = self.server.swing_research_control
+            if path == "/control/swing-research/commission":
+                if set(fields) != {"release_identity", "source_manifest_sha256", "manifest_base64"}:
+                    raise ValueError("SWING_RESEARCH_REQUEST_INVALID")
+                receipt = owner.commission(
+                    release_identity=fields["release_identity"],
+                    source_manifest_sha256=fields["source_manifest_sha256"],
+                    manifest_bytes=base64.b64decode(fields["manifest_base64"], validate=True))
+                result = {"receipt_identity": receipt.identity, "commissioned_at": receipt.data["commissioned_at"]}
+            else:
+                if set(fields) != {"attestation", "csv_base64"}:
+                    raise ValueError("SWING_RESEARCH_REQUEST_INVALID")
+                identity = owner.import_actions(fields["attestation"],
+                    base64.b64decode(fields["csv_base64"], validate=True))
+                result = {"report_identity": identity}
+        except (OSError, ValueError, TypeError, KeyError):
+            self._text(HTTPStatus.CONFLICT, "Swing research authority rejected; evidence retained.")
+            return
+        self._json(result)
+
     def _dispatch_post(self, path: str) -> None:
+        if path in {"/control/swing-research/commission", "/control/swing-research/corporate-actions/import"}:
+            self._swing_research_authority(path)
+            return
+        if path == "/swing/research/update":
+            self._swing_research_update()
+            return
         if path in {"/swing/mcx-v1/reserve", "/swing/mcx-v1/plan"}:
             self._mcx_v1_composition_action(path)
             return
@@ -6273,6 +6464,7 @@ def create_browser_server(
     mcx_v1_control: SwingMcxV1OperationalControl | None = None,
     native_intake: NativeReviewIntakeWorkflow | None = None,
     mcx_v1_composition_factory: Callable | None = None,
+    swing_research_control: SwingResearchControl | None = None,
 ) -> KronosBrowserServer:
     if type(port) is not int or not 0 <= port <= 65535:
         raise ValueError("BROWSER_SERVER_PORT_INVALID")
@@ -6306,6 +6498,7 @@ def create_browser_server(
         mcx_v1_control,
         native_intake,
         mcx_v1_composition_factory,
+        swing_research_control,
     )
 
 

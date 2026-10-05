@@ -20,6 +20,7 @@ _OWNER_KINDS = frozenset({
     "SWING_ANALYSIS", "PROVIDER_CONNECTION", "SPONSOR_RESTORATION",
     "BULK_IMPORT", "MONITORING_CALLBACK", "NOTIFICATION", "REMINDER",
     "PROGRESSION", "PROVIDER_CALLBACK", "FINALIZER",
+    "SWING_RESEARCH",
 })
 _current_ticket = ContextVar(
     "kronos_maintenance_ticket", default=None

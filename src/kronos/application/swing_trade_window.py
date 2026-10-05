@@ -726,6 +726,8 @@ class SwingTradeWindowWorkflow:
         self._observation_decisions: dict[
             tuple[str, str], SponsorObservationDecisionResult
         ] = {}
+        self._research_capture = None
+        self.research_capture_failure = None
         self._failures: dict[tuple[str, str], str] = {}
         restored_diagnostics = () if diagnostic_store is None else diagnostic_store.load()
         self._construction_attempts: dict[
@@ -1890,7 +1892,32 @@ class SwingTradeWindowWorkflow:
             retained.decision.decision_identity
         )
         self._observation_decisions[key] = retained
+        self._emit_research("OBSERVATION_DECISION", retained)
         return retained
+
+    def register_research_capture(self, capture) -> None:
+        if not callable(capture) or self._research_capture is not None:
+            raise ValueError("SWING_RESEARCH_CAPTURE_INVALID")
+        self._research_capture = capture
+
+    def clear_research_capture(self, capture) -> None:
+        if self._research_capture is capture:
+            self._research_capture = None
+
+    def retained_research_events(self):
+        """Read exact terminal decisions and Track starts for explicit replay."""
+        return (self._sponsor_observation_store.load_all(),
+                self._paper_observation_tracking._store.load_all_tracks())
+
+    def _emit_research(self, kind, value) -> None:
+        if self._research_capture is None:
+            return
+        try:
+            self._research_capture(kind, value)
+        except Exception:
+            self.research_capture_failure = "CAPTURE_REPLAY_REQUIRED"
+        else:
+            self.research_capture_failure = None
 
     def sponsor_observation_decisions(
         self,
@@ -1934,6 +1961,7 @@ class SwingTradeWindowWorkflow:
         )
         retained = self._sponsor_observation_store.transition_activation(transitioned)
         self._observation_decisions[key] = retained
+        self._emit_research("OBSERVATION_DECISION", retained)
         return retained
 
     def journal_observation_handoffs(
@@ -2084,6 +2112,7 @@ class SwingTradeWindowWorkflow:
             authority_is_current=authority_is_current,
         )
         self._observation_research_v2.synchronize()
+        self._emit_research("PAPER_OBSERVATION", projection)
         return projection
 
     def attach_paper_observation_monitoring(

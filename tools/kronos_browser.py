@@ -309,6 +309,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         analysis_process_owner=SwingAnalysisProcessOwner(),
     )
     restart_control = BrowserBackendRestartControl.create()
+    server = None
     try:
         server = create_browser_server(
             application,
@@ -366,21 +367,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         intraday_runtime.wo17_monitoring.set_monitoring_capability_supplier(
             application.authenticated_read_only_capability
         )
-    except Exception:
-        restart_control.remove()
-        raise
-    from kronos.browser.runtime_state import complete_startup
-    complete_startup(server, intraday_runtime.discovery_v2_operation.live_shadow)
-    url = f"http://127.0.0.1:{server.server_port}/swing/opportunities"
-    if not args.no_browser:
-        webbrowser.open_new_tab(url)
-    try:
-        server.serve_forever(poll_interval=0.25)
-    except KeyboardInterrupt:
-        pass
+        from kronos.browser.runtime_state import complete_startup
+        complete_startup(server, intraday_runtime.discovery_v2_operation.live_shadow)
+        url = f"http://127.0.0.1:{server.server_port}/swing/opportunities"
+        if not args.no_browser:
+            webbrowser.open_new_tab(url)
+        try:
+            server.serve_forever(poll_interval=0.25)
+        except KeyboardInterrupt:
+            pass
     finally:
-        server.server_close()
-        shared_provider_runtime.end_kronos_session()
+        # The installed owners and socket also belong to failed composition,
+        # checkpoint verification, READY and workspace-open paths.
+        try:
+            if server is not None:
+                server.server_close()
+            else:
+                restart_control.remove()
+        finally:
+            shared_provider_runtime.end_kronos_session()
     return 0
 
 

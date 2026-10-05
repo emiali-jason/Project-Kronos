@@ -395,6 +395,13 @@ class LocalSponsorDecisionStore:
                 values.append(result)
         return tuple(values)
 
+    def load_all_for_research_replay(self) -> tuple[SponsorInitiationResult, ...]:
+        """Read retained owner decisions without selecting a current run."""
+        if not self.root.exists():
+            return ()
+        return tuple(self.load_plan(path.parent.parent.name, path.parent.name)
+                     for path in sorted(self.root.glob("*/*/decision.json")))
+
 
 def _gate(plan, judgment, risk, context, current_plan_id, now):  # type: ignore[no-untyped-def]
     if type(plan) is not TradePlanRecord or plan.geometry_viability is not TradePlanStatus.TRADE_PLAN_READY:

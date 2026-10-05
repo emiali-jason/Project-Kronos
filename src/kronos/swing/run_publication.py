@@ -333,6 +333,31 @@ class SwingRunPublication:
             raise ValueError("SWING_PUBLICATION_CURRENT_CHANGED")
         return bundle
 
+    def committed_history(self):
+        """Read and verify the selected immutable manifest ancestry, oldest first.
+
+        Explicit downstream maintenance may replay these owner events. Startup
+        and Browser GET never call this method to write research projections.
+        """
+        control = self._control()
+        reference = control["current_manifest"]
+        seen = set()
+        newest_first = []
+        while reference is not None:
+            digest = reference["sha256"]
+            if digest in seen or len(newest_first) >= 10000:
+                raise ValueError("SWING_PUBLICATION_ANCESTRY_INVALID")
+            seen.add(digest)
+            bundle = self._load(reference)
+            if newest_first and bundle.manifest["generation"] >= newest_first[-1].manifest["generation"]:
+                raise ValueError("SWING_PUBLICATION_ANCESTRY_INVALID")
+            newest_first.append(bundle)
+            reference = bundle.manifest["predecessor_manifest"]
+        if (not newest_first or newest_first[-1].manifest["generation"] != 0
+                or self._control()["current_manifest"] != control["current_manifest"]):
+            raise ValueError("SWING_PUBLICATION_ANCESTRY_INVALID")
+        return tuple(reversed(newest_first))
+
     def admit(self, run_id, now, *, expected_control=None, require_idle=False):
         if not is_swing_analysis_run_id(run_id):
             raise ValueError("SWING_ANALYSIS_RUN_IDENTITY_INVALID")

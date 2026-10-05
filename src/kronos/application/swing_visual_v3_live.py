@@ -869,6 +869,8 @@ class NativeReviewIntakeWorkflow:
         self._v2_store = v2_store or LocalV2PromotionStore(
             self.store.root.parent.parent / "kr370-analytical-promotion-v2")
         self._v2_promotions: dict[tuple[str, str], V2PromotionRecord] = {}
+        self._research_capture = None
+        self.research_capture_failure = None
         self.errors = {}
         self._prospective_cache = None
         self._page_prepare_lock = Lock()
@@ -908,6 +910,34 @@ class NativeReviewIntakeWorkflow:
         require(self._page_revision_builder is None,
                 "SWING_PAGE_PREPARATION_INVALID")
         self._page_revision_builder = builder
+
+    def register_research_capture(self, capture):
+        """Accepted V2 events only; restoration and page reads do not capture."""
+        require(callable(capture) and self._research_capture is None,
+                "SWING_RESEARCH_CAPTURE_INVALID")
+        self._research_capture = capture
+
+    def clear_research_capture(self, capture):
+        if self._research_capture is capture:
+            self._research_capture = None
+
+    def retained_research_promotions(self):
+        """Verify each historical V2 event against its retained Review receipt."""
+        records = self._v2_store.retained_records_for_research_replay()
+        for record in records:
+            source = record.value["source"]
+            accepted = source["acceptance"]
+            receipt = self.store.resolve_committed_receipt(
+                accepted["commit_identity"], accepted["receipt_identity"], current=False)
+            binding = receipt.binding.value
+            require(receipt.value["integrity_sha256"] == accepted["receipt_integrity_sha256"]
+                    and binding["analytical_run_identity"] == source["native_run_identity"]
+                    and binding["canonical_instrument"] == source["canonical_instrument"]
+                    and binding["native_assessment_sha256"] == source["native_assessment_sha256"]
+                    and datetime.fromisoformat(receipt.body["accepted_at"])
+                    == datetime.fromisoformat(record.value["created_at"].replace("Z", "+00:00")),
+                    "SWING_RESEARCH_V2_RECEIPT_MISMATCH")
+        return records
 
     def reconciliation_snapshot(self):
         with self._page_state_lock:
@@ -2163,6 +2193,7 @@ class NativeReviewIntakeWorkflow:
             if snapshot is not None:
                 require(snapshot.control["current_manifest"]["sha256"] == accepted.binding.value["committed_run_manifest_identity"],
                         "REVIEW_BINDING_STALE")
+        promotion = None
         with self._page_input_write():
             result = self.live.handoff_accepted_receipt(self.store, commit.identity, receipt.receipt_id,
                 review=review, facts=facts, chart_bytes=None, prepared_requests=self._prepared,
@@ -2172,7 +2203,14 @@ class NativeReviewIntakeWorkflow:
             elif receipt.binding.value["market"] == "MCX" or (
                 result is not None and result.value["state"] == "SUCCEEDED"
             ):
-                self._publish_v2_for_receipt(commit, receipt, facts)
+                promotion = self._publish_v2_for_receipt(commit, receipt, facts)
+        if promotion is not None and self._research_capture is not None:
+            try:
+                self._research_capture(promotion)
+            except Exception:
+                self.research_capture_failure = "CAPTURE_REPLAY_REQUIRED"
+            else:
+                self.research_capture_failure = None
         return result
 
     def _v2_current(self, source, *, _response=None):
@@ -2242,7 +2280,7 @@ class NativeReviewIntakeWorkflow:
             if binding["market"] == "NSE":
                 self.live.cycle.attach_v2(record)
 
-    def _publish_v2_for_receipt(self, commit, receipt, facts) -> None:
+    def _publish_v2_for_receipt(self, commit, receipt, facts) -> V2PromotionRecord:
         binding = receipt.binding.value
         market = binding["market"]
         requirement = self._requirements(market, (binding["canonical_instrument"],))[0]
@@ -2276,6 +2314,7 @@ class NativeReviewIntakeWorkflow:
                              requirement.canonical_instrument)] = record
         if market == "NSE":
             self.live.cycle.attach_v2(record)
+        return record
 
     def restore(self):
         # Read/verify the whole committed graph first, before any memory projection.

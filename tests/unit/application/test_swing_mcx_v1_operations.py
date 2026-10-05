@@ -186,6 +186,9 @@ def test_tick_callback_queues_once_then_uses_later_cmp(monkeypatch):
     monkeypatch.setattr(operations, "issue_v1_production_signal", issue)
     control = object.__new__(operations.SwingMcxV1OperationalControl)
     control._lock = RLock()
+    captured = []
+    control._research_capture = lambda kind, value: captured.append((kind, value))
+    control.research_capture_failure = None
     control._maintenance_admission = None
     control._advisory_worker = operations._BoundedMcxAdvisoryWorker()
     control.lifecycle = SimpleNamespace(_require=lambda _identity: position)
@@ -233,3 +236,4 @@ def test_tick_callback_queues_once_then_uses_later_cmp(monkeypatch):
         position.position_id, later,
         MonitoringConnectionState.CONNECTED) == "activated"
     assert activation_calls == [later]
+    assert captured == [("LIFECYCLE", "activated")]

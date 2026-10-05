@@ -527,6 +527,8 @@ class NativeReviewWorkflow:
             LocalTradeJournalStore(store.root / "trade-journal-v0")
         )
         self._lock = RLock()
+        self._research_capture = None
+        self.research_capture_failure = None
         self._run_identity: str | None = None
         self._requirements: tuple[NativeReviewRequirement, ...] = ()
         self._layer2: dict[str, NativeLayer2ReviewRecord] = {}
@@ -897,7 +899,32 @@ class NativeReviewWorkflow:
             self._sponsor_initiations[trade_plan_id] = retained
             self._active_lifecycle.register(retained, plan)
             self._reconcile_journal_unlocked()
-            return retained
+        self._emit_research("SPONSOR", retained)
+        return retained
+
+    def register_research_capture(self, capture) -> None:
+        if not callable(capture) or self._research_capture is not None:
+            raise ValueError("SWING_RESEARCH_CAPTURE_INVALID")
+        self._research_capture = capture
+
+    def clear_research_capture(self, capture) -> None:
+        if self._research_capture is capture:
+            self._research_capture = None
+
+    def retained_research_events(self):
+        """Read verified Sponsor and lifecycle evidence for explicit replay."""
+        return (self._sponsor_decision_store.load_all_for_research_replay(),
+                self._active_lifecycle.snapshot())
+
+    def _emit_research(self, kind, value) -> None:
+        if self._research_capture is None:
+            return
+        try:
+            self._research_capture(kind, value)
+        except Exception:
+            self.research_capture_failure = "CAPTURE_REPLAY_REQUIRED"
+        else:
+            self.research_capture_failure = None
 
     def record_lifecycle_observation(
         self,
@@ -909,6 +936,7 @@ class NativeReviewWorkflow:
         result = self._active_lifecycle.observe(position_id, observation)
         with self._lock:
             self._reconcile_journal_unlocked()
+        self._emit_research("LIFECYCLE", result)
         return result
 
     def attach_lifecycle_monitoring(
@@ -961,12 +989,14 @@ class NativeReviewWorkflow:
         closure = self._active_lifecycle.manual_paper_exit(position_id, observation)
         with self._lock:
             self._reconcile_journal_unlocked()
+        self._emit_research("CLOSURE", closure)
         return closure
 
     def exit_paper_position_current(self, position_id: str) -> TradeClosureRecord:
         closure = self._active_lifecycle.manual_paper_exit_current(position_id)
         with self._lock:
             self._reconcile_journal_unlocked()
+        self._emit_research("CLOSURE", closure)
         return closure
 
     def record_live_exit(
@@ -985,6 +1015,7 @@ class NativeReviewWorkflow:
         if closure is not None:
             with self._lock:
                 self._reconcile_journal_unlocked()
+            self._emit_research("CLOSURE", closure)
         return closure
 
     def journal_snapshot(self) -> TradeJournalSnapshot:

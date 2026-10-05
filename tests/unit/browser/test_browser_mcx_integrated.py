@@ -1236,6 +1236,13 @@ def test_browser_to_reserved_process_review_held_plan_and_historical_lifecycle(
     clock = [outage_at + timedelta(milliseconds=100)]
     recovered_control = object.__new__(SwingMcxV1OperationalControl)
     recovered_control._lock = RLock()
+    # Match the real constructor before binding the serial tick callback.
+    recovered_control._research_capture = None
+    recovered_control.research_capture_failure = None
+    recovered_research = []
+    if live_advisory:
+        recovered_control.register_research_capture(
+            lambda kind, value: recovered_research.append((kind, value)))
     recovered_control.lifecycle = synthetic_service
     recovered_control.workflow = SimpleNamespace(run_identity=synthetic_plan.native_run_identity)
     recovered_control.review_owner = native_intake
@@ -1293,6 +1300,9 @@ def test_browser_to_reserved_process_review_held_plan_and_historical_lifecycle(
         monitor.close()
     assert activated.state is ActiveLifecycleState.PAPER_ACTIVE
     assert activated.actual_entry == Decimal("102")
+    assert recovered_control.research_capture_failure is None
+    assert recovered_research == (
+        [("LIFECYCLE", activated)] if live_advisory else [])
     assert activated.entry_timestamp == v1_cmp.received_at
     assert any(recorded_connection.value in event.provider_provenance
                and v1_cmp.connection_id in event.provider_provenance

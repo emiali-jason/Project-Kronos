@@ -211,10 +211,31 @@ class SwingMcxV1OperationalControl:
         self.calendar = calendar
         self.live_attestations, self.broker_evidence = live_attestations, broker_evidence
         self._lock = RLock()
+        self._research_capture = None
+        self.research_capture_failure = None
         self._maintenance_admission: MaintenanceAdmissionCoordinator | None = None
         self._advisory_worker = _BoundedMcxAdvisoryWorker()
         self.bound = McxContractBoundLifecycle(lifecycle, historical)
         native_review.bind_mcx_v1_tick_owner(self.on_paper_tick)
+
+    def register_research_capture(self, capture) -> None:
+        if not callable(capture) or self._research_capture is not None:
+            raise ValueError("SWING_RESEARCH_CAPTURE_INVALID")
+        self._research_capture = capture
+
+    def clear_research_capture(self, capture) -> None:
+        if self._research_capture is capture:
+            self._research_capture = None
+
+    def _emit_research(self, kind, value) -> None:
+        if self._research_capture is None:
+            return
+        try:
+            self._research_capture(kind, value)
+        except Exception:
+            self.research_capture_failure = "CAPTURE_REPLAY_REQUIRED"
+        else:
+            self.research_capture_failure = None
 
     def bind_workflow(self, workflow: SwingMcxIntegratedWorkflow,
                       review_owner: NativeReviewIntakeWorkflow) -> None:
@@ -330,6 +351,21 @@ class SwingMcxV1OperationalControl:
                       connection: MonitoringConnectionState, *,
                       subscription_evidence: MonitoringSubscriptionEvidence | None = None,
                       current_subscription: Callable | None = None):
+        result = self._on_paper_tick(
+            position_id, tick, connection,
+            subscription_evidence=subscription_evidence,
+            current_subscription=current_subscription)
+        if result is not None:
+            # The lifecycle owner has retained the entry before returning.
+            # Capture outside the MCX control lock so replay can recover a
+            # failed research write without affecting monitoring admission.
+            self._emit_research("LIFECYCLE", result)
+        return result
+
+    def _on_paper_tick(self, position_id: str, tick: ProviderMarketTick,
+                       connection: MonitoringConnectionState, *,
+                       subscription_evidence: MonitoringSubscriptionEvidence | None = None,
+                       current_subscription: Callable | None = None):
         """Use retained advice or queue one counted historical acquisition.
 
         The serial monitoring callback never performs historical I/O. Once a
@@ -449,6 +485,7 @@ class SwingMcxV1OperationalControl:
                 raise ValueError("MCX_V1_PAPER_ADMISSION_INCOMPLETE")
         self.native_review.attach_lifecycle_monitoring(
             position.position_id, capability, instrument)
+        self._emit_research("SPONSOR", result)
         return position
 
     def paper_exit(self, position_id: str, expected_hash: str):
@@ -469,7 +506,9 @@ class SwingMcxV1OperationalControl:
                 observed_at=tick.received_at)
             if schedule is None:
                 raise ValueError("MCX_V1_FACTUAL_EXIT_SESSION_UNAVAILABLE")
-            return self.bound.manual_paper_exit_at_cmp(position_id, tick, schedule)
+            closure = self.bound.manual_paper_exit_at_cmp(position_id, tick, schedule)
+        self._emit_research("CLOSURE", closure)
+        return closure
 
     def admit_live(self, *, run: str, family: McxFamily, plan_id: str,
                    plan_sha256: str, attestation: McxLiveFillAttestation,
@@ -495,6 +534,7 @@ class SwingMcxV1OperationalControl:
                 raise ValueError("MCX_V1_LIVE_ADMISSION_INCOMPLETE")
         self.native_review.attach_lifecycle_monitoring(
             position.position_id, capability, instrument)
+        self._emit_research("SPONSOR", result)
         return position
 
     def record_manual_live_entry(
@@ -548,13 +588,16 @@ class SwingMcxV1OperationalControl:
                     or (position.state is not ActiveLifecycleState.CLOSED
                         and position.integrity_hash != expected_hash)):
                 raise ValueError("MCX_V1_LIVE_EXIT_STALE")
-            return self.bound.record_live_exit(
+            closure = self.bound.record_live_exit(
                 position_id, actual_exit=attestation.fill_price,
                 exit_timestamp=attestation.fill_at, reason=reason,
                 attestation=attestation,
                 attestation_store=self.live_attestations,
                 broker_store=self.broker_evidence,
                 broker_bytes=broker_bytes)
+        if closure is not None:
+            self._emit_research("CLOSURE", closure)
+        return closure
 
     def record_manual_live_exit(
         self, *, position_id: str, expected_hash: str,

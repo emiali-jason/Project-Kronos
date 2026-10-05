@@ -181,6 +181,14 @@ def test_server_close_shuts_housekeeping_before_other_owned_lifecycles(monkeypat
     server.trade_window=SimpleNamespace(close_monitoring=lambda:events.append("trade"))
     server.swing_monitoring_hub=SimpleNamespace(close=lambda:events.append("monitoring"))
     server.step32_workflow=SimpleNamespace(close=lambda:events.append("step32"))
+    server.swing_research_control=SimpleNamespace(
+        close=lambda:events.append("research"))
+    server._research_owner_bindings=[
+        (SimpleNamespace(clear_research_capture=lambda callback:
+                         events.append(("unbind-first", callback))), "first"),
+        (SimpleNamespace(clear_research_capture=lambda callback:
+                         events.append(("unbind-second", callback))), "second"),
+    ]
     server.restart_control=None
     monkeypatch.setattr(
         "socketserver.TCPServer.server_close",
@@ -192,6 +200,8 @@ def test_server_close_shuts_housekeeping_before_other_owned_lifecycles(monkeypat
     assert events[0] == "housekeeping"
     assert events[1] == "bulk-import"
     assert events[-1] == "socket"
+    assert events[-4:] == ["research", ("unbind-second", "second"),
+                           ("unbind-first", "first"), "socket"]
 
 
 def test_status_surfaces_tracked_bulk_worker_without_waiting_for_application_work(running):
@@ -701,3 +711,32 @@ def test_both_product_controls_share_production_deadline_and_inert_status(
         server.server_close()
         serving.join(2)
         case.app.close()
+
+
+@pytest.mark.parametrize("stage", ["server_bind", "server_activate"])
+def test_socket_startup_failure_closes_installed_research_and_bindings(
+    monkeypatch, stage,
+):
+    from tests.unit.application.test_swing_opportunities import _Provider
+    from kronos.application.swing_opportunities import SwingOpportunitiesApplication
+    from kronos.browser.server import create_browser_server
+    observed = []
+
+    def fail(server):
+        observed.append(server)
+        assert server.swing_research_control is not None
+        assert server._research_owner_bindings
+        raise OSError("isolated socket startup failure")
+
+    monkeypatch.setattr("socketserver.TCPServer." + stage, fail)
+    with pytest.raises(OSError, match="isolated socket startup failure"):
+        create_browser_server(SwingOpportunitiesApplication(_Provider), port=0)
+    assert len(observed) == 1
+    failed = observed[0]
+    assert failed.socket.fileno() == -1
+    assert failed.swing_research_control._worker_closed
+    assert failed.application._SwingOpportunitiesApplication__research_capture is None
+    assert all(owner._research_capture is None
+               for owner, _callback in failed._research_owner_bindings
+               if owner is not failed.application)
+    assert failed.maintenance_admission.snapshot()["owners"] == {}
