@@ -524,8 +524,6 @@ def render_opportunities(
         committed_continuity.contribution.validate()
         continuity_rows = {r.canonical_instrument: r for r in committed_continuity.contribution.rows}
     body = _analysis_run_strip(snapshot)
-    body += ('<p><a href="/swing/research">Swing Research · '
-             'UPDATE SWING RESEARCH</a></p>')
     if publication_status:
         control = publication_status.get("control")
         attempt = None if control is None else control["latest_attempt"]
@@ -592,6 +590,7 @@ def render_opportunities(
         active_tab="Opportunities",
         body=body,
         swing_projection_revision=projection_revision,
+        swing_research_navigation=True,
     )
 
 
@@ -6773,6 +6772,17 @@ def _connect_navigation_guard_script() -> str:
 </script>"""
 
 
+_SWING_RESEARCH_TOOLBAR_CSS = r"""
+.swing-opportunities-toolbar-shell{display:grid;grid-template-columns:minmax(0,1fr) auto;border-bottom:1px solid var(--line)}
+.swing-opportunities-toolbar-shell>.tabs{min-width:0;border-bottom:0;padding-right:12px;overflow-x:auto}
+.swing-opportunities-toolbar-actions{box-sizing:border-box;height:61px;padding-right:28px;display:flex;align-items:center;gap:8px}
+.swing-research-link{display:inline-flex;align-items:center;justify-content:center;border:1px solid #246a52;border-radius:7px;padding:7px 10px;color:#dff7eb;font-size:10px;font-weight:750;white-space:nowrap}
+.swing-research-link:hover,.swing-research-link:focus-visible{border-color:var(--green);outline:2px solid rgba(46,212,119,.25)}
+@media(max-width:1200px){.swing-opportunities-toolbar-shell{grid-template-columns:minmax(0,1fr)}.swing-opportunities-toolbar-actions{height:auto;min-height:61px;padding:8px 28px;flex-wrap:wrap}}
+@media(max-width:760px){.swing-opportunities-toolbar-actions{height:auto;min-height:0;padding:8px 18px 10px;flex-wrap:wrap}.swing-research-link{box-sizing:border-box;flex:1 1 100%;width:100%}.swing-opportunities-toolbar-actions form{width:100%}.swing-opportunities-toolbar-actions button{width:100%;min-width:0}}
+"""
+
+
 def _page(
     *,
     title: str,
@@ -6784,6 +6794,7 @@ def _page(
     back_link: str = "",
     extra_styles: str = "",
     swing_projection_revision: str | None = None,
+    swing_research_navigation: bool = False,
 ) -> str:
     nav = "".join(
         f'<a class="{"active" if name == active_nav else ""}" href="{href}">'
@@ -6804,8 +6815,18 @@ def _page(
             )
         )
         if active_tab not in {"Layer-1 History", "Control vs Native", "MTF Data"}:
-            tabs += '<div class="toolbar">' + _analysis_form(snapshot) + "</div>"
-        tabs += "</nav>"
+            if swing_research_navigation:
+                tabs = (
+                    '<div class="swing-opportunities-toolbar-shell">' + tabs
+                    + '</nav><div class="swing-opportunities-toolbar-actions">'
+                    '<a class="swing-research-link" href="/swing/research">'
+                    'SWING RESEARCH</a>' + _analysis_form(snapshot) + '</div></div>'
+                )
+                extra_styles += _SWING_RESEARCH_TOOLBAR_CSS
+            else:
+                tabs += '<div class="toolbar">' + _analysis_form(snapshot) + "</div></nav>"
+        else:
+            tabs += "</nav>"
     signature_parts = [
         snapshot.provider_state.value,
         snapshot.analysis_state.value,
