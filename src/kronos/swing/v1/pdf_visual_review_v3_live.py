@@ -174,6 +174,11 @@ def render_mcx_successor_question_pdf(native, reference, charts: dict[str, bytes
         "clustering": list(mcx_contract.CLUSTERING), "native_components": list(mcx_contract.NATIVE_COMPONENTS),
         "reference_components": list(mcx_contract.REFERENCE_COMPONENTS)}
     if successor:
+        shape["response_question_sets"] = {
+            role: {"question_set_identity": pack["schema"],
+                   "question_set_version": pack["version"]}
+            for role, pack in zip((mcx_contract.NATIVE_ROLE, mcx_contract.REFERENCE_ROLE), packs, strict=True)
+        }
         shape["comparison_contract"] = dict(schema=mcx_contract.COMPARISON_ANSWER, version="1.0",
             root_fields=["schema", "version", "request_references", "answer_identity", "subjects"],
             subject_fields=["native_candidate_reference", "native_subject_reference",
@@ -182,6 +187,16 @@ def render_mcx_successor_question_pdf(native, reference, charts: dict[str, bytes
             result_fields={"M1": ["mapping_state", "coverage_state", "finding"],
                            "M2": ["by_timeframe"],
                            "M3": ["relationship_to_native_direction", "affected_timeframes", "limitations", "finding"]},
+            observation_fields=["question_id", "observation_status", "visible_basis",
+                                "confidence_in_extraction", "ambiguity_reason", "result"],
+            additional_fields="FORBIDDEN_AT_EVERY_LEVEL", null_fields=[],
+            accepted_statuses=["OBSERVED", "PARTIAL", "UNAVAILABLE"],
+            text_constraints={"visible_basis": "nonempty text, maximum 512 characters",
+                              "confidence_in_extraction": "nonempty text, maximum 64 characters",
+                              "ambiguity_reason": "text, maximum 512; nonempty for PARTIAL or UNAVAILABLE",
+                              "finding": "nonempty text, maximum 512 characters"},
+            m2_by_timeframe=dict(type="array", exact_length=3, ordered_timeframes=list(mcx_contract.NATIVE_TIMEFRAMES),
+                row_fields=["timeframe", "relationship", "finding"], additional_fields="FORBIDDEN", nullable=False),
             statuses=["OBSERVED", "PARTIAL", "UNAVAILABLE", "INVALID"],
             mapping_state=["MATCHED", "MISMATCHED", "UNDETERMINED"],
             coverage_state=["SUFFICIENT", "PARTIAL", "INSUFFICIENT"],
@@ -224,6 +239,26 @@ def render_mcx_successor_question_pdf(native, reference, charts: dict[str, bytes
     ):
         story.append(Paragraph(escape(paragraph), styles["BodyText"]))
     if successor:
+        for paragraph in (
+            "For each native/reference chart response, question_set_identity equals that leg's projected question "
+            "pack schema and question_set_version equals its version, exactly as printed in response_question_sets. "
+            "Do not substitute a retained REVIEW-REQUEST schema, an Answer schema or the comparison schema.",
+            "comparison_answer.request_references has exactly native and reference keys, each echoing its own "
+            "request_identity and request_sha256. Subjects echo the ordered comparison_pack subjects' candidate, "
+            "native/reference subject references and pair_binding_sha256. Exactly three observations follow in M1, M2, M3 order. "
+            "Each observation has only the six printed observation_fields; do not add chart-response role, timeframe, "
+            "source_chart_identity, source_chart_revision, why_not_covered_elsewhere or not_applicable_reason fields.",
+            "M2 result.by_timeframe is an array, never a timeframe-keyed object: exactly three non-null row objects "
+            "ordered 1D, 4H, 1H. Each row has only timeframe, relationship and finding. Its timeframe compares the "
+            "native/reference chart pair at the same ordered position in comparison_pack. Every comparison object is "
+            "closed, all keys are required, and no comparison field accepts null. INVALID status or MISMATCHED M1 mapping rejects.",
+            "M3 affected_timeframes and limitations are arrays of distinct values in the printed canonical order; "
+            "empty arrays are allowed, but PARTIAL or UNAVAILABLE M3 requires at least one limitation. "
+            "An UNDETERMINED reference Q1 requires NOT_COMPARABLE for that M2 timeframe. If any reference timeframe is "
+            "UNDETERMINED, M1 mapping is UNDETERMINED with PARTIAL or INSUFFICIENT coverage, M2 status is PARTIAL or "
+            "UNAVAILABLE, and M3 relationship_to_native_direction is NOT_ESTABLISHED. Native Q1 must remain MATCHED.",
+        ):
+            story.append(Paragraph(escape(paragraph), styles["BodyText"]))
         story.append(Paragraph("All three Answer roots share one answer_identity. M1-M3 are candidate-level supporting "
                                "comparison only; do not place them in the six chart responses. Wrong mapped reference "
                                "identity or INVALID observation rejects the entire paired Answer.", styles["BodyText"]))

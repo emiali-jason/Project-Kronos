@@ -10,6 +10,135 @@ from kronos.swing.v1.native_review import MCX_REFERENCE_MAPPINGS
 from kronos.swing.v1.review_evidence_binding import ReviewEvidenceError, canonical
 
 
+def _complete_successor_answer(native, reference):
+    """The retained helper builds one leg subject; assemble every supplied pair."""
+    answer = successor_answer(native, reference)
+    for index in range(1, len(native.value["subjects"])):
+        pair = []
+        for mapping in (native, reference):
+            value = mapping.value
+            value["subjects"] = [value["subjects"][index]]
+            pair.append(type(mapping).create(value))
+        single = successor_answer(*pair)
+        answer["subjects"].extend(single["subjects"])
+        answer["supporting_reference_answer"]["subjects"].extend(single["supporting_reference_answer"]["subjects"])
+    return answer
+
+
+def _rendered_successor_contract(monkeypatch):
+    """Inspect declarations actually supplied to the PDF renderer."""
+    from io import BytesIO
+    from PIL import Image
+    from kronos.swing.v1 import pdf_visual_review_v3_live as producer
+
+    image = BytesIO()
+    Image.new("RGB", (32, 24), "white").save(image, format="PNG")
+    payload = image.getvalue()
+    revision = sha256(payload).hexdigest()
+    mappings = []
+    for mapping in successor_mappings(("CRUDEOIL", "NATURALGAS")):
+        value = mapping.value
+        for subject in value["subjects"]:
+            for chart in subject["responses"]:
+                chart["chart_revision_sha256"] = revision
+        mappings.append(type(mapping).create(value))
+    blocks = []
+    original = producer.contract_block
+
+    def record(text):
+        try:
+            blocks.append(json.loads(text))
+        except json.JSONDecodeError:
+            pass
+        return original(text)
+
+    monkeypatch.setattr(producer, "contract_block", record)
+    native, reference, pdf = producer.render_mcx_successor_question_pdf(
+        *mappings, {revision: payload})
+    shape = next(block for block in blocks if "root_fields" in block)
+    return shape, native, reference, pdf
+
+
+def test_generated_mcx_pdf_defines_exact_response_question_sets(monkeypatch):
+    from io import BytesIO
+    from pypdf import PdfReader
+
+    shape, native, reference, pdf = _rendered_successor_contract(monkeypatch)
+    request = mcx.mcx_question_pack_from_mappings(native, reference).value
+    expected = {
+        mcx.NATIVE_ROLE: {"question_set_identity": request["schema"],
+                          "question_set_version": request["version"]},
+        mcx.REFERENCE_ROLE: {
+            "question_set_identity": request["supporting_reference_pack"]["schema"],
+            "question_set_version": request["supporting_reference_pack"]["version"]},
+    }
+    assert shape["response_question_sets"] == expected
+    text = "\n".join(page.extract_text() for page in PdfReader(BytesIO(pdf)).pages)
+    assert '"response_question_sets"' in text
+    answer = _complete_successor_answer(native, reference)
+    for root, role in ((answer, mcx.NATIVE_ROLE),
+                       (answer["supporting_reference_answer"], mcx.REFERENCE_ROLE)):
+        for subject in root["subjects"]:
+            for response in subject["responses"]:
+                response.update(shape["response_question_sets"][role])
+    assert mcx.validate_mcx_answer(canonical(answer),
+                                 mcx.mcx_question_pack_from_mappings(native, reference)) == answer
+    # A retained request-mapping schema or Answer schema is not a question set.
+    for wrong in (native.value["schema"], mcx.NATIVE_ANSWER_V2):
+        changed = deepcopy(answer)
+        changed["subjects"][0]["responses"][0]["question_set_identity"] = wrong
+        with pytest.raises(ReviewEvidenceError):
+            mcx.validate_mcx_answer(canonical(changed),
+                                   mcx.mcx_question_pack_from_mappings(native, reference))
+
+
+def test_generated_mcx_pdf_defines_closed_comparison_observations(monkeypatch):
+    from io import BytesIO
+    from pypdf import PdfReader
+
+    shape, native, reference, pdf = _rendered_successor_contract(monkeypatch)
+    comparison = shape["comparison_contract"]
+    assert set(comparison["observation_fields"]) == {
+        "question_id", "observation_status", "visible_basis", "confidence_in_extraction",
+        "ambiguity_reason", "result"}
+    assert comparison["m2_by_timeframe"] == {
+        "type": "array", "exact_length": 3, "ordered_timeframes": ["1D", "4H", "1H"],
+        "row_fields": ["timeframe", "relationship", "finding"],
+        "additional_fields": "FORBIDDEN", "nullable": False}
+    text = "\n".join(page.extract_text() for page in PdfReader(BytesIO(pdf)).pages)
+    for phrase in ('"observation_fields"', '"m2_by_timeframe"',
+                   '"exact_length": 3', "MISMATCHED", "NOT_COMPARABLE"):
+        assert phrase in text
+    assert comparison["accepted_statuses"] == ["OBSERVED", "PARTIAL", "UNAVAILABLE"]
+    assert comparison["null_fields"] == []
+    assert comparison["additional_fields"] == "FORBIDDEN_AT_EVERY_LEVEL"
+
+
+@pytest.mark.parametrize("mutation", ["object", "order", "null", "extra_observation",
+                                      "extra_row", "invalid", "mismatched", "missing_field",
+                                      "wrong_subject", "wrong_pair", "request_swap"])
+def test_mcx_comparison_contract_rejects_malformed_or_rebound_data(mutation):
+    native, reference = successor_mappings(("CRUDEOIL", "NATURALGAS"))
+    answer = _complete_successor_answer(native, reference)
+    assert mcx.validate_mcx_answer(canonical(answer), mcx.mcx_question_pack_from_mappings(native, reference)) == answer
+    subject = answer["comparison_answer"]["subjects"][0]
+    observation = subject["observations"][1]
+    rows = observation["result"]["by_timeframe"]
+    if mutation == "object": observation["result"]["by_timeframe"] = {r["timeframe"]: r for r in rows}
+    elif mutation == "order": rows.reverse()
+    elif mutation == "null": rows[0]["finding"] = None
+    elif mutation == "extra_observation": observation["timeframe"] = "1H"
+    elif mutation == "extra_row": rows[0]["price"] = 100
+    elif mutation == "invalid": observation["observation_status"] = "INVALID"
+    elif mutation == "mismatched": subject["observations"][0]["result"]["mapping_state"] = "MISMATCHED"
+    elif mutation == "missing_field": observation.pop("ambiguity_reason")
+    elif mutation == "wrong_subject": subject["reference_subject_reference"] = "FOREIGN"
+    elif mutation == "wrong_pair": subject["pair_binding_sha256"] = "f" * 64
+    else: answer["comparison_answer"]["request_references"]["native"] = answer["comparison_answer"]["request_references"]["reference"]
+    with pytest.raises(ReviewEvidenceError):
+        mcx.validate_mcx_answer(canonical(answer), mcx.mcx_question_pack_from_mappings(native, reference))
+
+
 def retained_mappings(families=("GOLDM",), bundle="BUNDLE-1"):
     values = []
     for native in (True, False):
