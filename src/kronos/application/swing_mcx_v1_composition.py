@@ -13,6 +13,7 @@ from hashlib import sha256
 import json
 import os
 from pathlib import Path
+import stat
 from threading import RLock
 from uuid import uuid4
 from zoneinfo import ZoneInfo
@@ -23,6 +24,7 @@ from kronos.application.swing_mcx_v1_operations import SwingMcxV1OperationalCont
 from kronos.application.swing_trade_window import build_mcx_v1_trade_construction_evidence
 from kronos.instrument.facts import publish_instrument_context
 from kronos.provider.instrument_master_persistence import ProviderInstrumentSnapshotStore
+from kronos.provider.contracts.instrument_master import ProviderInstrumentMasterError
 from kronos.provider.kite.marketdata.kite_market_data_provider import KiteMarketDataProvider
 from kronos.swing.run_publication import OperationToken
 from kronos.swing.v1.mcx_broker_fill_evidence import LocalMcxBrokerFillEvidenceStore
@@ -46,6 +48,60 @@ from kronos.swing.run_identity import is_swing_analysis_run_id
 
 def _hash(value):
     return sha256(canonical(value)).hexdigest()
+
+
+_MASTER_LIST_FILE_LIMIT = 128 * 1024 * 1024
+_MASTER_LIST_CHUNK = 1024 * 1024
+_MASTER_LIST_HEADER_LIMIT = 256
+
+
+def _retained_master_metadata(path):
+    """Display-only metadata and exact bytes; never authenticated authority.
+
+    Canonical DOMAIN-006 encoding begins with acquired_at. Read that bounded
+    header and stream the file hash without constructing its entire record set.
+    The explicit reservation still performs the unchanged full snapshot and
+    authentication validation before publication admission.
+    """
+    if any(parent.is_symlink() for parent in (path, *path.parents)):
+        raise ValueError("MCX_V1_MASTER_PATH_INVALID")
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    try:
+        before = os.fstat(descriptor)
+        if not stat.S_ISREG(before.st_mode) or not 0 < before.st_size <= _MASTER_LIST_FILE_LIMIT:
+            raise ValueError("MCX_V1_MASTER_LIST_FILE_INVALID")
+        stream = os.fdopen(descriptor, "rb")
+    except BaseException:
+        # Before a stream owns the descriptor, rejection must close it here.
+        os.close(descriptor)
+        raise
+    with stream:
+        first = stream.readline(_MASTER_LIST_HEADER_LIMIT)
+        line = stream.readline(_MASTER_LIST_HEADER_LIMIT)
+        try:
+            header = json.loads(b"{" + line.rstrip().removesuffix(b",") + b"}")
+            acquired = header["acquired_at"]
+            moment = datetime.fromisoformat(acquired)
+            expected = ('  "acquired_at": ' + json.dumps(acquired) + ',\n').encode("ascii")
+        except (KeyError, TypeError, ValueError, UnicodeError) as error:
+            raise ValueError("MCX_V1_MASTER_LIST_HEADER_INVALID") from error
+        if (first != b"{\n" or line != expected or set(header) != {"acquired_at"}
+                or moment.tzinfo is None or moment.utcoffset() is None):
+            raise ValueError("MCX_V1_MASTER_LIST_HEADER_INVALID")
+        digest = sha256(first + line)
+        count = len(first) + len(line)
+        for chunk in iter(lambda: stream.read(_MASTER_LIST_CHUNK), b""):
+            count += len(chunk)
+            if count > _MASTER_LIST_FILE_LIMIT:
+                raise ValueError("MCX_V1_MASTER_LIST_FILE_INVALID")
+            digest.update(chunk)
+        after = os.fstat(stream.fileno())
+        current = path.lstat()
+        identity = lambda value: (value.st_dev, value.st_ino, value.st_size,
+                                  value.st_mtime_ns, value.st_ctime_ns, value.st_mode)
+        if count != before.st_size or identity(before) != identity(after) or identity(after) != identity(current):
+            raise ValueError("MCX_V1_MASTER_CHANGED")
+    return acquired, digest.hexdigest()
 
 
 class SwingMcxV1Composition:
@@ -196,8 +252,11 @@ class SwingMcxV1Composition:
             path = self._master_path(snapshot)
             if sha256(path.read_bytes()).hexdigest() != master_sha256:
                 raise ValueError("MCX_V1_MASTER_CHANGED")
-            offers = listed_v1_mcx_offers(self.master, snapshot_identity=snapshot,
-                run_identity=run, observed_at=now)
+            try:
+                offers = listed_v1_mcx_offers(self.master, snapshot_identity=snapshot,
+                    run_identity=run, observed_at=now)
+            except ProviderInstrumentMasterError as error:
+                raise ValueError("MCX_V1_AUTHENTICATED_MASTER_UNAVAILABLE") from error
             if any(len(offer.selectable()) != 2 for offer in offers.values()):
                 raise ValueError("MCX_V1_TWO_LISTED_CONTRACTS_UNAVAILABLE")
             control = self.publication.status()
@@ -367,18 +426,24 @@ class SwingMcxV1Composition:
                                       "active", False) is True)
 
     def retained_snapshots(self):
-        """Bounded identity listing. Never infer latest == current authority."""
+        """Unvalidated file listing; reservation owns full snapshot validation."""
         directory = self.master._root / "KITE" / "KITE-INSTRUMENT-MASTER"
+        if any(parent.is_symlink() for parent in (directory, *directory.parents)):
+            raise ValueError("MCX_V1_MASTER_PATH_INVALID")
+        paths = []
+        try:
+            for path in directory.iterdir():
+                if path.suffix != ".json":
+                    continue
+                if len(paths) >= 16:
+                    raise ValueError("MCX_V1_MASTER_LIST_LIMIT")
+                paths.append(path)
+        except FileNotFoundError:
+            return ()
         results = []
-        for path in sorted(directory.glob("*.json")):
-            if len(results) >= 16:
-                raise ValueError("MCX_V1_MASTER_LIST_LIMIT")
-            if path.is_symlink():
-                raise ValueError("MCX_V1_MASTER_PATH_INVALID")
-            snapshot = self.master.load(provider="KITE", dataset_identity="KITE-INSTRUMENT-MASTER",
-                snapshot_identity=path.stem)
-            results.append((snapshot.snapshot_identity, snapshot.acquired_at.isoformat(),
-                            sha256(path.read_bytes()).hexdigest()))
+        for path in sorted(paths):
+            acquired_at, digest = _retained_master_metadata(path)
+            results.append((path.stem, acquired_at, digest))
         return tuple(results)
 
 

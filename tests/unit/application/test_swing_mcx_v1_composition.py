@@ -5,6 +5,7 @@ from decimal import Decimal
 from hashlib import sha256
 from io import BytesIO
 from http import HTTPStatus
+import json
 from types import SimpleNamespace
 from urllib.parse import urlencode
 from zoneinfo import ZoneInfo
@@ -123,6 +124,199 @@ def test_canonical_factory_installs_before_restore_and_get_is_observational(tmp_
     finally:
         server.server_close()
     assert composition.control.worker_status()['state'] == 'CLOSED'
+
+
+def test_workspace_get_lists_metadata_without_full_master_validation(tmp_path, scenario, monkeypatch):
+    publication, *_ = make_checkpoint(tmp_path / 'checkpoint', *scenario)
+    server, identity, digest = compose(tmp_path / 'browser', publication)
+    try:
+        before = inventory(tmp_path)
+
+        def forbidden(*args, **kwargs):
+            raise AssertionError('GET must not validate the complete Provider record set')
+
+        monkeypatch.setattr(ProviderInstrumentSnapshotStore, 'load', forbidden)
+        replies = []
+        handler = SimpleNamespace(server=server, path='/swing/mcx-v1',
+            _html=lambda body: replies.append((HTTPStatus.OK, body)),
+            _text=lambda status, body: replies.append((status, body)))
+        _BrowserHandler._mcx_v1_workspace(handler)
+        assert len(replies) == 1 and replies[0][0] == HTTPStatus.OK
+        assert identity in replies[0][1] and digest in replies[0][1]
+        assert 'This listing is unvalidated' in replies[0][1]
+        assert inventory(tmp_path) == before
+        assert server.maintenance_admission.snapshot()['owners'] == {}
+        assert server.application.analysis_work_status()['owned_work_count'] == 0
+    finally:
+        server.server_close()
+
+
+def test_listing_corruption_cannot_reserve_or_change_publication(tmp_path, scenario):
+    publication, *_ = make_checkpoint(tmp_path / 'checkpoint', *scenario)
+    server, identity, _ = compose(tmp_path / 'browser', publication)
+    try:
+        composition = server.mcx_v1_composition
+        path = composition._master_path(identity)
+        document = json.loads(path.read_bytes())
+        document['records'][0]['lot_size'] = 999
+        path.write_text(json.dumps(document, indent=2, sort_keys=True))
+        listing = composition.retained_snapshots()
+        assert listing[0][0] == identity
+        before = inventory(tmp_path)
+        control = publication.status()
+        with pytest.raises(ValueError, match='MCX_V1_AUTHENTICATED_MASTER_UNAVAILABLE'):
+            composition.reserve(identity, listing[0][2], composition.publication_hash())
+        fields = urlencode(dict(snapshot=identity, master_sha256=listing[0][2],
+                                publication_sha256=composition.publication_hash())).encode('ascii')
+        replies = []
+        handler = SimpleNamespace(server=server, path='/swing/mcx-v1/reserve',
+            headers={'Content-Type': 'application/x-www-form-urlencoded',
+                     'Content-Length': str(len(fields))}, rfile=BytesIO(fields),
+            _text=lambda status, body: replies.append((status, body)),
+            _redirect=lambda path: pytest.fail('Invalid master must not redirect'))
+        _BrowserHandler._mcx_v1_composition_action(handler, handler.path)
+        assert replies == [(HTTPStatus.CONFLICT, 'MCX V1 operation rejected.')]
+        assert publication.status() == control
+        assert inventory(tmp_path) == before
+        assert composition.control.workflow is None
+        assert server.application.analysis_work_status()['owned_work_count'] == 0
+    finally:
+        server.server_close()
+
+
+@pytest.mark.parametrize('kind', ['invalid-header', 'naive-time', 'oversize', 'symlink', 'directory'])
+def test_workspace_bad_listing_returns_unavailable_without_writes(tmp_path, kind):
+    server, identity, _ = compose(tmp_path)
+    try:
+        composition = server.mcx_v1_composition
+        path = composition._master_path(identity)
+        if kind == 'invalid-header':
+            path.write_bytes(b'{\n  "acquired_at": "bad",\n')
+        elif kind == 'naive-time':
+            path.write_bytes(b'{\n  "acquired_at": "2026-09-30T10:00:00",\n')
+        elif kind == 'oversize':
+            with path.open('r+b') as stream:
+                stream.truncate(128 * 1024 * 1024 + 1)
+        elif kind == 'symlink':
+            other = path.with_suffix('.retained'); path.rename(other); path.symlink_to(other)
+        else:
+            path.unlink(); path.mkdir()
+        before = inventory(tmp_path)
+        replies = []
+        handler = SimpleNamespace(server=server, path='/swing/mcx-v1',
+            _html=lambda body: replies.append((HTTPStatus.OK, body)),
+            _text=lambda status, body: replies.append((status, body)))
+        _BrowserHandler._mcx_v1_workspace(handler)
+        assert replies == [(HTTPStatus.CONFLICT, 'MCX V1 workspace unavailable.')]
+        assert inventory(tmp_path) == before
+        assert composition.control.workflow is None
+    finally:
+        server.server_close()
+
+
+@pytest.mark.parametrize('failure', ['directory', 'fdopen'])
+def test_listing_releases_descriptor_before_stream_ownership(tmp_path, monkeypatch, failure):
+    import kronos.application.swing_mcx_v1_composition as module
+    path = tmp_path / 'master.json'
+    if failure == 'directory':
+        path.mkdir()
+    else:
+        path.write_bytes(b'{\n  "acquired_at": "2026-09-30T10:00:00+00:00",\n}\n')
+    descriptors = []
+    real_open = module.os.open
+
+    def tracked_open(*args, **kwargs):
+        descriptor = real_open(*args, **kwargs)
+        descriptors.append(descriptor)
+        return descriptor
+
+    monkeypatch.setattr(module.os, 'open', tracked_open)
+    if failure == 'fdopen':
+        def unavailable_stream(*args, **kwargs):
+            raise OSError('isolated stream construction failure')
+        monkeypatch.setattr(module.os, 'fdopen', unavailable_stream)
+    try:
+        with pytest.raises((ValueError, OSError)):
+            module._retained_master_metadata(path)
+        assert len(descriptors) == 1
+        with pytest.raises(OSError) as released:
+            module.os.fstat(descriptors[0])
+        assert released.value.errno == 9  # EBADF: rejected input retained no descriptor.
+    finally:
+        for descriptor in descriptors:
+            try:
+                module.os.fstat(descriptor)
+            except OSError:
+                continue
+            module.os.close(descriptor)
+
+
+def test_listing_is_streamed_and_detects_changed_file(tmp_path, monkeypatch):
+    import kronos.application.swing_mcx_v1_composition as module
+    server, identity, _ = compose(tmp_path)
+    try:
+        composition = server.mcx_v1_composition
+        path = composition._master_path(identity)
+        with path.open('ab') as stream:
+            stream.write(b' ' * (3 * 1024 * 1024))
+        expected = sha256(path.read_bytes()).hexdigest()
+        before = inventory(tmp_path)
+        reads = []
+        real_fdopen = module.os.fdopen
+        change = [False]
+
+        class Reader:
+            def __init__(self, stream):
+                self.stream = stream
+            def __enter__(self):
+                self.stream.__enter__(); return self
+            def __exit__(self, *args):
+                return self.stream.__exit__(*args)
+            def fileno(self):
+                return self.stream.fileno()
+            def readline(self, size):
+                reads.append(('header', size)); return self.stream.readline(size)
+            def read(self, size):
+                reads.append(('body', size))
+                chunk = self.stream.read(size)
+                if change[0]:
+                    change[0] = False
+                    with path.open('ab') as target:
+                        target.write(b' ')
+                return chunk
+
+        with monkeypatch.context() as patch:
+            patch.setattr(module.os, 'fdopen', lambda *args: Reader(real_fdopen(*args)))
+            assert composition.retained_snapshots()[0][2] == expected
+            assert all(size == 256 for kind, size in reads if kind == 'header')
+            assert all(size == 1024 * 1024 for kind, size in reads if kind == 'body')
+            assert len([1 for kind, _ in reads if kind == 'body']) >= 4
+            assert inventory(tmp_path) == before
+            change[0] = True
+            with pytest.raises(ValueError, match='MCX_V1_MASTER_CHANGED'):
+                composition.retained_snapshots()
+    finally:
+        server.server_close()
+
+
+def test_listing_count_and_directory_symlink_are_bounded(tmp_path):
+    server, identity, _ = compose(tmp_path)
+    try:
+        composition = server.mcx_v1_composition
+        path = composition._master_path(identity)
+        for i in range(16):
+            (path.parent / f'extra-{i}.json').write_bytes(path.read_bytes())
+        before = inventory(tmp_path)
+        with pytest.raises(ValueError, match='MCX_V1_MASTER_LIST_LIMIT'):
+            composition.retained_snapshots()
+        assert inventory(tmp_path) == before
+        directory = path.parent
+        renamed = directory.with_name('historical-master'); directory.rename(renamed)
+        directory.symlink_to(renamed, target_is_directory=True)
+        with pytest.raises(ValueError, match='MCX_V1_MASTER_PATH_INVALID'):
+            composition.retained_snapshots()
+    finally:
+        server.server_close()
 
 
 def test_explicit_reservation_choices_restart_and_stale_replay(tmp_path, scenario, monkeypatch):
