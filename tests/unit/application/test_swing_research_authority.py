@@ -73,20 +73,168 @@ def test_legacy_boolean_and_missing_calendar_are_not_authority(tmp_path):
         import_official_actions(store, None, fields, CSV, received_at=AT)
 
 
-def release(tmp_path):
+def release(tmp_path, path_name='src/owner.py'):
     root=tmp_path/'source'; root.mkdir()
     def git(*args):
         return subprocess.check_output(['git','-C',str(root),*args]).decode().strip()
     git('init'); git('config','user.email','isolated@example.invalid'); git('config','user.name','Isolated')
-    (root/'src').mkdir(); path=root/'src/owner.py'; path.write_text('VALUE = 1\n')
+    path=root/path_name; path.parent.mkdir(parents=True); path.write_text('VALUE = 1\n')
     git('add','.'); git('commit','-m','isolated base'); base=git('rev-parse','HEAD')
     path.write_text('VALUE = 2\n'); git('add','.')
     manifest=json.dumps(dict(direct_base_commit=base,path_count=1,
-        paths=[dict(path='src/owner.py',candidate_sha256=sha256(path.read_bytes()).hexdigest())])).encode()
+        paths=[dict(path=path_name,candidate_sha256=sha256(path.read_bytes()).hexdigest())])).encode()
     digest=sha256(manifest).hexdigest()
     git('commit','-m','isolated release\n\nWO12-Source-Manifest-SHA256: '+digest)
     head=git('rev-parse','HEAD')
     return root, head, manifest, digest
+
+
+def test_authentic_approved_34_path_release_includes_canonical_startup_tool(tmp_path):
+    """Original signed manifest and real blobs, not an illustrative one-row release."""
+    repository = Path(__file__).resolve().parents[3]
+    original = (repository/'tests/fixtures/swing_research/approved_wo12_34_path_manifest.json').read_bytes()
+    digest = 'aaa2267958e12dfa8b7bd25e2d803b19f55ed932f480bd2a4f67f8c89b2182bb'
+    head = '35f9694bb2b1868f8e0f619b6f61551efcf3049e'
+    assert sha256(original).hexdigest() == digest
+    assert json.loads(original)['path_count'] == 34
+    root = tmp_path/'authentic-release'
+    subprocess.run(['git', 'clone', '--shared', '--no-checkout', str(repository), str(root)], check=True)
+    subprocess.run(['git', '-C', str(root), 'checkout', '--detach', head], check=True)
+    proof = ResearchReleaseVerifier(root, lambda: head).verify(head, original, digest)
+    assert proof == dict(release_identity=head, source_manifest_sha256=digest,
+                         verified_paths=34, base_commit=json.loads(original)['direct_base_commit'])
+    revisions = iter((head, 'a'*40))
+    with pytest.raises(ValueError, match='RELEASE_DRIFT'):
+        ResearchReleaseVerifier(root, lambda: next(revisions)).verify(head, original, digest)
+
+
+def test_exact_startup_tool_commissions_once_and_retains_bound_receipt(tmp_path):
+    root, head, manifest, digest = release(tmp_path, 'tools/kronos_browser.py')
+    control = _control(tmp_path, inbox=SwingResearchInbox(tmp_path/'inbox'))
+    control.release_verifier = ResearchReleaseVerifier(root, lambda: head)
+    control.application.committed_research_replay_history = lambda: ()
+    try:
+        receipt = control.commission(release_identity=head, source_manifest_sha256=digest,
+                                     manifest_bytes=manifest)
+        assert receipt.data['release_identity'] == head
+        assert receipt.data['source_manifest_sha256'] == digest
+        assert control.commission(release_identity=head, source_manifest_sha256=digest,
+                                 manifest_bytes=manifest) == receipt
+        assert control.research.store.records('COMMISSIONING') == (receipt,)
+    finally:
+        control.close()
+
+
+@pytest.mark.parametrize('path_name', ['tools/owner.py', 'tools/kronos_browser.py.backup',
+                                      'tools/nested/kronos_browser.py'])
+def test_other_tools_paths_are_not_release_authority(tmp_path, path_name):
+    root, head, manifest, digest = release(tmp_path, path_name)
+    with pytest.raises(ValueError, match='RELEASE_PATH_INVALID'):
+        ResearchReleaseVerifier(root, lambda: head).verify(head, manifest, digest)
+
+
+@pytest.mark.parametrize('change', ['loaded', 'requested', 'manifest_hash', 'trailer',
+                                   'scope', 'committed_hash', 'untracked', 'staged'])
+def test_startup_tool_exception_preserves_release_identity_and_scope_checks(tmp_path, change):
+    root, head, manifest, digest = release(tmp_path, 'tools/kronos_browser.py')
+    def git(*args):
+        return subprocess.check_output(['git', '-C', str(root), *args]).decode().strip()
+    loaded = head
+    error = 'RELEASE_DRIFT'
+    if change == 'loaded':
+        loaded = 'a'*40
+    elif change == 'requested':
+        head = 'a'*40
+    elif change == 'manifest_hash':
+        digest = 'a'*64; error = 'RELEASE_INVALID'
+    elif change == 'trailer':
+        git('commit', '--amend', '-m', 'isolated missing trailer')
+        head = loaded = git('rev-parse', 'HEAD'); error = 'MANIFEST_UNATTESTED'
+    elif change in {'scope', 'committed_hash'}:
+        value = json.loads(manifest)
+        if change == 'scope':
+            value['paths'][0]['path'] = 'src/foreign.py'; error = 'SCOPE_INVALID'
+        else:
+            value['paths'][0]['candidate_sha256'] = 'a'*64; error = 'BYTES_INVALID'
+        manifest = json.dumps(value).encode(); digest = sha256(manifest).hexdigest()
+        git('commit', '--amend', '-m', 'isolated changed manifest\n\nWO12-Source-Manifest-SHA256: '+digest)
+        head = loaded = git('rev-parse', 'HEAD')
+    elif change == 'untracked':
+        (root/'unexpected').write_text('unexpected')
+    else:
+        (root/'tools/kronos_browser.py').write_text('CHANGED = True\n')
+        git('add', '.')
+    with pytest.raises(ValueError, match=error):
+        ResearchReleaseVerifier(root, lambda: loaded).verify(head, manifest, digest)
+
+
+@pytest.mark.parametrize('bad_path', ['/tools/kronos_browser.py',
+    'tools/../tools/kronos_browser.py', 'tools//kronos_browser.py'])
+def test_startup_tool_exception_rejects_absolute_traversal_and_noncanonical_paths(tmp_path, monkeypatch, bad_path):
+    root, head, manifest, digest = release(tmp_path, 'tools/kronos_browser.py')
+    value = json.loads(manifest); value['paths'][0]['path'] = bad_path
+    manifest = json.dumps(value).encode(); digest = sha256(manifest).hexdigest()
+    subprocess.run(['git', '-C', str(root), 'commit', '--amend', '-m',
+                    'isolated malformed path\n\nWO12-Source-Manifest-SHA256: '+digest], check=True)
+    head = subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD']).decode().strip()
+    original = subprocess.check_output
+    # Scope is checked independently above. Reach path validation with an
+    # adversarial scope response; no malformed path is read or admitted.
+    def observed(command, **kwargs):
+        if command[3:5] == ['diff', '--name-only']:
+            return (bad_path+'\n').encode()
+        return original(command, **kwargs)
+    monkeypatch.setattr(subprocess, 'check_output', observed)
+    with pytest.raises(ValueError, match='PATH_INVALID'):
+        ResearchReleaseVerifier(root, lambda: head).verify(head, manifest, digest)
+
+
+@pytest.mark.parametrize('symlink', ['file', 'parent'])
+def test_exact_startup_tool_rejects_symlink_and_disk_substitution(tmp_path, monkeypatch, symlink):
+    root, head, manifest, digest = release(tmp_path, 'tools/kronos_browser.py')
+    outside = tmp_path/'outside'; outside.mkdir()
+    data = root/'tools/kronos_browser.py'
+    (outside/'kronos_browser.py').write_bytes(data.read_bytes())
+    data.unlink()
+    if symlink == 'file':
+        data.symlink_to(outside/'kronos_browser.py')
+    else:
+        (root/'tools').rmdir(); (root/'tools').symlink_to(outside, target_is_directory=True)
+    original = subprocess.check_output
+    def clean_observation(command, **kwargs):
+        if command[3:4] == ['status']:
+            return b''
+        return original(command, **kwargs)
+    monkeypatch.setattr(subprocess, 'check_output', clean_observation)
+    with pytest.raises(ValueError, match='PATH_INVALID'):
+        ResearchReleaseVerifier(root, lambda: head).verify(head, manifest, digest)
+
+
+def test_startup_tool_rejects_disk_change_after_clean_status_observation(tmp_path, monkeypatch):
+    root, head, manifest, digest = release(tmp_path, 'tools/kronos_browser.py')
+    original = subprocess.check_output
+    def changed_after_status(command, **kwargs):
+        result = original(command, **kwargs)
+        if command[3:4] == ['status']:
+            (root/'tools/kronos_browser.py').write_text('CHANGED_AFTER_OBSERVATION = True\n')
+        return result
+    monkeypatch.setattr(subprocess, 'check_output', changed_after_status)
+    with pytest.raises(ValueError, match='BYTES_INVALID'):
+        ResearchReleaseVerifier(root, lambda: head).verify(head, manifest, digest)
+
+
+def test_startup_tool_rechecks_git_head_after_blob_reads(tmp_path, monkeypatch):
+    root, head, manifest, digest = release(tmp_path, 'tools/kronos_browser.py')
+    original = subprocess.check_output
+    def advanced_after_blob(command, **kwargs):
+        result = original(command, **kwargs)
+        if command[3:] == ['show', head+':tools/kronos_browser.py']:
+            original(['git', '-C', str(root), 'commit', '--amend', '-m',
+                      'isolated concurrent release\n\nWO12-Source-Manifest-SHA256: '+digest])
+        return result
+    monkeypatch.setattr(subprocess, 'check_output', advanced_after_blob)
+    with pytest.raises(ValueError, match='RELEASE_DRIFT'):
+        ResearchReleaseVerifier(root, lambda: head).verify(head, manifest, digest)
 
 
 def test_real_release_verifier_rejects_loaded_identity_scope_and_bytes_drift(tmp_path):
