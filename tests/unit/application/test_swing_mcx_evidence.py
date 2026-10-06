@@ -119,3 +119,37 @@ def test_retained_master_offer_uses_expiry_session_before_selecting_two(tmp_path
             ("COPPER26SEPFUT", ("MCX_EXPIRY_SESSION_CLOSED",)),)
     assert {str(p): (p.read_bytes(), p.stat().st_mtime_ns, p.stat().st_ctime_ns)
             for p in tmp_path.rglob("*") if p.is_file()} == before
+
+
+@pytest.mark.parametrize('family', list(McxFamily))
+def test_response_master_reuse_closed_context_and_final_byte_fence(tmp_path, family, monkeypatch):
+    from kronos.application.swing_mcx_evidence import retained_mcx_master_reader
+    row = _source(8001, f'{family.value}26OCTFUT', exchange='MCX', segment='MCX-FUT',
+        name=family.value, instrument_type='FUT', expiry=date(2026, 10, 28), lot=1, tick='1')
+    snapshot = _snapshot((row,)); store = ProviderInstrumentSnapshotStore(tmp_path / 'master')
+    path = store.retain(snapshot); record = snapshot.records[0]
+    exact = InstrumentRecord(record.provider, record.exchange, record.segment,
+        record.trading_symbol, record.name, record.instrument_type, record.expiry,
+        record.tick_size, record.lot_size)
+    original = ProviderInstrumentSnapshotStore.load; calls = []
+    def load(self, **kwargs):
+        calls.append(kwargs); return original(self, **kwargs)
+    monkeypatch.setattr(ProviderInstrumentSnapshotStore, 'load', load)
+    before = path.read_bytes(), path.stat().st_mtime_ns, path.stat().st_ctime_ns
+    with retained_mcx_master_reader(store, snapshot_identity=snapshot.snapshot_identity,
+            observed_at=NOW + timedelta(days=1)) as resolve:
+        for _ in range(5):
+            assert resolve(record.provider_record_identity, family, exact).permits_new_entry is False
+        with pytest.raises(ValueError, match='CONTRACT_MISMATCH'):
+            resolve(record.provider_record_identity, family, replace(exact, lot_size=99))
+        with pytest.raises(ValueError, match='RECORD_UNAVAILABLE'):
+            resolve('foreign', family, exact)
+    assert len(calls) == 1
+    assert (path.read_bytes(), path.stat().st_mtime_ns, path.stat().st_ctime_ns) == before
+    with pytest.raises(ValueError, match='INPUT_INVALID'):
+        resolve(record.provider_record_identity, family, exact)
+    with pytest.raises(ValueError, match='MASTER_UNAVAILABLE'):
+        with retained_mcx_master_reader(store, snapshot_identity=snapshot.snapshot_identity,
+                observed_at=NOW + timedelta(days=1)) as resolve:
+            resolve(record.provider_record_identity, family, exact)
+            path.write_bytes(path.read_bytes() + b' ')

@@ -7,7 +7,7 @@ is deliberately no production proof issuer or persistence function here.
 
 from __future__ import annotations
 
-from contextlib import AbstractContextManager, contextmanager
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -26,7 +26,7 @@ from kronos.swing.v1.mcx_step31_prepared_handoff import (
 )
 from kronos.swing.v1.review_evidence_binding import canonical
 from kronos.swing.v1.review_evidence_store import (
-    PreparedReadFence, record_prepared_read,
+    PreparedReadFence, record_prepared_read, capture_prepared_reads,
 )
 
 
@@ -190,7 +190,7 @@ class McxOwnerSelectedHandoff:
 
 def select_owner_current_mcx_handoff(
     workflow: object, family: McxFamily, derivative: InstrumentRecord,
-    *, prepared_at: datetime,
+    *, prepared_at: datetime, _response=None,
 ) -> McxOwnerSelectedHandoff:
     """Use the Review owner-selected current run, pointers, receipt and V2.
 
@@ -203,57 +203,67 @@ def select_owner_current_mcx_handoff(
     if type(family) is not McxFamily or type(derivative) is not InstrumentRecord:
         raise McxConstructionRejected("MCX_STEP31_OWNER_SELECTION_INVALID")
     try:
-        with workflow._validated_response() as (response, reads):
-            manifest, facts, _ = workflow._context(_response=response)
-            requirement = workflow._requirements(
-                "MCX", (family.value,), _response=response,
-            )[0]
-            publication = workflow._publication("MCX", _response=response)
-            if publication is None:
-                raise McxConstructionRejected("MCX_STEP31_REQUEST_UNAVAILABLE")
-            key = sha256(canonical([
-                "NATIVE_REVIEW", "MCX", facts.run_identity,
-            ])).hexdigest()
-            commit = workflow.store.load_current_acceptance(key)
-            if commit is None or commit.value["request_publication_identity"] != publication.identity:
-                raise McxConstructionRejected("MCX_STEP31_ACCEPTANCE_UNAVAILABLE")
-            matching = tuple(item for item in commit.receipts
-                if item.binding.value["candidate_identity"] == requirement.requirement_sha256)
-            if len(matching) != 1:
-                raise McxConstructionRejected("MCX_STEP31_RECEIPT_UNAVAILABLE")
-            receipt = workflow.store.resolve_committed_receipt(
-                commit.identity, matching[0].receipt_id, current=True,
-            )
-            workflow._verify_receipt_current(receipt, _response=response)
-            promotion = workflow.v2_for(
-                facts.run_identity, family.value, _response=response,
-            )
-            if promotion is None:
-                raise McxConstructionRejected("MCX_STEP31_V2_UNAVAILABLE")
-            promotion_path = workflow._v2_store._path(
-                promotion.value["source"], promotion.value["input_sha256"],
-            )
-            promotion_bytes = workflow._v2_store._read(promotion_path)
-            if promotion_bytes != promotion.payload:
-                raise McxConstructionRejected("MCX_STEP31_V2_BYTES_CHANGED")
-            record_prepared_read(promotion_path, promotion_bytes)
-            native, reference = publication.native.value, publication.reference.value
-            requests = tuple(McxStep31RequestBinding(role, item["request_identity"], item["request_sha256"])
-                for role, item in (("NATIVE_MCX", native), ("SUPPORTING_REFERENCE", reference)))
-            charts = tuple(McxStep31ChartBinding(
-                item["role"], item["timeframe"], item["chart_revision_identity"], item["chart_sha256"],
-            ) for item in promotion.value["source"]["acceptance"]["visual_bindings"])
-            selected = McxStep31CurrentReadSet(
-                run_identity=facts.run_identity, manifest_sha256=manifest,
-                requirement=requirement, facts=facts, publication=publication,
-                commit=commit, receipt=receipt, promotion=promotion,
-                derivative=derivative, request_bindings=requests,
-                chart_bindings=charts,
-            )
-            prepared = prepare_mcx_review_v2_step31_handoff(
-                lambda: selected, prepared_at=prepared_at,
-            )
-            fence = PreparedReadFence(tuple(reads.items()))
+        # A caller may reuse only this owner's live, fenced response. A new
+        # standalone/action call retains the original full validation boundary.
+        with capture_prepared_reads() as shared_reads:
+            boundary = (workflow._validated_response() if _response is None
+                        else nullcontext((_response, shared_reads)))
+            if _response is not None:
+                workflow.recheck_response(_response)
+            with boundary as (response, reads):
+                manifest, facts, _ = workflow._context(_response=response)
+                requirement = workflow._requirements(
+                    "MCX", (family.value,), _response=response,
+                )[0]
+                publication = workflow._publication("MCX", _response=response)
+                if publication is None:
+                    raise McxConstructionRejected("MCX_STEP31_REQUEST_UNAVAILABLE")
+                key = sha256(canonical([
+                    "NATIVE_REVIEW", "MCX", facts.run_identity,
+                ])).hexdigest()
+                commit = workflow.store.load_current_acceptance(key)
+                if commit is None or commit.value["request_publication_identity"] != publication.identity:
+                    raise McxConstructionRejected("MCX_STEP31_ACCEPTANCE_UNAVAILABLE")
+                matching = tuple(item for item in commit.receipts
+                    if item.binding.value["candidate_identity"] == requirement.requirement_sha256)
+                if len(matching) != 1:
+                    raise McxConstructionRejected("MCX_STEP31_RECEIPT_UNAVAILABLE")
+                receipt = workflow.store.resolve_committed_receipt(
+                    commit.identity, matching[0].receipt_id, current=True,
+                )
+                workflow._verify_receipt_current(receipt, _response=response)
+                promotion = workflow.v2_for(
+                    facts.run_identity, family.value, _response=response,
+                )
+                if promotion is None:
+                    raise McxConstructionRejected("MCX_STEP31_V2_UNAVAILABLE")
+                promotion_path = workflow._v2_store._path(
+                    promotion.value["source"], promotion.value["input_sha256"],
+                )
+                promotion_bytes = workflow._v2_store._read(promotion_path)
+                if promotion_bytes != promotion.payload:
+                    raise McxConstructionRejected("MCX_STEP31_V2_BYTES_CHANGED")
+                record_prepared_read(promotion_path, promotion_bytes)
+                native, reference = publication.native.value, publication.reference.value
+                requests = tuple(McxStep31RequestBinding(role, item["request_identity"], item["request_sha256"])
+                    for role, item in (("NATIVE_MCX", native), ("SUPPORTING_REFERENCE", reference)))
+                charts = tuple(McxStep31ChartBinding(
+                    item["role"], item["timeframe"], item["chart_revision_identity"], item["chart_sha256"],
+                ) for item in promotion.value["source"]["acceptance"]["visual_bindings"])
+                selected = McxStep31CurrentReadSet(
+                    run_identity=facts.run_identity, manifest_sha256=manifest,
+                    requirement=requirement, facts=facts, publication=publication,
+                    commit=commit, receipt=receipt, promotion=promotion,
+                    derivative=derivative, request_bindings=requests,
+                    chart_bindings=charts,
+                )
+                prepared = prepare_mcx_review_v2_step31_handoff(
+                    lambda: selected, prepared_at=prepared_at,
+                )
+                fence = PreparedReadFence(tuple(reads.items()))
+            if _response is not None:
+                fence.check()
+                workflow.recheck_response(_response)
         return McxOwnerSelectedHandoff(prepared, fence, workflow)
     except (AttributeError, IndexError, KeyError, OSError, TypeError, ValueError) as error:
         if isinstance(error, McxConstructionRejected):

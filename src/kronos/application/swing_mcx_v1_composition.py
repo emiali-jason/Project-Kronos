@@ -7,6 +7,7 @@ the sole authentication/stream owners.
 """
 from __future__ import annotations
 
+from contextlib import ExitStack
 from dataclasses import asdict
 from datetime import UTC, datetime
 from hashlib import sha256
@@ -18,7 +19,7 @@ from threading import RLock
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
-from kronos.application.swing_mcx_evidence import listed_v1_mcx_offers
+from kronos.application.swing_mcx_evidence import listed_v1_mcx_offers, retained_mcx_master_reader
 from kronos.application.swing_mcx_integrated import SwingMcxIntegratedWorkflow
 from kronos.application.swing_mcx_v1_operations import SwingMcxV1OperationalControl
 from kronos.application.swing_trade_window import build_mcx_v1_trade_construction_evidence
@@ -29,7 +30,10 @@ from kronos.provider.kite.marketdata.kite_market_data_provider import KiteMarket
 from kronos.swing.run_publication import OperationToken
 from kronos.swing.v1.mcx_broker_fill_evidence import LocalMcxBrokerFillEvidenceStore
 from kronos.swing.v1.mcx_contract_profile import McxFamily
-from kronos.swing.v1.mcx_contract_selection import LocalMcxSponsorSelectionStore
+from kronos.swing.v1.mcx_contract_selection import (
+    LocalMcxSponsorSelectionStore, McxSelectionRole,
+    selected_mcx_instrument_before_acquisition,
+)
 from kronos.swing.v1.mcx_live_attestation import LocalMcxLiveFillAttestationStore
 from kronos.swing.v1.mcx_prepared_plan_store import LocalMcxPreparedPlanStore
 from kronos.swing.v1.mcx_step31_construction import (
@@ -395,27 +399,96 @@ class SwingMcxV1Composition:
         plans = []
         preparations = []
         if current and not reserved:
-            for family in McxFamily:
-                try:
-                    match = workflow.retained_selected_contract(family, self.master, acquired_at=self.clock())
-                    owner = select_owner_current_mcx_handoff(self.server.native_intake,
-                        family, match.normalized_contract, prepared_at=self.clock())
-                    if owner.prepared.bound.run_identity != workflow.run_identity:
-                        continue
-                    preparations.append((family.value, bound_digest(asdict(owner.prepared.bound))))
-                except (OSError, ValueError):
-                    pass
-                directory = self.plans.root / workflow.run_identity / family.value
-                for path in sorted(directory.glob("*.json")):
-                    if len(plans) >= 32:
-                        raise ValueError("MCX_V1_PLAN_PROJECTION_LIMIT")
-                    plan = self.plans.load(path)
-                    try:
-                        self.control._current_plan_owner(plan)
-                        eligible = True
-                    except (OSError, ValueError):
-                        eligible = False
-                    plans.append((plan, eligible))
+            now = self.clock()
+            try:
+                control = self.publication.status()
+                attempt = control['latest_attempt']
+                # _current() and the reserved check ran earlier. Bind the
+                # projection baseline itself to the workflow that passed them;
+                # otherwise a newer run admitted in between could be mistaken
+                # for a stable baseline while this older run is projected.
+                if (control['admission_generation'] != workflow.generation
+                        or attempt['run_id'] != workflow.run_identity
+                        or attempt['state'] != 'SUCCEEDED'):
+                    raise ValueError('MCX_V1_RUN_STALE')
+
+                def current_workflow_control(value):
+                    current_attempt = value['latest_attempt']
+                    return (value['admission_generation'] == workflow.generation
+                            and current_attempt['run_id'] == workflow.run_identity
+                            and current_attempt['state'] == 'SUCCEEDED')
+
+                # One retained Review context and one full parse per selected
+                # master, rather than reconstructing both for every family/plan.
+                with ExitStack() as stack:
+                    response = stack.enter_context(self.server.native_intake.page_response())
+                    readers = {}
+                    selected_records = {}
+                    for family in McxFamily:
+                        owner = selected = instrument = None
+                        try:
+                            selected = workflow.selections.load(workflow.run_identity, family)
+                            selected_records[family] = selected
+                            offer = workflow.offers[family]
+                            fact = (offer.near if selected.role is McxSelectionRole.NEAR
+                                    else offer.next_eligible)
+                            if (fact is None or not fact.provider_snapshot_identity
+                                    or not fact.provider_record_identity):
+                                raise ValueError("MCX_RETAINED_CONTRACT_REFERENCE_UNAVAILABLE")
+                            instrument = selected_mcx_instrument_before_acquisition(
+                                workflow.selections, offer, (fact.instrument,), acquired_at=now)
+                            identity = fact.provider_snapshot_identity
+                            if identity not in readers:
+                                readers[identity] = None
+                                readers[identity] = stack.enter_context(retained_mcx_master_reader(
+                                    self.master, snapshot_identity=identity, observed_at=now))
+                            if readers[identity] is None:
+                                raise ValueError("MCX_RETAINED_MASTER_UNAVAILABLE")
+                            readers[identity](fact.provider_record_identity, family, instrument)
+                            owner = select_owner_current_mcx_handoff(self.server.native_intake,
+                                family, instrument, prepared_at=now, _response=response)
+                            if owner.prepared.bound.run_identity != workflow.run_identity:
+                                raise ValueError("MCX_V1_RUN_STALE")
+                            preparations.append((family.value, bound_digest(asdict(owner.prepared.bound))))
+                        except (OSError, ValueError):
+                            owner = None
+                        directory = self.plans.root / workflow.run_identity / family.value
+                        for path in sorted(directory.glob("*.json")):
+                            if len(plans) >= 32:
+                                raise ValueError("MCX_V1_PLAN_PROJECTION_LIMIT")
+                            plan = self.plans.load(path)
+                            eligible = False
+                            if owner is not None:
+                                try:
+                                    plan_owner = select_owner_current_mcx_handoff(
+                                        self.server.native_intake, family, instrument,
+                                        prepared_at=plan.created_at, _response=response)
+                                    workflow._validate_v1_plan_owner(
+                                        family, instrument, plan, self.plans, selected, plan_owner)
+                                    eligible = True
+                                except (OSError, ValueError):
+                                    pass
+                            plans.append((plan, eligible))
+                    current_control = self.publication.status()
+                    if (self.control.workflow is not workflow
+                            or not current_workflow_control(current_control)
+                            or current_control != control
+                            or any(workflow.selections.load(workflow.run_identity, family) != selected
+                                   for family, selected in selected_records.items())):
+                        raise ValueError("MCX_V1_RUN_STALE")
+                # Recheck after the response/master exit fences as well.
+                current_control = self.publication.status()
+                if (self.control.workflow is not workflow
+                        or not current_workflow_control(current_control)
+                        or current_control != control
+                        or any(workflow.selections.load(workflow.run_identity, family) != selected
+                               for family, selected in selected_records.items())):
+                    raise ValueError("MCX_V1_RUN_STALE")
+            except (OSError, ValueError):
+                # A failed final fence cannot leave actionable-looking results.
+                preparations.clear()
+                plans = [(plan, False) for plan, _ in plans]
+                error = "MCX_V1_PROJECTION_UNAVAILABLE"
         return dict(run=None if workflow is None else workflow.run_identity,
             current=current, reserved=reserved, error=error, publication_sha256=self.publication_hash(),
             plans=tuple(plans), preparations=tuple(preparations), positions=tuple((position,

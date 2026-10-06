@@ -481,6 +481,12 @@ class SwingMcxIntegratedWorkflow:
         selected = self.selections.load(self.run_identity, family)
         owner = select_owner_current_mcx_handoff(
             review_owner, family, derivative, prepared_at=plan.created_at)
+        self._validate_v1_plan_owner(family, derivative, plan, plan_store, selected, owner)
+        return selected, owner
+
+    def _validate_v1_plan_owner(self, family, derivative, plan, plan_store,
+                                selected, owner):
+        """Same exact-plan comparisons for action and observational projection."""
         require_mcx_choice_matches_handoff(selected, owner.prepared)
         if (type(plan) is not McxTradePlanRecord
                 or plan.authority != MCX_V1_ADVISORY_AUTHORITY
@@ -504,7 +510,6 @@ class SwingMcxIntegratedWorkflow:
                 or plan.assessment_sha256 != owner.prepared.bound.assessment_sha256
                 or plan_store.load(plan_store._path(plan)) != plan):
             raise ValueError("MCX_V1_EXACT_PLAN_CHANGED")
-        return selected, owner
 
     def admit_v1_paper_position(
         self, review_owner: object, family: McxFamily,

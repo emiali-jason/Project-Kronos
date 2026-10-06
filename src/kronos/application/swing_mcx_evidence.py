@@ -7,6 +7,7 @@ contract. It deliberately does not turn an old master, exchange URL, or Kite
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from hashlib import sha256
@@ -58,17 +59,29 @@ def read_retained_mcx_master_match(
 ) -> McxRetainedMasterMatch:
     """Resolve one exact sealed record without inferring freshness or units."""
 
+    with retained_mcx_master_reader(store, snapshot_identity=snapshot_identity,
+                                    observed_at=observed_at) as resolve:
+        return resolve(record_identity, family, normalized_contract)
+
+
+@contextmanager
+def retained_mcx_master_reader(store, *, snapshot_identity, observed_at):
+    """One read-only response; exact snapshot bytes remain fenced until close.
+
+    Returned matches remain historical lineage, never new-entry authority.
+    Explicit standalone lookups still perform full validation on every call.
+    """
     if (type(store) is not ProviderInstrumentSnapshotStore
-            or type(family) is not McxFamily
-            or type(normalized_contract) is not InstrumentRecord
-            or not mcx_contract_name_matches(family, normalized_contract)
+            or type(observed_at) is not datetime
             or observed_at.tzinfo is None or observed_at.utcoffset() is None):
         raise ValueError("MCX_RETAINED_MASTER_INPUT_INVALID")
     path = store.path_for(provider="KITE",
         dataset_identity=KITE_INSTRUMENT_MASTER_DATASET,
         snapshot_identity=snapshot_identity)
-    if path.is_symlink() or any(parent.is_symlink() for parent in path.parents):
-        raise ValueError("MCX_RETAINED_MASTER_PATH_INVALID")
+    def check_path():
+        if path.is_symlink() or any(parent.is_symlink() for parent in path.parents):
+            raise ValueError("MCX_RETAINED_MASTER_PATH_INVALID")
+    check_path()
     try:
         before = _file_sha256(path)
         snapshot = store.load(provider="KITE",
@@ -83,25 +96,36 @@ def read_retained_mcx_master_match(
             or not snapshot.authenticated_context_identity
             or not snapshot.authorized_operation_identity):
         raise ValueError("MCX_RETAINED_MASTER_UNAVAILABLE")
-    matches = tuple(record for record in snapshot.records
-                    if record.provider_record_identity == record_identity)
-    if len(matches) != 1:
-        raise ValueError("MCX_RETAINED_MASTER_RECORD_UNAVAILABLE")
-    record = matches[0]
-    exact = InstrumentRecord(
-        record.provider, record.exchange, record.segment,
-        record.trading_symbol, record.name, record.instrument_type,
-        record.expiry, record.tick_size, record.lot_size,
-    )
-    if exact != normalized_contract:
-        raise ValueError("MCX_RETAINED_MASTER_CONTRACT_MISMATCH")
-    return McxRetainedMasterMatch(
-        snapshot.snapshot_identity, record.provider_record_identity,
-        before, snapshot.acquired_at, exact,
-        record.provider_instrument_token, record.record_integrity_identity,
-        snapshot.acquisition_effective_at, snapshot.source_boundary,
-        snapshot.provider_validity_assertion,
-    )
+    active = True
+    def resolve(record_identity, family, normalized_contract):
+        if (not active or type(family) is not McxFamily
+                or type(normalized_contract) is not InstrumentRecord
+                or not mcx_contract_name_matches(family, normalized_contract)):
+            raise ValueError("MCX_RETAINED_MASTER_INPUT_INVALID")
+        matches = tuple(record for record in snapshot.records
+                        if record.provider_record_identity == record_identity)
+        if len(matches) != 1:
+            raise ValueError("MCX_RETAINED_MASTER_RECORD_UNAVAILABLE")
+        record = matches[0]
+        exact = InstrumentRecord(
+            record.provider, record.exchange, record.segment,
+            record.trading_symbol, record.name, record.instrument_type,
+            record.expiry, record.tick_size, record.lot_size)
+        if exact != normalized_contract:
+            raise ValueError("MCX_RETAINED_MASTER_CONTRACT_MISMATCH")
+        return McxRetainedMasterMatch(
+            snapshot.snapshot_identity, record.provider_record_identity,
+            before, snapshot.acquired_at, exact,
+            record.provider_instrument_token, record.record_integrity_identity,
+            snapshot.acquisition_effective_at, snapshot.source_boundary,
+            snapshot.provider_validity_assertion)
+    try:
+        yield resolve
+        check_path()
+        if _file_sha256(path) != before:
+            raise ValueError("MCX_RETAINED_MASTER_UNAVAILABLE")
+    finally:
+        active = False
 
 
 def listed_v1_mcx_offers(

@@ -178,6 +178,22 @@ def test_owner_current_selection_and_wo05_wo07_byte_fence(native_intake, tmp_pat
     assert selection.prepared.bound.receipt_identity == read.receipt.receipt_id
     assert selection.prepared.bound.promotion_identity == read.promotion.identity
     assert selection.fence.entries
+    assert native_intake.prepare_page_state()
+    with native_intake.page_response() as response:
+        shared = select_owner_current_mcx_handoff(
+            native_intake, McxFamily.GOLDM, _instrument("GOLDM", "MCX"),
+            prepared_at=NOW, _response=response)
+        assert shared.prepared == selection.prepared
+        assert shared.fence.entries
+        from types import SimpleNamespace
+        with pytest.raises(ValueError):
+            select_owner_current_mcx_handoff(
+                native_intake, McxFamily.GOLDM, _instrument("GOLDM", "MCX"),
+                prepared_at=NOW, _response=SimpleNamespace(active=True, owner=object()))
+    with pytest.raises(ValueError):
+        select_owner_current_mcx_handoff(
+            native_intake, McxFamily.GOLDM, _instrument("GOLDM", "MCX"),
+            prepared_at=NOW, _response=response)
     selected_paths = {str(path) for path, _ in selection.fence.entries}
     assert any(path.endswith("current-mcx-request.json") for path in selected_paths)
     assert any("acceptance-current/" in path for path in selected_paths)

@@ -696,3 +696,228 @@ def test_published_offer_is_observational_and_requires_new_reservation_for_new_c
     body = render_mcx_v1_workspace(projection, ((snapshot, NOW.isoformat(), 'b' * 64),))
     assert '/swing/mcx-v1/reserve' in body
     assert 'retained exact-future selection' in body
+
+
+@pytest.mark.parametrize('native_intake', [f'{family.value}-LINEAGE' for family in McxFamily], indirect=True)
+def test_populated_projection_reuses_current_context_and_master_without_writes(
+        tmp_path, scenario, native_intake, monkeypatch):
+    from kronos.application.swing_mcx_evidence import listed_v1_mcx_offers
+    from tests.unit.browser.test_browser_mcx_integrated import _workflow, PLAN_NOW
+    from tests.unit.swing.v1.test_mcx_step31_prepared_handoff import _current
+    from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
+    from contextlib import contextmanager
+    workflow, facts = _workflow(tmp_path, scenario, native_intake)
+    rows = tuple(_source(1000 + index * 2 + offset, fact.instrument.trading_symbol,
+        exchange='MCX', segment='MCX-FUT', name=family.value, instrument_type='FUT',
+        expiry=fact.instrument.expiry, lot=fact.instrument.lot_size, tick=str(fact.instrument.tick_size))
+        for index, family in enumerate(McxFamily) for offset, fact in enumerate(facts[family]))
+    snapshot = _snapshot(rows); master = ProviderInstrumentSnapshotStore(tmp_path / 'selected-master')
+    master.retain(snapshot)
+    workflow.offers = listed_v1_mcx_offers(master, snapshot_identity=snapshot.snapshot_identity,
+        run_identity=workflow.run_identity, observed_at=snapshot.acquired_at)
+    for family in McxFamily:
+        workflow.choose(family, McxSelectionRole.NEAR, workflow.offers[family].offer_sha256,
+                        recorded_at=snapshot.acquired_at)
+    read = _current(native_intake, tmp_path, promotion_at=PLAN_NOW)
+    native_intake._v2_store.retain(read.promotion, current=native_intake._v2_current)
+    native_intake._v2_promotions[(read.run_identity, read.requirement.canonical_instrument)] = read.promotion
+    assert native_intake.prepare_page_state()
+    # Owning receipt builder uses a sealed synthetic publication identity.
+    # Adapt only the fixture publication facade, never production authority.
+    control = workflow.publication.status()
+    control['current_manifest'] = {'path': 'manifests/' + 'a'*64 + '.json', 'sha256': 'a'*64}
+    control['latest_attempt']['state'] = 'SUCCEEDED'
+    monkeypatch.setattr(workflow.publication, 'status', lambda: json.loads(json.dumps(control)))
+    counts = dict(current=0, master=0, response=0)
+    def current():
+        counts['current'] += 1
+        return SimpleNamespace(reference=control['current_manifest'], native=read.facts,
+                               manifest={'generation': workflow.generation})
+    monkeypatch.setattr(workflow.publication, 'current', current)
+    original_load = ProviderInstrumentSnapshotStore.load
+    def load(self, **kwargs):
+        counts['master'] += 1; return original_load(self, **kwargs)
+    monkeypatch.setattr(ProviderInstrumentSnapshotStore, 'load', load)
+    original_response = native_intake.page_response
+    @contextmanager
+    def response():
+        counts['response'] += 1
+        with original_response() as prepared: yield prepared
+    monkeypatch.setattr(native_intake, 'page_response', response)
+    app = native_intake.application; app._SwingOpportunitiesApplication__publication = workflow.publication
+    mtf = MtfFactEvidenceStore(tmp_path / 'projection-facts'); mtf.retain(read.facts)
+    app.mtf_fact_evidence_store = lambda: mtf
+    app.authenticated_read_only_capability = lambda: SimpleNamespace(active=False)
+    server = SimpleNamespace(application=app, native_intake=native_intake,
+        native_review=native_intake.native_review, maintenance_admission=MaintenanceAdmissionCoordinator())
+    composition = SwingMcxV1Composition(server, master=master,
+        provider=lambda: pytest.fail('GET acquisition'), calendar=MarketCalendarPublisher(), clock=lambda: PLAN_NOW)
+    try:
+        composition.control.bind_workflow(workflow, native_intake)
+        counts.update(current=0, master=0, response=0)
+        before = inventory(tmp_path); projection = composition.projection()
+        assert projection['current'] and not projection['reserved']
+        assert projection['error'] is None
+        assert len(projection['preparations']) == 1
+        assert projection['preparations'][0][0] == read.requirement.canonical_instrument
+        assert counts == dict(current=1, master=1, response=1)
+        assert inventory(tmp_path) == before
+        assert server.maintenance_admission.snapshot()['owners'] == {}
+        original_slot = native_intake._page_publication
+        for missing in (False, True):
+            native_intake._page_publication = (replace(original_slot, page=None) if missing
+                else replace(original_slot, reconciliation_failure=True))
+            failed = composition.projection()
+            assert failed['error'] == 'MCX_V1_PROJECTION_UNAVAILABLE'
+            assert failed['preparations'] == ()
+            assert inventory(tmp_path) == before
+        native_intake._page_publication = original_slot
+        # Current control may change after successful projection work. No
+        # prepared action or eligible plan survives that final rejection.
+        @contextmanager
+        def changing_response():
+            with original_response() as prepared:
+                yield prepared
+                control['current_manifest']['sha256'] = 'b' * 64
+        monkeypatch.setattr(native_intake, 'page_response', changing_response)
+        rejected = composition.projection()
+        assert rejected['error'] == 'MCX_V1_PROJECTION_UNAVAILABLE'
+        assert rejected['preparations'] == ()
+        assert inventory(tmp_path) == before
+    finally:
+        composition.control.close()
+
+
+@pytest.mark.parametrize('admission_point', ['before_control_baseline', 'during_projection'])
+@pytest.mark.parametrize('native_intake', ['GOLDM-LINEAGE'], indirect=True)
+def test_populated_projection_rejects_run_admitted_after_initial_current_check(
+        tmp_path, scenario, native_intake, monkeypatch, admission_point):
+    """A newer admission cannot inherit the predecessor's projected readiness."""
+    from contextlib import contextmanager
+    from datetime import timedelta
+    from kronos.application.swing_mcx_evidence import listed_v1_mcx_offers
+    from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
+    from kronos.swing.v1.mcx_contract_selection import McxSelectionRole
+    from tests.unit.browser.test_browser_mcx_integrated import _workflow, PLAN_NOW
+    from tests.unit.swing.v1.test_mcx_step31_prepared_handoff import _current
+
+    workflow, facts = _workflow(tmp_path, scenario, native_intake)
+    rows = tuple(_source(1000 + index * 2 + offset, fact.instrument.trading_symbol,
+        exchange='MCX', segment='MCX-FUT', name=family.value, instrument_type='FUT',
+        expiry=fact.instrument.expiry, lot=fact.instrument.lot_size,
+        tick=str(fact.instrument.tick_size))
+        for index, family in enumerate(McxFamily) for offset, fact in enumerate(facts[family]))
+    snapshot = _snapshot(rows)
+    master = ProviderInstrumentSnapshotStore(tmp_path / 'selected-master')
+    master.retain(snapshot)
+    workflow.offers = listed_v1_mcx_offers(master, snapshot_identity=snapshot.snapshot_identity,
+        run_identity=workflow.run_identity, observed_at=snapshot.acquired_at)
+    for family in McxFamily:
+        workflow.choose(family, McxSelectionRole.NEAR, workflow.offers[family].offer_sha256,
+                        recorded_at=snapshot.acquired_at)
+    read = _current(native_intake, tmp_path, promotion_at=PLAN_NOW)
+    native_intake._v2_store.retain(read.promotion, current=native_intake._v2_current)
+    native_intake._v2_promotions[(read.run_identity, read.requirement.canonical_instrument)] = read.promotion
+    assert native_intake.prepare_page_state()
+
+    publication = workflow.publication
+    actual_status = publication.status
+    control_a = actual_status()
+    control_a['current_manifest'] = {'path': 'manifests/' + 'a' * 64 + '.json', 'sha256': 'a' * 64}
+    control_a['admission_generation'] = workflow.generation
+    control_a['latest_attempt'].update(run_id=workflow.run_identity, state='SUCCEEDED')
+    control_a['latest_attempt']['completed_at'] = PLAN_NOW.isoformat()
+    admitted = {'token': None, 'control': None, 'at_reserved_state_read': False}
+    status_calls = {'count': 0}
+    race_enabled = {'value': False}
+
+    class AdmitAfterReservedState(dict):
+        def __getitem__(self, key):
+            value = super().__getitem__(key)
+            if (key == 'state' and race_enabled['value']
+                    and not admitted['at_reserved_state_read']):
+                # The value returned still lets A pass the reserved predicate;
+                # B is admitted by the real publication owner at that boundary.
+                assert value == 'SUCCEEDED'
+                admitted['at_reserved_state_read'] = True
+                admitted['token'], _ = publication.admit(
+                    'SWING-RUN-ABCDEF0123456789ABCDEF0123456789',
+                    PLAN_NOW + timedelta(seconds=1))
+                admitted['control'] = actual_status()
+            return value
+
+    def status():
+        if admitted['token'] is not None:
+            return actual_status()
+        status_calls['count'] += 1
+        value = json.loads(json.dumps(control_a))
+        if (race_enabled['value'] and admission_point == 'before_control_baseline'
+                and status_calls['count'] == 2):
+            value['latest_attempt'] = AdmitAfterReservedState(value['latest_attempt'])
+        return value
+
+    monkeypatch.setattr(publication, 'status', status)
+    def current():
+        return SimpleNamespace(reference=control_a['current_manifest'], native=read.facts,
+                               manifest={'generation': workflow.generation})
+    monkeypatch.setattr(publication, 'current', current)
+
+    plan = SimpleNamespace(created_at=PLAN_NOW)
+
+    original_response = native_intake.page_response
+    @contextmanager
+    def response_with_optional_admission():
+        with original_response() as prepared:
+            yield prepared
+        if admission_point == 'during_projection' and admitted['token'] is None:
+            admitted['token'], _ = publication.admit(
+                'SWING-RUN-ABCDEF0123456789ABCDEF0123456789',
+                PLAN_NOW + timedelta(seconds=1))
+            admitted['control'] = actual_status()
+    monkeypatch.setattr(native_intake, 'page_response', response_with_optional_admission)
+
+    app = native_intake.application
+    app._SwingOpportunitiesApplication__publication = publication
+    mtf = MtfFactEvidenceStore(tmp_path / 'projection-facts')
+    mtf.retain(read.facts)
+    app.mtf_fact_evidence_store = lambda: mtf
+    app.authenticated_read_only_capability = lambda: SimpleNamespace(active=False)
+    server = SimpleNamespace(application=app, native_intake=native_intake,
+        native_review=native_intake.native_review,
+        maintenance_admission=MaintenanceAdmissionCoordinator())
+    composition = SwingMcxV1Composition(server, master=master,
+        provider=lambda: pytest.fail('GET acquisition'), calendar=MarketCalendarPublisher(),
+        clock=lambda: PLAN_NOW)
+    plan_dir = composition.plans.root / workflow.run_identity / McxFamily.GOLDM.value
+    plan_dir.mkdir(parents=True)
+    (plan_dir / 'synthetic-projection-plan.json').write_text('{}')
+    monkeypatch.setattr(composition.plans, 'load', lambda _path: plan)
+    # Existing plan-binding tests exercise the real validator. This interleaving
+    # test isolates only whether projection carries a stale eligibility bit.
+    plan_validation = []
+    monkeypatch.setattr(workflow, '_validate_v1_plan_owner', lambda *_args: plan_validation.append(True))
+    try:
+        composition.control.bind_workflow(workflow, native_intake)
+        status_calls['count'] = 0
+        race_enabled['value'] = True
+        before = inventory(tmp_path)
+        projection = composition.projection()
+        assert admitted['token'] is not None
+        assert admitted['token'].generation == workflow.generation + 1
+        assert projection['reserved'] is False
+        assert projection['error'] == 'MCX_V1_PROJECTION_UNAVAILABLE'
+        assert projection['preparations'] == ()
+        assert all(eligible is False for _, eligible in projection['plans'])
+        if admission_point == 'during_projection':
+            assert plan_validation == [True]
+            assert len(projection['plans']) == 1
+            assert projection['plans'][0][1] is False
+        else:
+            assert plan_validation == []
+            assert projection['plans'] == ()
+        after = inventory(tmp_path)
+        admitted_control = str((publication.root / 'control.json').relative_to(tmp_path))
+        assert {path for path in before.keys() | after.keys()
+                if before.get(path) != after.get(path)} == {admitted_control}
+    finally:
+        composition.control.close()
