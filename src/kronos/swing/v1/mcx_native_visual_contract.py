@@ -17,6 +17,7 @@ from kronos.swing.v1.review_evidence_binding import (
 
 VERSION = "1.0"
 SUCCESSOR_VERSION = "2.0"
+REFERENCE_OBSERVATION_VERSION = "2.1"
 NATIVE_ROLE = "NATIVE_MCX"
 REFERENCE_ROLE = "SUPPORTING_REFERENCE"
 NATIVE_QUESTIONS = "KRONOS-SWING-MCX-NATIVE-VISUAL-QUESTIONS-V1"
@@ -41,6 +42,10 @@ NATIVE_REQUEST_SCHEMA = "KRONOS-SWING-MCX-NATIVE-REVIEW-REQUEST-V1"
 REFERENCE_REQUEST_SCHEMA = "KRONOS-SWING-MCX-REFERENCE-REVIEW-REQUEST-V1"
 NATIVE_REQUEST_SCHEMA_V2 = "KRONOS-SWING-MCX-NATIVE-REVIEW-REQUEST-V2"
 REFERENCE_REQUEST_SCHEMA_V2 = "KRONOS-SWING-MCX-REFERENCE-REVIEW-REQUEST-V2"
+REFERENCE_REQUEST_SCHEMA_V3 = "KRONOS-SWING-MCX-REFERENCE-REVIEW-REQUEST-V3"
+REFERENCE_QUESTIONS_V3 = "KRONOS-SWING-MCX-REFERENCE-VISUAL-QUESTIONS-V3"
+REFERENCE_ANSWER_V3 = "KRONOS-SWING-MCX-REFERENCE-VISUAL-ANSWER-V3"
+REFERENCE_EVIDENCE_V3 = "KRONOS-SWING-MCX-REFERENCE-VISUAL-EVIDENCE-V3"
 REQUEST_COMMIT_SCHEMA = "KRONOS-SWING-MCX-REVIEW-REQUEST-COMMIT-V1"
 RETAINED_REQUEST_FIELDS = {"schema", "version", "request_bundle_identity", "request_identity",
     "request_sha256", "review_pack_identity", "review_pack_sha256", "native_run_identity",
@@ -63,7 +68,8 @@ def mcx_pre_render_digest(mapping: dict) -> str:
     """Independent approved preimage; final artifact integrity belongs to the commit."""
     closed(mapping, RETAINED_REQUEST_FIELDS)
     _check(mapping["schema"] in (NATIVE_REQUEST_SCHEMA, REFERENCE_REQUEST_SCHEMA,
-                                NATIVE_REQUEST_SCHEMA_V2, REFERENCE_REQUEST_SCHEMA_V2),
+                                NATIVE_REQUEST_SCHEMA_V2, REFERENCE_REQUEST_SCHEMA_V2,
+                                REFERENCE_REQUEST_SCHEMA_V3),
            "MCX_CONTRACT_MISMATCH", "$.schema")
     return sha256(canonical({key: value for key, value in mapping.items()
                              if key not in {"request_sha256", "review_pack_sha256"}})).hexdigest()
@@ -73,13 +79,18 @@ def _validate_retained_mapping(payload: bytes, *, native: bool) -> None:
     _check(type(payload) is bytes, "MCX_REQUEST_MISMATCH", "$")
     value = closed(strict_json(payload), RETAINED_REQUEST_FIELDS)
     successor = value["schema"] == (NATIVE_REQUEST_SCHEMA_V2 if native else REFERENCE_REQUEST_SCHEMA_V2)
-    _check(value["schema"] == ((NATIVE_REQUEST_SCHEMA_V2 if native else REFERENCE_REQUEST_SCHEMA_V2)
+    observations = not native and value["schema"] == REFERENCE_REQUEST_SCHEMA_V3
+    _check(value["schema"] == (REFERENCE_REQUEST_SCHEMA_V3 if observations else
+                              (NATIVE_REQUEST_SCHEMA_V2 if native else REFERENCE_REQUEST_SCHEMA_V2)
                                   if successor else (NATIVE_REQUEST_SCHEMA if native else REFERENCE_REQUEST_SCHEMA))
-           and value["question_contract_identity"] == ((NATIVE_QUESTIONS_V2 if native else REFERENCE_QUESTIONS_V2)
+           and value["question_contract_identity"] == (REFERENCE_QUESTIONS_V3 if observations else
+                                                       (NATIVE_QUESTIONS_V2 if native else REFERENCE_QUESTIONS_V2)
                                                        if successor else (NATIVE_QUESTIONS if native else REFERENCE_QUESTIONS))
-           and value["answer_contract_identity"] == ((NATIVE_ANSWER_V2 if native else REFERENCE_ANSWER_V2)
+           and value["answer_contract_identity"] == (REFERENCE_ANSWER_V3 if observations else
+                                                     (NATIVE_ANSWER_V2 if native else REFERENCE_ANSWER_V2)
                                                      if successor else (NATIVE_ANSWER if native else REFERENCE_ANSWER))
-           and all(type(value[key]) is str and value[key] == (SUCCESSOR_VERSION if successor else VERSION) for key in
+           and all(type(value[key]) is str and value[key] == (REFERENCE_OBSERVATION_VERSION if observations else
+                                                             SUCCESSOR_VERSION if successor else VERSION) for key in
                    ("version", "question_contract_version", "answer_contract_version")),
            "MCX_CONTRACT_MISMATCH", "$")
     for key in ("request_bundle_identity", "request_identity", "review_pack_identity", "native_run_identity",
@@ -164,7 +175,8 @@ def validate_mcx_request_pair(native: McxNativeReviewRequestMapping,
     _check(type(native) is McxNativeReviewRequestMapping and type(reference) is McxReferenceReviewRequestMapping,
            "MCX_CONTRACT_MISMATCH", "$")
     left, right = native.value, reference.value
-    _check((left["version"], right["version"]) in ((VERSION, VERSION), (SUCCESSOR_VERSION, SUCCESSOR_VERSION)),
+    _check((left["version"], right["version"]) in ((VERSION, VERSION), (SUCCESSOR_VERSION, SUCCESSOR_VERSION),
+                                                  (SUCCESSOR_VERSION, REFERENCE_OBSERVATION_VERSION)),
            "MCX_CONTRACT_MISMATCH", "$.version")
     for field in ("request_bundle_identity", "review_cycle_identity", "review_pack_identity", "review_pack_sha256",
                   "native_run_identity", "committed_run_manifest_identity", "request_timestamp"):
@@ -186,6 +198,7 @@ def mcx_question_pack_from_mappings(native: McxNativeReviewRequestMapping,
     packs = []
     for mapping, role in ((native.value, NATIVE_ROLE), (reference.value, REFERENCE_ROLE)):
         is_native = role == NATIVE_ROLE
+        observations = not is_native and mapping["version"] == REFERENCE_OBSERVATION_VERSION
         subjects = []
         for subject in mapping["subjects"]:
             subjects.append({"subject_reference": subject["subject_reference"],
@@ -200,11 +213,13 @@ def mcx_question_pack_from_mappings(native: McxNativeReviewRequestMapping,
                     "reference_period": response["governed_reference_period"] if is_native else None,
                     "reference_basis_availability": response["governed_reference_basis_availability"] if is_native else "NOT_APPLICABLE"}
                     for response in subject["responses"]]})
-        packs.append({"schema": (NATIVE_QUESTIONS_V2 if is_native else REFERENCE_QUESTIONS_V2) if successor
+        packs.append({"schema": REFERENCE_QUESTIONS_V3 if observations else
+                      (NATIVE_QUESTIONS_V2 if is_native else REFERENCE_QUESTIONS_V2) if successor
                       else (NATIVE_QUESTIONS if is_native else REFERENCE_QUESTIONS),
-            "version": SUCCESSOR_VERSION if successor else VERSION,
+            "version": mapping["version"],
             "request_reference": {key: mapping[key] for key in ("request_identity", "request_sha256")},
-            "subjects": subjects, "questions": question_definitions(role, successor=successor)})
+            "subjects": subjects, "questions": question_definitions(role, successor=successor,
+                                                                      supporting_observations=observations)})
     root = {**packs[0], "supporting_reference_pack": packs[1]}
     if successor:
         root["comparison_pack"] = _comparison_pack(native.value, reference.value)
@@ -238,11 +253,13 @@ def mcx_structured_evidence(answer_payload: bytes, native: McxNativeReviewReques
                     timeframe=chart["timeframe"], native_machine_fact_binding=chart["native_machine_fact_integrity_sha256"] if is_native else None)
                 evidence = {"schema": ((NATIVE_EVIDENCE_V2 if is_native else REFERENCE_EVIDENCE_V2) if successor
                                        else (NATIVE_EVIDENCE if is_native else REFERENCE_EVIDENCE)),
-                    "version": SUCCESSOR_VERSION if successor else VERSION,
+                    "version": mapping["version"],
                     "binding": binding, "answer_identity": answered["answer_identity"], "answer_pdf_sha256": answer_pdf_sha256,
                     "response": response, "provenance": {"provider_identity": "SPONSOR_MEDIATED_PDF",
                         **{key: mapping[key] for key in ("question_contract_identity", "question_contract_version",
                                                        "answer_contract_identity", "answer_contract_version")}}}
+                if not is_native and mapping["version"] == REFERENCE_OBSERVATION_VERSION:
+                    evidence["schema"] = REFERENCE_EVIDENCE_V3
                 evidence["integrity_sha256"] = sha256(canonical(evidence)).hexdigest()
                 results.append(canonical(evidence))
     return tuple(results)
@@ -354,8 +371,10 @@ def _request_reference(value: object, path: str) -> dict:
     return value
 
 
-def question_definitions(role: str, *, successor: bool = False) -> list[dict]:
+def question_definitions(role: str, *, successor: bool = False, supporting_observations: bool = False) -> list[dict]:
     _enum(role, (NATIVE_ROLE, REFERENCE_ROLE), "$.role")
+    _check(not supporting_observations or successor and role == REFERENCE_ROLE,
+           "MCX_CONTRACT_MISMATCH", "$.role")
     texts = NATIVE_QUESTION_TEXTS if role == NATIVE_ROLE else REFERENCE_QUESTION_TEXTS
     if successor:
         revised = list(texts)
@@ -363,6 +382,12 @@ def question_definitions(role: str, *, successor: bool = False) -> list[dict]:
                        "CONTRADICTED or UNDETERMINED against the trusted expected identity; "
                        "do not substitute the request ticker for a visible company name.")
         revised[9] += " This is ADDITIONAL_MATERIAL_VISIBLE_FACT only."
+        if supporting_observations:
+            revised[0] += (" A readable dated NYMEX label may remain UNDETERMINED with PARTIAL status and an explicit "
+                           "correspondence limitation. Preserve every readable field; never assert a dated symbol is an alias "
+                           "of a continuous symbol. Only the exact expected symbol may be MATCHED in this reference version. "
+                           "Report visible forming-bar indications and uncertainty; KRONOS owns completed-candle, session, "
+                           "cutoff, currentness and trading authority. Unresolved comparisons are NOT_COMPARABLE and NOT_ESTABLISHED.")
         texts = tuple(revised)
     frames = NATIVE_TIMEFRAMES if role == NATIVE_ROLE else REFERENCE_TIMEFRAMES
     return [{"question_id": question, "text": wording, "applicable_timeframes": list(frames),
@@ -678,10 +703,13 @@ def _validate_v2_question_pack(pack: dict) -> None:
     reference = _closed(pack["supporting_reference_pack"],
                         {"schema", "version", "request_reference", "subjects", "questions"},
                         "$.supporting_reference_pack")
-    _check(reference["schema"] == REFERENCE_QUESTIONS_V2 and reference["version"] == SUCCESSOR_VERSION,
+    observations = reference["version"] == REFERENCE_OBSERVATION_VERSION
+    _check((reference["schema"], reference["version"]) in
+           ((REFERENCE_QUESTIONS_V2, SUCCESSOR_VERSION), (REFERENCE_QUESTIONS_V3, REFERENCE_OBSERVATION_VERSION)),
            "MCX_CONTRACT_MISMATCH", "$.supporting_reference_pack")
     _check(pack["questions"] == question_definitions(NATIVE_ROLE, successor=True)
-           and reference["questions"] == question_definitions(REFERENCE_ROLE, successor=True),
+           and reference["questions"] == question_definitions(REFERENCE_ROLE, successor=True,
+                                                               supporting_observations=observations),
            "MCX_CONTRACT_MISMATCH", "$.questions")
     # Historical closed chart/role checks are identical. Run them on an ephemeral
     # projection; the original successor bytes are never rewritten or stored as V1.
@@ -713,7 +741,8 @@ def _validate_v2_question_pack(pack: dict) -> None:
                and digest(item["pair_binding_sha256"]), "MCX_REQUEST_MISMATCH", f"$.comparison_pack.subjects[{i}]")
 
 
-def _v2_observation(obs: dict, index: int, role: str, chart: dict, path: str) -> None:
+def _v2_observation(obs: dict, index: int, role: str, chart: dict, path: str,
+                    *, supporting_observations: bool = False) -> None:
     _closed(obs, OBSERVATION_FIELDS, path)
     _check(obs["question_id"] == QUESTION_IDS_V2[index], "MCX_QUESTION_ORDER_INVALID", path + ".question_id")
     fields = RESULT_FIELDS[index] | ({"identity_correspondence"} if index == 0 else set())
@@ -758,10 +787,31 @@ def _v2_observation(obs: dict, index: int, role: str, chart: dict, path: str) ->
         observed_tf = result["observed_timeframe"]
         _check(observed_tf not in {"1D", "4H", "1H"} or observed_tf == chart["timeframe"],
                "MCX_TIMEFRAME_MISMATCH", path + ".result.observed_timeframe")
+        # Conflict-only facts from the retained Energy panels. These labels do
+        # not resolve to the continuous ticker or establish constituent membership.
+        # Unknown labels stay unresolved; no prefix/month-code inference occurs.
+        if supporting_observations:
+            known_reference_families = {"CLX2026": "CRUDEOIL", "NGX2026": "NATURALGAS",
+                **{entry[0]: family for family, entry in MCX_REFERENCE_MAPPINGS.items()}}
+            observed_family = known_reference_families.get(observed_symbol)
+            expected_family = next(family for family, entry in MCX_REFERENCE_MAPPINGS.items()
+                                   if entry[2] == chart["expected_chart_identity"])
+            _check(observed_family is None or observed_family == expected_family,
+                   "MCX_IDENTITY_MISMATCH", path + ".result.observed_identity")
+            _check(not matched or observed_symbol == chart["expected_chart_identity"],
+                   "MCX_IDENTITY_MISMATCH", path + ".result.identity_correspondence")
+            _check(observed_market is None or observed_market == chart["expected_market"],
+                   "MCX_IDENTITY_MISMATCH", path + ".result.observed_market")
+            _check(observed_tf is None or observed_tf == chart["timeframe"],
+                   "MCX_TIMEFRAME_MISMATCH", path + ".result.observed_timeframe")
+        readable_unresolved = (supporting_observations and role == REFERENCE_ROLE
+            and chart["expected_market"] == "NYMEX" and available
+            and result["readability"] == "READABLE" and obs["observation_status"] == "PARTIAL"
+            and result["identity_correspondence"] == "UNDETERMINED")
         _check(result["identity_correspondence"] != "CONTRADICTED" and
                (not matched or available and result["readability"] != "UNREADABLE"
                 and obs["observation_status"] in {"OBSERVED", "PARTIAL"}) and
-               (matched or role == REFERENCE_ROLE and result["identity_correspondence"] == "UNDETERMINED"
+               (matched or readable_unresolved or role == REFERENCE_ROLE and result["identity_correspondence"] == "UNDETERMINED"
                 and not available and result["readability"] in {"PARTIAL", "UNREADABLE"}
                 and obs["observation_status"] == "UNAVAILABLE"),
                "MCX_IDENTITY_UNAVAILABLE", path + ".result")
@@ -780,8 +830,10 @@ def _v2_leg(answer: dict, request: dict, role: str, path: str) -> None:
     if role == NATIVE_ROLE:
         fields.update({"supporting_reference_answer", "comparison_answer"})
     _closed(answer, fields, path)
+    observations = role == REFERENCE_ROLE and request["version"] == REFERENCE_OBSERVATION_VERSION
     _check((answer["schema"], answer["version"]) ==
-           ((NATIVE_ANSWER_V2 if role == NATIVE_ROLE else REFERENCE_ANSWER_V2), SUCCESSOR_VERSION),
+           (REFERENCE_ANSWER_V3 if observations else NATIVE_ANSWER_V2 if role == NATIVE_ROLE else REFERENCE_ANSWER_V2,
+            request["version"]),
            "MCX_CONTRACT_MISMATCH", path)
     _check(_request_reference(answer["request_reference"], path + ".request_reference") == request["request_reference"]
            and text(answer["answer_identity"]), "MCX_REQUEST_MISMATCH", path)
@@ -797,13 +849,14 @@ def _v2_leg(answer: dict, request: dict, role: str, path: str) -> None:
             rp = f"{sp}.responses[{ri}]"
             _closed(response, RESPONSE_FIELDS, rp)
             _check(text(response["model_identity"], 128) and response["question_set_identity"] == request["schema"]
-                   and response["question_set_version"] == SUCCESSOR_VERSION and response["role"] == role
+                   and response["question_set_version"] == request["version"] and response["role"] == role
                    and response["timeframe"] == chart["timeframe"]
                    and response["chart_identity"] == chart["expected_chart_identity"]
                    and response["chart_revision_sha256"] == chart["chart_revision_sha256"],
                    "MCX_CONTRACT_MISMATCH", rp)
             for qi, observation in enumerate(_array(response["observations"], rp + ".observations", 10)):
-                _v2_observation(observation, qi, role, chart, f"{rp}.observations[{qi}]")
+                _v2_observation(observation, qi, role, chart, f"{rp}.observations[{qi}]",
+                                supporting_observations=observations)
 
 
 def _v2_comparison(answer: dict, request: dict, identity: str) -> None:

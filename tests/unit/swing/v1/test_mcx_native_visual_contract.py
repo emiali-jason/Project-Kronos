@@ -194,12 +194,13 @@ def successor_answer(native, reference):
     answer = answer_for(request)
     answer["answer_identity"] = "ONE-ANSWER-IDENTITY"
     for root, role in ((answer, mcx.NATIVE_ROLE), (answer["supporting_reference_answer"], mcx.REFERENCE_ROLE)):
-        root.update(schema=mcx.NATIVE_ANSWER_V2 if role == mcx.NATIVE_ROLE else mcx.REFERENCE_ANSWER_V2,
-                    version="2.0", answer_identity="ONE-ANSWER-IDENTITY")
+        mapping = native.value if role == mcx.NATIVE_ROLE else reference.value
+        root.update(schema=mapping["answer_contract_identity"],
+                    version=mapping["answer_contract_version"], answer_identity="ONE-ANSWER-IDENTITY")
         for subject in root["subjects"]:
             subject.pop("observed_chart_identity")
             for response in subject["responses"]:
-                response["question_set_version"] = "2.0"
+                response["question_set_version"] = mapping["question_contract_version"]
                 for i, obs in enumerate(response["observations"]):
                     obs["question_id"] = mcx.QUESTION_IDS_V2[i]
                 response["observations"][0]["result"]["identity_correspondence"] = "MATCHED"

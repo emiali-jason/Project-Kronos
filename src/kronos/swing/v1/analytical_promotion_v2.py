@@ -39,6 +39,7 @@ from kronos.swing.v1.mcx_native_visual_contract import (
     NATIVE_TIMEFRAMES, REFERENCE_EVIDENCE_V2, SUCCESSOR_VERSION,
     NATIVE_QUESTIONS_V2, REFERENCE_QUESTIONS_V2,
     NATIVE_ANSWER_V2, REFERENCE_ANSWER_V2,
+    REFERENCE_QUESTIONS_V3, REFERENCE_ANSWER_V3, REFERENCE_EVIDENCE_V3, REFERENCE_OBSERVATION_VERSION,
     parse_mcx_json,
 )
 from kronos.swing.v1.mtf_facts import FactualTimeframe, SameRunMtfFactSnapshot
@@ -383,14 +384,14 @@ def _validate_source(value: object) -> dict:
                      item["answer_contract_version"] == acceptance["receipt_version"],
                      "V2_VERSION_MIXED")
         else:
-            _require((item["question_contract_identity"],
-                      item["answer_contract_identity"], item["structured_evidence_schema"]) ==
-                     ((NATIVE_QUESTIONS_V2, NATIVE_ANSWER_V2, NATIVE_EVIDENCE_V2)
-                      if role == "NATIVE_MCX" else
-                      (REFERENCE_QUESTIONS_V2, REFERENCE_ANSWER_V2, REFERENCE_EVIDENCE_V2)) and
-                     item["question_contract_version"] == SUCCESSOR_VERSION and
-                     item["answer_contract_version"] == SUCCESSOR_VERSION and
-                     item["structured_evidence_version"] == SUCCESSOR_VERSION,
+            allowed = {((NATIVE_QUESTIONS_V2, NATIVE_ANSWER_V2, NATIVE_EVIDENCE_V2), SUCCESSOR_VERSION)} \
+                if role == "NATIVE_MCX" else {
+                    ((REFERENCE_QUESTIONS_V2, REFERENCE_ANSWER_V2, REFERENCE_EVIDENCE_V2), SUCCESSOR_VERSION),
+                    ((REFERENCE_QUESTIONS_V3, REFERENCE_ANSWER_V3, REFERENCE_EVIDENCE_V3), REFERENCE_OBSERVATION_VERSION)}
+            _require(((item["question_contract_identity"], item["answer_contract_identity"],
+                       item["structured_evidence_schema"]), item["question_contract_version"]) in allowed and
+                     item["answer_contract_version"] == item["question_contract_version"] and
+                     item["structured_evidence_version"] == item["question_contract_version"],
                      "V2_VERSION_MIXED")
     visuals = acceptance["visual_bindings"]
     expected = [(role, tf) for role in roles for tf in

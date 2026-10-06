@@ -156,11 +156,13 @@ def render_mcx_successor_question_pdf(native, reference, charts: dict[str, bytes
     # Full closed shapes and enums are derived from the same frozen validator;
     # no second question identity or alternative analytical rule is introduced.
     successor = native.value["version"] == mcx_contract.SUCCESSOR_VERSION
+    supporting_observations = reference.value["version"] == mcx_contract.REFERENCE_OBSERVATION_VERSION
     shape = {"root_fields": ["schema", "version", "request_reference", "answer_identity", "subjects"],
         "native_root_additional_required_fields": (["supporting_reference_answer", "comparison_answer"] if successor
                                                     else ["supporting_reference_answer"]),
         "native_answer_schema": mcx_contract.NATIVE_ANSWER_V2 if successor else mcx_contract.NATIVE_ANSWER,
-        "reference_answer_schema": mcx_contract.REFERENCE_ANSWER_V2 if successor else mcx_contract.REFERENCE_ANSWER,
+        "reference_answer_schema": (mcx_contract.REFERENCE_ANSWER_V3 if supporting_observations else
+                                    mcx_contract.REFERENCE_ANSWER_V2 if successor else mcx_contract.REFERENCE_ANSWER),
         "version": "2.0" if successor else "1.0", "request_reference_fields": sorted(mcx_contract.REQUEST_REFERENCE_FIELDS),
         "subject_fields": sorted(mcx_contract.ANSWER_SUBJECT_FIELDS - {"observed_chart_identity"} if successor
                                  else mcx_contract.ANSWER_SUBJECT_FIELDS), "response_fields": sorted(mcx_contract.RESPONSE_FIELDS),
@@ -174,6 +176,8 @@ def render_mcx_successor_question_pdf(native, reference, charts: dict[str, bytes
         "clustering": list(mcx_contract.CLUSTERING), "native_components": list(mcx_contract.NATIVE_COMPONENTS),
         "reference_components": list(mcx_contract.REFERENCE_COMPONENTS)}
     if successor:
+        shape["answer_versions_by_role"] = {mcx_contract.NATIVE_ROLE: native.value["answer_contract_version"],
+                                             mcx_contract.REFERENCE_ROLE: reference.value["answer_contract_version"]}
         shape["response_question_sets"] = {
             role: {"question_set_identity": pack["schema"],
                    "question_set_version": pack["version"]}
@@ -207,6 +211,14 @@ def render_mcx_successor_question_pdf(native, reference, charts: dict[str, bytes
                 "CONTINUOUS_BACK_ADJUSTMENT_UNKNOWN", "CONTRACT_IDENTITY_UNCLEAR",
                 "CURRENCY_OR_BASIS_DIFFERENCE", "MISSING_EVIDENCE", "OTHER_VISIBLE_LIMITATION"])
     story.append(contract_block(json.dumps(shape, indent=2)))
+    if supporting_observations:
+        story.append(Paragraph(
+            "Supporting reference version 2.1 preserves readable dated NYMEX labels with UNDETERMINED correspondence, "
+            "PARTIAL observation status and an explicit limitation. Do not null readable fields or assert continuous-symbol "
+            "equivalence. Only the exact expected symbol may be MATCHED. Unresolved M2 rows are NOT_COMPARABLE and M3 is "
+            "NOT_ESTABLISHED. The Analyst reports visible evidence, forming-bar indications and uncertainty; KRONOS owns "
+            "sessions, completed candles, analytical cutoffs, currentness and downstream authority. This is not readiness, "
+            "admission or execution permission. Native version 2.0 and its identity checks remain unchanged.", styles["BodyText"]))
     for paragraph in (
         "Echo each logical request reference from its own question contract. Preserve independently identified native and reference Answers. "
         "Preserve exact ordered subject references, candidate references, roles, subject identities, markets and reference symbols. "

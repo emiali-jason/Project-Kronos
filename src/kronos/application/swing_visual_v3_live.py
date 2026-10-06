@@ -490,7 +490,8 @@ class SwingVisualV3LiveWorkflow:
                         question_contract_identity=provenance["question_set_identity"] if market == "NSE" else provenance["question_contract_identity"],
                         question_contract_version=("3.2" if successor else "3.1") if market == "NSE" else provenance["question_contract_version"],
                         answer_contract_identity=provenance["answer_schema"] if market == "NSE" else provenance["answer_contract_identity"],
-                        answer_contract_version="2.0" if successor else "1.0", structured_evidence_schema=value["schema"],
+                        answer_contract_version=(("2.0" if successor else "1.0") if market == "NSE"
+                                                 else provenance["answer_contract_version"]), structured_evidence_schema=value["schema"],
                         structured_evidence_version=("3.2" if successor else "3.1") if market == "NSE" else value["version"]))
             from kronos.swing.v1.review_evidence_binding import ReviewEvidenceBinding
             predecessor = prior.get(ReviewEvidenceBinding.create("NATIVE_REVIEW", binding).lineage_key)
@@ -1810,9 +1811,10 @@ class NativeReviewIntakeWorkflow:
             answer_contract_identity=mcx.NATIVE_ANSWER_V2, answer_contract_version="2.0", subjects=native_subjects))
         reference = mcx.McxReferenceReviewRequestMapping.create(dict(common,
             request_identity="SWING-REVIEW-REQUEST-" + uuid4().hex.upper(),
-            schema=mcx.REFERENCE_REQUEST_SCHEMA_V2, version="2.0",
-            question_contract_identity=mcx.REFERENCE_QUESTIONS_V2, question_contract_version="2.0",
-            answer_contract_identity=mcx.REFERENCE_ANSWER_V2, answer_contract_version="2.0", subjects=reference_subjects))
+            schema=mcx.REFERENCE_REQUEST_SCHEMA_V3, version=mcx.REFERENCE_OBSERVATION_VERSION,
+            question_contract_identity=mcx.REFERENCE_QUESTIONS_V3, question_contract_version=mcx.REFERENCE_OBSERVATION_VERSION,
+            answer_contract_identity=mcx.REFERENCE_ANSWER_V3, answer_contract_version=mcx.REFERENCE_OBSERVATION_VERSION,
+            subjects=reference_subjects))
         native, reference, pdf = render_mcx_successor_question_pdf(native, reference, images)
         with self._page_input_write():
             return self.store.publish_mcx_request(native, reference, pdf, publication_timestamp=timestamp(now),
