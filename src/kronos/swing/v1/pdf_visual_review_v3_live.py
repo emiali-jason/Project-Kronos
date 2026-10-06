@@ -219,7 +219,9 @@ def render_mcx_successor_question_pdf(native, reference, charts: dict[str, bytes
         "chart_identity, source_chart_identity and revision echoes must remain exact; do not normalize.",
         "visible_basis and finding are nonempty text up to 512 characters; confidence_in_extraction is nonempty text up to 64. "
         "ambiguity_reason is text up to 512 characters and nonempty for PARTIAL, UNAVAILABLE or INVALID. "
-        "Q1-Q9 why_not_covered_elsewhere is required null. Q10 finding NONE requires null; otherwise a nonempty explanation up to 512 characters.",
+        "Q1-Q9 why_not_covered_elsewhere is required null. "
+        + ("Q10 finding NONE or UNAVAILABLE requires null; otherwise a nonempty explanation up to 512 characters."
+           if successor else "Q10 finding NONE requires null; otherwise a nonempty explanation up to 512 characters."),
         "Native Q3/Q10 machine_coverage_comparison is COMPARISON_UNAVAILABLE. Reference Q3/Q10 is NOT_APPLICABLE. "
         "No machine inventory was supplied. Q3/Q6 prices are either one finite nonnegative JSON number point_price, "
         "one complete ordered nonnegative zone_low/zone_high pair, or all three null; booleans and numeric strings fail.",

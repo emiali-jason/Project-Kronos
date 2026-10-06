@@ -769,3 +769,44 @@ def test_malformed_retained_request_is_bounded_not_a_python_type_error(field):
     raw["subjects"][0][field] = []
     with pytest.raises(ReviewEvidenceError, match="MCX_FIELD_TYPE_INVALID"):
         mcx.McxNativeVisualRequest.create(raw)
+
+
+@pytest.mark.parametrize("role", (mcx.NATIVE_ROLE, mcx.REFERENCE_ROLE))
+def test_printed_successor_q10_unavailable_explanation_matches_validator(monkeypatch, role):
+    from io import BytesIO
+    from pypdf import PdfReader
+    _, native, reference, pdf = _rendered_successor_contract(monkeypatch)
+    text = " ".join(" ".join(page.extract_text() for page in PdfReader(BytesIO(pdf)).pages).split())
+    # The exact printed rule must describe the already-enforced successor branch.
+    answer = _complete_successor_answer(native, reference)
+    root = answer if role == mcx.NATIVE_ROLE else answer["supporting_reference_answer"]
+    observation = root["subjects"][0]["responses"][0]["observations"][9]
+    observation.update(observation_status="UNAVAILABLE", ambiguity_reason="TEST ONLY: no additional visible fact", why_not_covered_elsewhere=None)
+    observation["result"]["finding"] = "UNAVAILABLE"
+    request = mcx.mcx_question_pack_from_mappings(native, reference)
+    assert mcx.validate_mcx_answer(canonical(answer), request) == answer
+    # A nonempty explanation suggested by the old PDF must still reject.
+    changed = deepcopy(answer)
+    wrong = changed if role == mcx.NATIVE_ROLE else changed["supporting_reference_answer"]
+    wrong["subjects"][0]["responses"][0]["observations"][9]["why_not_covered_elsewhere"] = "TEST ONLY: unavailable"
+    with pytest.raises(ReviewEvidenceError, match="MCX_Q10_INVALID"):
+        mcx.validate_mcx_answer(canonical(changed), request)
+    assert "Q10 finding NONE or UNAVAILABLE requires null" in text
+
+
+def test_legacy_mcx_q10_printed_rule_remains_unchanged():
+    from io import BytesIO
+    from PIL import Image
+    from pypdf import PdfReader
+    from kronos.swing.v1.pdf_visual_review_v3_live import render_mcx_successor_question_pdf
+    output = BytesIO(); Image.new("RGB", (32, 24), "white").save(output, format="PNG")
+    image = output.getvalue(); revision = sha256(image).hexdigest(); pair = []
+    for mapping in retained_mappings():
+        value = mapping.value
+        for subject in value["subjects"]:
+            for chart in subject["responses"]: chart["chart_revision_sha256"] = revision
+        pair.append(type(mapping).create(value))
+    _, _, pdf = render_mcx_successor_question_pdf(*pair, {revision: image})
+    text = " ".join(" ".join(page.extract_text() for page in PdfReader(BytesIO(pdf)).pages).split())
+    assert "Q10 finding NONE requires null; otherwise a nonempty explanation" in text
+    assert "Q10 finding NONE or UNAVAILABLE requires null" not in text
