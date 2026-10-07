@@ -25,3 +25,30 @@ The operation owns a counted MONITORING_CALLBACK ticket through Provider work, s
 This operation creates no plan, advisory, PAPER/LIVE position, entry, order or research update. It does not change selection, analysis, accepted Answer/V2, commissioning or any generic MCX hold. Current withheld V2 does not prohibit factual non-position observation and does not become confirmed through it. All five MCX families share the same exact-contract path. Physical/monetary multipliers, costs and trading authority remain outside this operation.
 
 Engineering tests use isolated fake Provider evidence through the actual shared hub and Kite adapter. They establish source behavior, not genuine live market acceptance. Publication/build/install/load and one genuine WO-05 observation require separate Sponsor authorization. WO-01–04 remain closed; WO-06–13, UX and WO-16/15 remain paused.
+
+
+## Bounded rejected-quote attribution
+
+An optional additive `quote_validation` diagnostic is retained before the
+existing quote guard, in the same immutable receipt. It contains only the exact
+normalized ProviderMarketTick and MonitoringSubscriptionEvidence available at
+that decision, their subscription digest, decision/request/valid-through times,
+and the ordered guard results. The first false guard is FAIL; evaluated true
+guards are PASS; short-circuited guards remain UNKNOWN. The immutable tick and
+context expose the individual identity, connection and timestamp constituents
+of `admits` and the ordered-time condition without another Provider read.
+An absent typed tick or context is represented by null, never serialized from
+an arbitrary object. No authentication payload or raw Provider exception is
+retained. Distinct exchange timestamp remains UNKNOWN.
+
+The diagnostic is not an accepted observation, admissible CMP, subscription
+recovery or trading authority. Failed receipts retain observation=null. All
+existing freshness, positive-price, token, identity, session, selection and
+final-currentness gates remain in force, including their short-circuit order
+and one evaluation of mutable guard properties. No retry, quote buffering,
+timestamp adjustment, budget extension or acceptance fallback is introduced.
+Historical receipts without the optional diagnostic remain immutable and
+readable/replayable; no records are upgraded or rewritten. The next genuine
+attempt requires separate Sponsor authorization after exact-byte review and
+release. This addition cannot retrospectively identify the missing predicate
+values of operation d688ffd13aa4448d8e07f8bd6d7919f9.

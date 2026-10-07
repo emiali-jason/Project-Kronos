@@ -323,3 +323,100 @@ def test_temporary_mcx_observation_does_not_detach_existing_nse_owner(tmp_path, 
     assert f.cap.calls.count('session') == 1
     registration.disconnect()
     assert socket.closed and f.hub.status_document()['owner_count'] == 0
+
+
+@pytest.mark.parametrize('mode,failed', [
+    ('wrong_token', 'subscribed_token'),
+    ('stale_quote', 'subscription_admits_tick'),
+])
+def test_rejected_quote_retains_actual_normalized_evidence_and_first_guard(tmp_path, mode, failed):
+    f = setup(tmp_path, mode)
+    result = f.owner.observe(**f.args); r = result['record']
+    assert r['state'] == 'FAILED' and r['observation'] is None
+    d = r['quote_validation']
+    assert d['schema'] == 'KRONOS-MCX-QUOTE-VALIDATION-DIAGNOSTIC/1.0'
+    assert d['first_rejection'] == failed
+    assert d['checks'][failed] == 'FAIL'
+    assert d['tick']['instrument']['trading_symbol'] == f.instrument.trading_symbol
+    assert d['subscription']['provider_instrument_token'] == 202
+    assert d['subscription_identity']
+    assert d['checks']['capability_active'] == 'UNKNOWN' # short-circuit preserved
+    assert r['cleanup']['complete'] and f.hub.status_document()['owner_count'] == 0
+    assert f.admission.snapshot()['owners'] == {}
+    retained = f.owner.read(f.args['operation'])
+    assert retained == result
+    calls = list(f.cap.calls)
+    assert f.owner.observe(**f.args) == result and f.cap.calls == calls
+
+
+@pytest.mark.parametrize('family', list(McxFamily))
+def test_success_diagnostics_are_factual_not_trading_authority(tmp_path, family):
+    f = setup(tmp_path, family=family); r = f.owner.observe(**f.args)['record']
+    d = r['quote_validation']
+    assert r['state'] == 'OBSERVED' and d['first_rejection'] is None
+    assert set(d['checks'].values()) == {'PASS'}
+    assert d['tick'] == r['observation']['tick']
+    assert d['subscription'] == r['observation']['subscription']
+    assert d['subscription_identity'] == r['observation']['subscription_identity']
+    assert d['diagnostic_only'] is True and d['distinct_exchange_timestamp'] == 'UNKNOWN'
+    assert 'SECRET' not in json.dumps(d) and 'access_token' not in json.dumps(d)
+
+
+@pytest.mark.parametrize('changed,failed', [
+    ('instrument', 'subscription_instrument'),
+    ('subscription', 'subscription_admits_tick'),
+    ('state', 'subscription_connected'),
+    ('token', 'subscribed_token'),
+    ('missing', 'subscription_type'),
+])
+def test_rejection_diagnostics_preserve_strict_context_guard(tmp_path, monkeypatch, changed, failed):
+    f = setup(tmp_path); original = f.cap.open_monitoring_session
+    def open_session(consumer):
+        session = original(consumer); read = session.observation_context
+        def context(_session, instrument):
+            value = read(instrument)
+            if changed == 'missing': return None
+            if changed == 'instrument': return replace(value, instrument=replace(instrument, expiry=date(2026,11,19)))
+            if changed == 'subscription': return replace(value, subscribed_at=f.clock.now + timedelta(seconds=1))
+            if changed == 'state': return replace(value, state=MonitoringConnectionState.CONTEXT_INCOMPLETE)
+            return replace(value, provider_instrument_token=None)
+        monkeypatch.setattr(type(session), 'observation_context', context)
+        return session
+    monkeypatch.setattr(f.cap, 'open_monitoring_session', open_session)
+    r = f.owner.observe(**f.args)['record']
+    assert 'quote_validation' in r, (r.get('reason'), r.get('error_type'))
+    d = r['quote_validation']
+    assert r['state'] == 'FAILED' and r['observation'] is None
+    assert d['first_rejection'] == failed and d['checks'][failed] == 'FAIL'
+    assert (d['subscription'] is None) == (changed == 'missing')
+    assert r['cleanup']['complete'] and f.admission.snapshot()['owners'] == {}
+
+
+@pytest.mark.parametrize('changed,failed', [('connection','subscription_admits_tick'),
+    ('recovered','subscription_admits_tick'),('price','positive_price')])
+def test_rejected_tick_is_retained_without_becoming_an_observation(tmp_path, monkeypatch, changed, failed):
+    f = setup(tmp_path); original = f.cap.open_monitoring_session
+    def open_session(consumer):
+        session = original(consumer); read = consumer.on_market_tick
+        def tick(t):
+            updates = {'connection_id':'WRONG'} if changed == 'connection' else {'recovered':True} if changed == 'recovered' else {'last_price':Decimal('0')}
+            read(replace(t, **updates))
+        consumer.on_market_tick = tick
+        return session
+    monkeypatch.setattr(f.cap, 'open_monitoring_session', open_session)
+    r = f.owner.observe(**f.args)['record']
+    assert r['reason'] == 'MCX_OBSERVATION_QUOTE_INADMISSIBLE'
+    assert r['quote_validation']['first_rejection'] == failed
+    assert r['observation'] is None and r['cleanup']['complete']
+
+
+def test_legacy_failed_receipt_replay_does_not_add_diagnostics(tmp_path):
+    from kronos.application.swing_mcx_observation import _digest
+    f = setup(tmp_path, 'wrong_token'); first = f.owner.observe(**f.args)
+    first['record'].pop('quote_validation', None)
+    first['sha256'] = _digest(first['record'])
+    path = f.owner.root / f.args['operation'] / 'receipt.json'
+    path.write_text(json.dumps(first)) # isolated historical-schema fixture only
+    before = path.read_bytes(); calls = list(f.cap.calls)
+    assert f.owner.observe(**f.args) == first
+    assert path.read_bytes() == before and f.cap.calls == calls

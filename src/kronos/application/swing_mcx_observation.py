@@ -40,6 +40,39 @@ def _digest(value):
                             separators=(',', ':'), allow_nan=False).encode()).hexdigest()
 
 
+_QUOTE_CHECKS = (
+    'tick_type', 'subscription_type', 'registration_active',
+    'registration_connected', 'subscription_connected',
+    'subscription_instrument', 'subscription_admits_tick', 'subscribed_token',
+    'quote_instrument', 'positive_price', 'request_subscription_quote_order',
+    'within_monotonic_deadline', 'capability_active',
+)
+
+
+def _quote_diagnostic(tick, context, now, started, valid_through):
+    # Only closed, normalized factual contracts are serializable here. Never
+    # retain arbitrary Provider objects, exception payloads or credentials.
+    subscription = (asdict(context)
+                    if type(context) is MonitoringSubscriptionEvidence else None)
+    return dict(schema='KRONOS-MCX-QUOTE-VALIDATION-DIAGNOSTIC/1.0',
+        diagnostic_only=True,
+        tick=asdict(tick) if type(tick) is ProviderMarketTick else None,
+        subscription=subscription,
+        subscription_identity=None if subscription is None else _digest(subscription),
+        checked_at=now, started_at=started, valid_through=valid_through,
+        distinct_exchange_timestamp='UNKNOWN',
+        checks={name: 'UNKNOWN' for name in _QUOTE_CHECKS}, first_rejection=None)
+
+
+def _quote_check(diagnostic, name, accepted):
+    # Preserve the existing short-circuit order and property reads. UNKNOWN
+    # explicitly means not evaluated; a retained rejected tick is not a CMP.
+    diagnostic['checks'][name] = 'PASS' if accepted else 'FAIL'
+    if not accepted and diagnostic['first_rejection'] is None:
+        diagnostic['first_rejection'] = name
+    return accepted
+
+
 def _operation(value):
     if type(value) is not str or re.fullmatch('[a-f0-9]{32}', value) is None:
         raise ValueError('MCX_OBSERVATION_ID_INVALID')
@@ -198,16 +231,21 @@ class McxSelectedContractObservation:
                     tick = consumer.tick
                     context = registration.observation_context(instrument)
                     now = self.clock()
-                    if (type(tick) is not ProviderMarketTick or
-                            type(context) is not MonitoringSubscriptionEvidence or
-                            not registration.active or
-                            registration.connection_state is not MonitoringConnectionState.CONNECTED or
-                            context.state is not MonitoringConnectionState.CONNECTED or
-                            context.instrument != instrument or not context.admits(tick) or
-                            context.provider_instrument_token != mapping.provider_instrument_token or
-                            tick.instrument != instrument or tick.last_price <= 0 or
-                            not started <= context.subscribed_at < tick.observed_at <= tick.received_at <= now < valid_through or
-                            monotonic() >= wall_deadline or not capability.active):
+                    diagnostic = _quote_diagnostic(tick, context, now, started, valid_through)
+                    record['quote_validation'] = diagnostic
+                    if (not _quote_check(diagnostic, 'tick_type', type(tick) is ProviderMarketTick) or
+                            not _quote_check(diagnostic, 'subscription_type', type(context) is MonitoringSubscriptionEvidence) or
+                            not _quote_check(diagnostic, 'registration_active', registration.active) or
+                            not _quote_check(diagnostic, 'registration_connected', registration.connection_state is MonitoringConnectionState.CONNECTED) or
+                            not _quote_check(diagnostic, 'subscription_connected', context.state is MonitoringConnectionState.CONNECTED) or
+                            not _quote_check(diagnostic, 'subscription_instrument', context.instrument == instrument) or
+                            not _quote_check(diagnostic, 'subscription_admits_tick', context.admits(tick)) or
+                            not _quote_check(diagnostic, 'subscribed_token', context.provider_instrument_token == mapping.provider_instrument_token) or
+                            not _quote_check(diagnostic, 'quote_instrument', tick.instrument == instrument) or
+                            not _quote_check(diagnostic, 'positive_price', tick.last_price > 0) or
+                            not _quote_check(diagnostic, 'request_subscription_quote_order', started <= context.subscribed_at < tick.observed_at <= tick.received_at <= now < valid_through) or
+                            not _quote_check(diagnostic, 'within_monotonic_deadline', monotonic() < wall_deadline) or
+                            not _quote_check(diagnostic, 'capability_active', capability.active)):
                         raise ValueError('MCX_OBSERVATION_QUOTE_INADMISSIBLE')
                     observed_market = session_fact(self.calendar, tick.observed_at)
                     received_market = session_fact(self.calendar, tick.received_at)
