@@ -168,6 +168,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         consumer_identity="SWING",
         operations=frozenset({
             ReadOnlyProviderOperation.INSTRUMENTS,
+            ReadOnlyProviderOperation.INSTRUMENT_ASSERTIONS,
             ReadOnlyProviderOperation.HISTORICAL_DATA,
             ReadOnlyProviderOperation.QUOTE,
             ReadOnlyProviderOperation.LTP,

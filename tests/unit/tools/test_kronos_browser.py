@@ -1,4 +1,5 @@
 from pathlib import Path
+from datetime import timedelta
 from types import SimpleNamespace
 import shutil
 
@@ -8,6 +9,14 @@ from kronos.common.maintenance import DrainStartupContext
 from kronos.application.intraday_notifications import IntradayNotifications
 from kronos.browser.runtime_state import complete_startup
 from tools import kronos_browser
+from kronos.provider.contracts.provider_authentication import ReadOnlyProviderOperation
+from kronos.provider.runtime import (
+    SharedAuthenticatedProviderRuntime, ProviderRuntimeAccessError,
+    ProviderRuntimeFailure,
+)
+from kronos.swing.v1.mcx_contract_profile import McxFamily
+from application.test_swing_mcx_observation import setup as observation_fixture
+from provider.test_shared_provider_runtime import _Runtime, _authenticate
 import pytest
 
 
@@ -31,7 +40,8 @@ def isolated_composition_authority(monkeypatch):
     )
 
 
-def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch) -> None:
+@pytest.mark.parametrize("family", list(McxFamily))
+def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch, tmp_path, family) -> None:
     events: list[object] = []
     control = object()
     checkpoint = DrainStartupContext("a" * 64, "EMPTY", 0, "b" * 64)
@@ -172,6 +182,98 @@ def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch) ->
     }
     source = Path(kronos_browser.__file__).read_text(encoding="utf-8")
     assert source.count("SharedAuthenticatedProviderRuntime(") == 1
+
+    # Exercise the grant supplied by actual canonical composition, rather than
+    # giving the observation fixture an unrestricted Provider capability.
+    grants = []
+    facade_factory = SharedAuthenticatedProviderRuntime.compatibility_facade
+    def capture_grant(runtime, **kwargs):
+        grants.append(kwargs)
+        return facade_factory(runtime, **kwargs)
+    monkeypatch.setattr(SharedAuthenticatedProviderRuntime, "compatibility_facade", capture_grant)
+    swing_factory()
+    assert len(grants) == 1 and grants[0]["consumer_identity"] == "SWING"
+    operations = grants[0]["operations"]
+    f, shared = _authenticated_observation(tmp_path, family)
+    facade = shared.compatibility_facade(**grants[0])
+    lease = facade.authenticated_read_only_capability()
+    assert lease.operations == operations
+    assert facade.authenticated_read_only_capability() is lease
+    assert shared.active_lease_count == 1
+    f.owner.capability = lambda: lease
+    record = f.owner.observe(**f.args)["record"]
+    assert record["state"] == "OBSERVED" and record["cleanup"]["complete"]
+    assert operations == frozenset({
+        ReadOnlyProviderOperation.INSTRUMENTS,
+        ReadOnlyProviderOperation.INSTRUMENT_ASSERTIONS,
+        ReadOnlyProviderOperation.HISTORICAL_DATA,
+        ReadOnlyProviderOperation.QUOTE,
+        ReadOnlyProviderOperation.LTP,
+        ReadOnlyProviderOperation.OHLC,
+        ReadOnlyProviderOperation.MONITORING,
+    })
+    assert record["selection"]["instrument"]["trading_symbol"] == f.instrument.trading_symbol
+    assert record["mapping"]["provider_instrument_token"] == 202
+    assert record["observation"]["subscription"]["provider_instrument_token"] == 202
+    assert f.cap.calls == ["records", "assertions", "session"]
+    assert f.cap.sockets[0].closed and f.cap.sockets[0].tokens == []
+    assert f.hub.status_document()["owner_count"] == 0
+    assert f.admission.snapshot()["owners"] == {}
+    assert shared.active_lease_count == 1  # observation does not replace/release Swing's lease
+    lease.release()
+    assert shared.active_lease_count == 0
+    shared.end_kronos_session()
+
+
+def _authenticated_observation(tmp_path, family=McxFamily.CRUDEOIL):
+    """Existing owning fixtures with actual authentication and lease enforcement."""
+    f = observation_fixture(tmp_path, family=family)
+    provider = _Runtime()
+    provider.capability = f.cap
+    f.cap.operations = frozenset(ReadOnlyProviderOperation)
+    provider.current_context = lambda: SimpleNamespace(
+        provider="KITE", context_id="ISOLATED-CONTEXT",
+        valid_until=f.clock() + timedelta(hours=1),
+    )
+    shared = SharedAuthenticatedProviderRuntime(
+        lambda: provider, provider_identity="KITE", clock=f.clock,
+    )
+    _authenticate(shared)
+    return f, shared
+
+
+def test_observation_without_assertion_grant_fails_before_subscription(tmp_path):
+    f, shared = _authenticated_observation(tmp_path)
+    lease = shared.acquire_lease(consumer_identity="UNGRANTED-TEST-OWNER", operations=frozenset({
+        ReadOnlyProviderOperation.INSTRUMENTS, ReadOnlyProviderOperation.MONITORING,
+    }))
+    f.owner.capability = lambda: lease
+    record = f.owner.observe(**f.args)["record"]
+    assert record["state"] == "FAILED"
+    assert record["error_type"] == "ProviderRuntimeAccessError"
+    assert record["mapping"] is None and record["observation"] is None
+    assert record["cleanup"]["complete"]
+    assert f.cap.calls == ["records"] and not f.cap.sessions
+    assert f.hub.status_document()["owner_count"] == 0
+    assert f.admission.snapshot()["owners"] == {}
+    with pytest.raises(ProviderRuntimeAccessError) as rejected:
+        lease.full_quotes((), request_identity="UNGRANTED-QUOTE")
+    assert rejected.value.failure is ProviderRuntimeFailure.OPERATION_NOT_AUTHORIZED
+    assert f.cap.calls == ["records"]
+    lease.release()
+    shared.end_kronos_session()
+
+
+def test_swing_grant_cannot_exceed_authenticated_provider_capability(tmp_path):
+    f, shared = _authenticated_observation(tmp_path)
+    f.cap.operations = frozenset({ReadOnlyProviderOperation.INSTRUMENTS})
+    with pytest.raises(ProviderRuntimeAccessError) as rejected:
+        shared.acquire_lease(consumer_identity="SWING", operations=frozenset({
+            ReadOnlyProviderOperation.INSTRUMENTS, ReadOnlyProviderOperation.INSTRUMENT_ASSERTIONS,
+        }))
+    assert rejected.value.failure is ProviderRuntimeFailure.OPERATION_NOT_AUTHORIZED
+    assert shared.active_lease_count == 0 and not f.cap.calls
+    shared.end_kronos_session()
 
 
 def test_developer_no_browser_mode_does_not_open_browser(monkeypatch) -> None:
