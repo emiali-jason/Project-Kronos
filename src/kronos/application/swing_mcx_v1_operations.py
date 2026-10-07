@@ -508,6 +508,7 @@ class SwingMcxV1OperationalControl:
                 raise ValueError("MCX_V1_FACTUAL_EXIT_SESSION_UNAVAILABLE")
             closure = self.bound.manual_paper_exit_at_cmp(position_id, tick, schedule)
         self._emit_research("CLOSURE", closure)
+        self.native_review.detach_lifecycle_monitoring(position_id)
         return closure
 
     def admit_live(self, *, run: str, family: McxFamily, plan_id: str,
@@ -597,6 +598,7 @@ class SwingMcxV1OperationalControl:
                 broker_bytes=broker_bytes)
         if closure is not None:
             self._emit_research("CLOSURE", closure)
+            self.native_review.detach_lifecycle_monitoring(position_id)
         return closure
 
     def record_manual_live_exit(
@@ -661,5 +663,7 @@ class SwingMcxV1OperationalControl:
                     broker_evidence_id=evidence_id,
                     broker_evidence_sha256=evidence_sha256,
                     attested_at=attested_at, v1_manual=True)
-            return self.live_exit(
-                position_id, expected_hash, attestation, evidence_bytes, reason)
+        # Transport retirement must not retain the outer operation lock.
+        # live_exit independently rechecks the position before durable closure.
+        return self.live_exit(
+            position_id, expected_hash, attestation, evidence_bytes, reason)

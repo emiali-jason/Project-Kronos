@@ -1337,7 +1337,8 @@ def test_browser_to_reserved_process_review_held_plan_and_historical_lifecycle(
     recovered_control.lifecycle = restarted_v1.service
     recovered_control.bound = restarted_v1
     recovered_control.native_review = SimpleNamespace(
-        latest_mcx_observation=monitor.latest_mcx_observation)
+        latest_mcx_observation=monitor.latest_mcx_observation,
+        detach_lifecycle_monitoring=monitor.detach)
     clock[0] += timedelta(seconds=1)
     capability.socket.on_close(capability.socket, 1006, "active fixture outage")
     clock[0] += timedelta(seconds=1)
@@ -1353,6 +1354,9 @@ def test_browser_to_reserved_process_review_held_plan_and_historical_lifecycle(
         assert sum(event.event_type.value == "PAPER_ENTRY_CAPTURED"
                    for event in restarted_v1.service.snapshot().events) == 1
         closure_v1 = recovered_control.paper_exit(active.position_id, active.integrity_hash)
+        assert not monitor.active_position_ids
+        assert hub.active_session_count == hub.subscription_reference_count(exact) == 0
+        assert capability.socket.closed
     finally:
         monitor.close()
     assert closure_v1.actual_exit == Decimal("103")
