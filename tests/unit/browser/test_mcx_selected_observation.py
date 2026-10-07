@@ -1,6 +1,7 @@
 """Actual Browser intake boundary; fake Provider, isolated canonical owners."""
 from http import HTTPStatus
 from io import BytesIO
+from html.parser import HTMLParser
 from types import MethodType, SimpleNamespace
 from urllib.parse import urlencode
 import pytest
@@ -96,3 +97,48 @@ def test_observation_control_requires_current_projection_and_capability_without_
     assert 'no position' in page and 'name="operation"' in page
     for change in (dict(current=False), dict(capability_active=False), dict(observation_targets=())):
         assert '/swing/mcx-v1/observe' not in render_mcx_v1_workspace({**projection, **change}, ())
+
+
+def test_retained_master_identities_wrap_without_hiding_evidence_or_changing_controls():
+    class Identities(HTMLParser):
+        def __init__(self):
+            super().__init__()
+            self.identities = []
+            self.current = None
+
+        def handle_starttag(self, tag, attrs):
+            attrs = dict(attrs)
+            if tag == 'span' and attrs.get('class') == 'mcx-master-identity':
+                self.current = [attrs, '']
+
+        def handle_data(self, data):
+            if self.current is not None:
+                self.current[1] += data
+
+        def handle_endtag(self, tag):
+            if tag == 'span' and self.current is not None:
+                self.identities.append(self.current)
+                self.current = None
+
+    snapshots = (
+        ('PROVIDER-INSTRUMENT-SNAPSHOT-c7767a4940cb82ce2b9cfd45f2e7c60a5a2a7673b78dc42a3855f8d323c78692',
+         '2026-09-29T08:36:03.524047+00:00', 'a' * 64),
+        ('PROVIDER-INSTRUMENT-SNAPSHOT-e4eb2e41dddd87ee6dff55628822b55b8a2695170f21ac63ced62e96d214637c',
+         '2026-08-22T16:22:56.370428+00:00', 'b' * 64),
+    )
+    projection = dict(run='RUN', current=True, reserved=False, error=None,
+        publication_sha256='c'*64, capability_active=False, preparations=(), plans=(), positions=())
+    page = render_mcx_v1_workspace(projection, snapshots)
+    parsed = Identities()
+    parsed.feed(page)
+    assert [text for _, text in parsed.identities] == [row[0] for row in snapshots]
+    for attrs, _ in parsed.identities:
+        declarations = dict(part.split(':', 1) for part in attrs['style'].split(';') if part)
+        assert declarations == {'overflow-wrap': 'anywhere'}
+        assert 'hidden' not in attrs and 'aria-hidden' not in attrs
+    assert page.count('action="/swing/mcx-v1/reserve"') == 2
+    assert '/swing/mcx-v1/observe' not in page
+    for family in ('GOLDM', 'SILVERM', 'COPPER', 'CRUDEOIL', 'NATURALGAS'):
+        assert f'/swing/mcx-contract-offer?family={family}' in page
+    assert 'Historical listing is not a current quote or monetary authority.' in page
+    assert 'No broker orders.' in page and 'UNKNOWN' in page

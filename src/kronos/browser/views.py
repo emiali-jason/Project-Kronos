@@ -41,7 +41,8 @@ def render_mcx_v1_workspace(projection, snapshots) -> str:
         parts.append('<p role="alert">' + escape(projection['error']) + '</p>')
     if projection['publication_sha256'] and not projection['reserved']:
         for identity, acquired_at, digest in snapshots:
-            parts.append('<p>Retained master file ' + escape(identity) + '; acquired-at metadata ' + escape(acquired_at)
+            parts.append('<p>Retained master file <span class="mcx-master-identity" style="overflow-wrap:anywhere">'
+                         + escape(identity) + '</span>; acquired-at metadata ' + escape(acquired_at)
                          + '. This listing is unvalidated. The explicit reservation validates the complete authenticated snapshot before reserving a run. Historical listing is not a current quote or monetary authority.</p>')
             parts.append(form('/swing/mcx-v1/reserve', dict(snapshot=identity,
                 master_sha256=digest, publication_sha256=projection['publication_sha256']),
