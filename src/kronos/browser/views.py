@@ -8,6 +8,7 @@ from decimal import Decimal
 from html import escape
 from urllib.parse import quote, urlencode
 from zoneinfo import ZoneInfo
+from uuid import uuid4
 
 
 def render_mcx_v1_workspace(projection, snapshots) -> str:
@@ -50,6 +51,12 @@ def render_mcx_v1_workspace(projection, snapshots) -> str:
             action = 'choose one exact future' if projection['reserved'] else 'retained exact-future selection'
             parts.append(f'<p><a href="/swing/mcx-contract-offer?family={family}">{family}: {action}</a></p>')
         if projection['capability_active']:
+            for family, symbol, expiry, selection_sha256 in projection.get('observation_targets', ()):
+                parts.append(form('/swing/mcx-v1/observe', dict(
+                    operation=uuid4().hex, run=projection['run'], family=family,
+                    selection_sha256=selection_sha256,
+                    publication_sha256=projection['publication_sha256']),
+                    'Observe ' + symbol + ' (' + expiry + ') — no position'))
             for family, digest in projection['preparations']:
                 parts.append(form('/swing/mcx-v1/plan', dict(run=projection['run'],
                     family=family, handoff_sha256=digest), 'Prepare ' + family + ' exact-current price advice'))

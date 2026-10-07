@@ -373,3 +373,25 @@ def test_local_provider_e2e_reaches_domain_002_and_kr380_without_pine_or_webhook
     )
     assert outcome.state is EntryOutcomeState.ENTRY_TRIGGERED
     assert all(item.provenance[-1] == "DOMAIN-002" for item in observations)
+
+
+def test_applied_subscription_evidence_exposes_actual_token_without_changing_tick_contract():
+    session, socket, consumer = _session()
+    session.connect()
+    assert session.observation_context(_NSE).provider_instrument_token == 101
+    assert session.observation_context(_MCX).provider_instrument_token == 202
+    socket.on_ticks(socket, [_tick(101, 1400.5)])
+    assert not hasattr(consumer.ticks[0], 'instrument_token')
+    session.unsubscribe((_MCX,))
+    assert session.observation_context(_MCX) is None
+
+
+@pytest.mark.parametrize('token', [0, -1, True, '202'])
+def test_optional_subscription_token_rejects_invalid_values_and_preserves_legacy_constructor(token):
+    from kronos.provider.contracts.monitoring import MonitoringSubscriptionEvidence
+    legacy = MonitoringSubscriptionEvidence(_NSE, 'connection', _NOW,
+                                            MonitoringConnectionState.CONNECTED)
+    assert legacy.provider_instrument_token is None
+    with pytest.raises(ValueError, match='MONITORING_SUBSCRIPTION_EVIDENCE_INVALID'):
+        MonitoringSubscriptionEvidence(_MCX, 'connection', _NOW,
+            MonitoringConnectionState.CONNECTED, token)

@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from kronos.application.shared_monitoring import SharedSwingMonitoringHub
 from kronos.application.swing_mcx_v1_composition import install_canonical_mcx_v1
 from kronos.application.swing_mcx_v1_composition import SwingMcxV1Composition
 from kronos.application.swing_native_review import NativeReviewWorkflow
@@ -515,6 +516,7 @@ def test_explicit_plan_composition_current_review_bound_and_replay_write_free(
     app.mtf_fact_evidence_store = lambda: mtf
     app.authenticated_read_only_capability = lambda: SimpleNamespace(active=True)
     server = SimpleNamespace(application=app, native_intake=native_intake,
+        swing_monitoring_hub=SharedSwingMonitoringHub(),
         native_review=native_intake.native_review,
         maintenance_admission=MaintenanceAdmissionCoordinator())
     composition = SwingMcxV1Composition(server, master=master,
@@ -749,6 +751,7 @@ def test_populated_projection_reuses_current_context_and_master_without_writes(
     app.mtf_fact_evidence_store = lambda: mtf
     app.authenticated_read_only_capability = lambda: SimpleNamespace(active=False)
     server = SimpleNamespace(application=app, native_intake=native_intake,
+        swing_monitoring_hub=SharedSwingMonitoringHub(),
         native_review=native_intake.native_review, maintenance_admission=MaintenanceAdmissionCoordinator())
     composition = SwingMcxV1Composition(server, master=master,
         provider=lambda: pytest.fail('GET acquisition'), calendar=MarketCalendarPublisher(), clock=lambda: PLAN_NOW)
@@ -883,6 +886,7 @@ def test_populated_projection_rejects_run_admitted_after_initial_current_check(
     app.mtf_fact_evidence_store = lambda: mtf
     app.authenticated_read_only_capability = lambda: SimpleNamespace(active=False)
     server = SimpleNamespace(application=app, native_intake=native_intake,
+        swing_monitoring_hub=SharedSwingMonitoringHub(),
         native_review=native_intake.native_review,
         maintenance_admission=MaintenanceAdmissionCoordinator())
     composition = SwingMcxV1Composition(server, master=master,
@@ -921,3 +925,40 @@ def test_populated_projection_rejects_run_admitted_after_initial_current_check(
                 if before.get(path) != after.get(path)} == {admitted_control}
     finally:
         composition.control.close()
+
+
+def test_selected_observation_owner_installs_inert_and_fences_actual_retained_selection(tmp_path, scenario, monkeypatch):
+    publication, *_ = make_checkpoint(tmp_path / 'checkpoint', *scenario)
+    server, snapshot, digest = compose(tmp_path / 'browser', publication)
+    try:
+        composition = server.mcx_v1_composition
+        assert composition.observation.hub is server.swing_monitoring_hub
+        assert composition.observation.admission is server.maintenance_admission
+        assert not composition.observation.root.exists()
+        workflow = composition.reserve(snapshot, digest, composition.publication_hash())
+        family = McxFamily.CRUDEOIL
+        offer = workflow.offer(family)
+        selected = workflow.choose(family, McxSelectionRole.NEAR, offer.offer_sha256, recorded_at=NOW)
+        # Isolated publication facade supplies SUCCEEDED; genuine run/current
+        # checking and retained master/selection validation remain owning code.
+        status = publication.status()
+        status['latest_attempt']['state'] = 'SUCCEEDED'
+        monkeypatch.setattr(publication, 'status', lambda: json.loads(json.dumps(status)))
+        monkeypatch.setattr(publication, 'current', lambda: SimpleNamespace(
+            reference=status['current_manifest'], native=SimpleNamespace(run_identity=workflow.run_identity),
+            manifest={'generation': workflow.generation}))
+        from datetime import timedelta
+        composition.clock = lambda: NOW + timedelta(seconds=1)
+        before = inventory(tmp_path)
+        args = (workflow.run_identity, family, selected.integrity_sha256, composition.publication_hash())
+        result = composition.observation_selection(*args)
+        assert result['instrument'].trading_symbol == 'CRUDEOIL26NOVFUT'
+        assert result['historical_master_authority'] == 'IDENTITY_ONLY_NOT_CURRENT_MAPPING'
+        for changed in (('OLD', *args[1:]), (*args[:2], 'f'*64, args[3]), (*args[:3], 'f'*64)):
+            with pytest.raises(ValueError): composition.observation_selection(*changed)
+        status['latest_attempt']['state'] = 'RUNNING'
+        with pytest.raises(ValueError, match='PUBLICATION_CHANGED'):
+            composition.observation_selection(*args[:3], composition.publication_hash())
+        assert inventory(tmp_path) == before
+        assert not composition.observation.root.exists()
+    finally: server.server_close()

@@ -2434,6 +2434,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         if path == "/swing/mcx-v1":
             self._mcx_v1_workspace()
             return
+        if path == "/swing/mcx-v1/observation":
+            self._mcx_observation_receipt()
+            return
         if path == "/runtime/request-diagnostics":
             # Keep the bounded operational ring out of the launcher's 64 KiB
             # status contract, and do not acquire any application owner lock.
@@ -3378,7 +3381,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                         "/swing/research/update",
                         "/swing/v1/native-chart", "/swing/v1/native-chart/remove",
                         "/swing/mcx-contract-choice", "/swing/mcx-reserved-analysis",
-                        "/swing/mcx-v1/reserve", "/swing/mcx-v1/plan",
+                        "/swing/mcx-v1/reserve", "/swing/mcx-v1/plan", "/swing/mcx-v1/observe",
                         "/swing/mcx-v1/paper", "/swing/mcx-v1/live",
                         "/swing/mcx-v1/paper-exit", "/swing/mcx-v1/live-exit"}
                         and not self._swing_post_failed):
@@ -3512,6 +3515,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             return
         if path == "/swing/research/update":
             self._swing_research_update()
+            return
+        if path == "/swing/mcx-v1/observe":
+            self._mcx_observe()
             return
         if path in {"/swing/mcx-v1/reserve", "/swing/mcx-v1/plan"}:
             self._mcx_v1_composition_action(path)
@@ -6037,6 +6043,39 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             self._html(render_mcx_v1_workspace(projection, snapshots))
         except (OSError, ValueError):
             self._text(HTTPStatus.CONFLICT, "MCX V1 workspace unavailable.")
+
+    def _mcx_observation_receipt(self) -> None:
+        try:
+            query = parse_qs(urlsplit(self.path).query, strict_parsing=True,
+                             keep_blank_values=True)
+            if set(query) != {'operation'} or len(query['operation']) != 1:
+                raise ValueError('MCX_OBSERVATION_QUERY_INVALID')
+            composition = getattr(self.server, 'mcx_v1_composition', None)
+            if composition is None:
+                raise ValueError('MCX_OBSERVATION_OWNER_UNAVAILABLE')
+            self._json(composition.observation.read(query['operation'][0]))
+        except (OSError, ValueError, KeyError, TypeError):
+            self._text(HTTPStatus.CONFLICT, 'MCX observation receipt unavailable or incomplete.')
+
+    def _mcx_observe(self) -> None:
+        try:
+            length = int(self.headers.get('Content-Length', '0'))
+            if (urlsplit(self.path).query or not 0 < length <= 1024
+                    or self.headers.get('Content-Type') != 'application/x-www-form-urlencoded'):
+                raise ValueError('MCX_OBSERVATION_FORM_INVALID')
+            fields = parse_qs(self.rfile.read(length).decode('ascii'),
+                              strict_parsing=True, keep_blank_values=True)
+            expected = {'operation', 'run', 'family', 'selection_sha256', 'publication_sha256'}
+            if set(fields) != expected or any(len(x) != 1 or not x[0] for x in fields.values()):
+                raise ValueError('MCX_OBSERVATION_FORM_INVALID')
+            composition = getattr(self.server, 'mcx_v1_composition', None)
+            if composition is None:
+                raise ValueError('MCX_OBSERVATION_OWNER_UNAVAILABLE')
+            value = {key: values[0] for key, values in fields.items()}
+            value['family'] = McxFamily(value['family'])
+            self._json(composition.observation.observe(**value))
+        except (OSError, UnicodeError, ValueError, KeyError, TypeError):
+            self._text(HTTPStatus.CONFLICT, 'MCX observation rejected; inspect its retained receipt before any further action.')
 
     def _mcx_v1_composition_action(self, path: str) -> None:
         composition = getattr(self.server, "mcx_v1_composition", None)

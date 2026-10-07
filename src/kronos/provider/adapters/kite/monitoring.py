@@ -92,7 +92,8 @@ class KiteReadOnlyMonitoringSession:
             }:
                 return None
             return MonitoringSubscriptionEvidence(
-                instrument, self.__connection_id, stamp, self.__state)
+                instrument, self.__connection_id, stamp, self.__state,
+                self.__record_to_token.get(instrument))
 
     @property
     def state(self) -> MonitoringConnectionState:

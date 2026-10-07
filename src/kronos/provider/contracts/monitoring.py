@@ -52,6 +52,7 @@ class MonitoringSubscriptionEvidence:
     connection_id: str
     subscribed_at: datetime
     state: MonitoringConnectionState
+    provider_instrument_token: int | None = None
 
     def __post_init__(self) -> None:
         if (type(self.instrument) is not InstrumentRecord
@@ -59,7 +60,10 @@ class MonitoringSubscriptionEvidence:
                 or not _aware(self.subscribed_at)
                 or type(self.state) is not MonitoringConnectionState
                 or self.state not in {MonitoringConnectionState.CONNECTED,
-                                      MonitoringConnectionState.CONTEXT_INCOMPLETE}):
+                                      MonitoringConnectionState.CONTEXT_INCOMPLETE}
+                or (self.provider_instrument_token is not None and
+                    (type(self.provider_instrument_token) is not int
+                     or self.provider_instrument_token <= 0))):
             raise ValueError("MONITORING_SUBSCRIPTION_EVIDENCE_INVALID")
 
     def admits(self, tick: ProviderMarketTick) -> bool:

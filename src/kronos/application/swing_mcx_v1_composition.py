@@ -134,6 +134,12 @@ class SwingMcxV1Composition:
             server.application.authenticated_read_only_capability,
         )
         self.control.bind_maintenance_admission(server.maintenance_admission)
+        from kronos.application.swing_mcx_observation import McxSelectedContractObservation
+        self.observation = McxSelectedContractObservation(self.root / 'observations',
+            hub=server.swing_monitoring_hub, admission=server.maintenance_admission,
+            capability=server.application.authenticated_read_only_capability,
+            calendar=calendar, selected=self.observation_selection,
+            clock=lambda: self.clock())
         # Missing/stale reservation metadata withholds only NEW entry. It must
         # not disable the independently restored historical contract owner.
         self.restoration_error = None
@@ -302,6 +308,32 @@ class SwingMcxV1Composition:
                 self.publication.fail(token, self.clock(), "SWING_ANALYSIS_FAILED")
                 raise
 
+    def observation_selection(self, run, family, selection_sha256, publication_sha256):
+        """Exact retained choice/current publication fence; no acquisition/write."""
+        workflow = self.control.workflow
+        if (workflow is None or run != workflow.run_identity
+                or type(family) is not McxFamily):
+            raise ValueError('MCX_OBSERVATION_RUN_STALE')
+        workflow._current()
+        baseline = self.publication.status()
+        if (_hash(baseline) != publication_sha256
+                or baseline['latest_attempt']['state'] != 'SUCCEEDED'
+                or baseline['latest_attempt']['run_id'] != run
+                or baseline['admission_generation'] != workflow.generation):
+            raise ValueError('MCX_OBSERVATION_PUBLICATION_CHANGED')
+        selected = workflow.selections.load(run, family)
+        if selected.integrity_sha256 != selection_sha256:
+            raise ValueError('MCX_OBSERVATION_SELECTION_CHANGED')
+        match = workflow.retained_selected_contract(family, self.master, acquired_at=self.clock())
+        if (self.control.workflow is not workflow or self.publication.status() != baseline
+                or workflow.selections.load(run, family) != selected):
+            raise ValueError('MCX_OBSERVATION_SELECTION_CHANGED')
+        return dict(run=run, generation=workflow.generation, family=family.value,
+            selection_sha256=selected.integrity_sha256,
+            instrument=match.normalized_contract, publication=baseline['current_manifest'],
+            historical_master_identity=match.snapshot_identity,
+            historical_master_authority='IDENTITY_ONLY_NOT_CURRENT_MAPPING')
+
     def prepare_plan(self, run, family, expected_handoff):
         self.control._active_capability()
         workflow = self.control.workflow
@@ -398,6 +430,7 @@ class SwingMcxV1Composition:
                     self.publication.status()['latest_attempt']['state'] == 'RUNNING')
         plans = []
         preparations = []
+        observation_targets = []
         if current and not reserved:
             now = self.clock()
             try:
@@ -445,6 +478,9 @@ class SwingMcxV1Composition:
                             if readers[identity] is None:
                                 raise ValueError("MCX_RETAINED_MASTER_UNAVAILABLE")
                             readers[identity](fact.provider_record_identity, family, instrument)
+                            observation_targets.append((family.value,
+                                instrument.trading_symbol, instrument.expiry.isoformat(),
+                                selected.integrity_sha256))
                             owner = select_owner_current_mcx_handoff(self.server.native_intake,
                                 family, instrument, prepared_at=now, _response=response)
                             if owner.prepared.bound.run_identity != workflow.run_identity:
@@ -487,6 +523,7 @@ class SwingMcxV1Composition:
             except (OSError, ValueError):
                 # A failed final fence cannot leave actionable-looking results.
                 preparations.clear()
+                observation_targets.clear()
                 plans = [(plan, False) for plan, _ in plans]
                 error = "MCX_V1_PROJECTION_UNAVAILABLE"
         return dict(run=None if workflow is None else workflow.run_identity,
@@ -495,6 +532,7 @@ class SwingMcxV1Composition:
                 self.control.historical.load(position.position_id)) for position in
                 self.control.lifecycle.snapshot().positions
                 if position.mcx_v1_contract_symbol is not None),
+            observation_targets=tuple(observation_targets),
             capability_active=getattr(self.server.application.authenticated_read_only_capability(),
                                       "active", False) is True)
 
