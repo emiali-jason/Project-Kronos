@@ -530,7 +530,9 @@ class SwingBulkImportOwner:
         value = self.status(identity)
         if value is None:
             return None
+        runs = {item["expected_run_identity"] for item in value["expected"].values()}
         return {
+            "run_identity": next(iter(runs)) if len(runs) == 1 else None,
             "batch_identity": value["batch_identity"],
             "request_identity": value["request_identity"],
             "review_pack_identity": value["review_pack_identity"],

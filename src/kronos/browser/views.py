@@ -4330,8 +4330,9 @@ def render_v1_review(
                                                for item in promotions_v2):
         raise TypeError("REVIEW_V2_PRESENTATION_INVALID")
     if native_intake is not None:
-        body = (_analysis_run_strip(snapshot) + _answer_rejection_banner(answer_notice, native_intake)
-                + _receipt_native_review(native_intake, promotions_v2, bulk_import))
+        body = (_analysis_run_strip(snapshot)
+                + _receipt_native_review(native_intake, promotions_v2, bulk_import,
+                                         answer_notice=answer_notice))
     elif (
         native_review is not None
         and native_review.state is NativeReviewRunState.REVIEW_REQUIRED
@@ -4504,7 +4505,7 @@ def render_v1_review(
         snapshot=snapshot,
         active_nav="Swing",
         active_tab="Review",
-        body=body,
+        body='<div class="swing-review-compact">' + body + '</div>' + _review_compact_style(),
     )
 
 
@@ -4673,9 +4674,47 @@ def _intake_workspace_header(projection, *, show_internal=True):
     return body + '</section>'
 
 
-def _bulk_import_panel(value):
+def _review_compact_style():
+    return ("<style>.swing-review-compact .review-note,.swing-review-compact .bulk-import-progress,"
+        ".swing-review-compact .wo07-card-state,.swing-review-compact .wo07-card-context,"
+        ".swing-review-compact .wo07-card details,.swing-review-compact .wo07-action-reason,"
+        ".swing-review-compact .wo07-review-pack,.swing-review-compact .review-history{"
+        "font-size:12px;line-height:1.4;min-width:0;overflow-wrap:anywhere}"
+        ".swing-review-compact .review-note{padding:7px 9px;margin-bottom:8px}"
+        ".swing-review-compact .review-note :is(p,span,small,code,li),"
+        ".swing-review-compact .wo07-card :is(small,code){font-size:12px;overflow-wrap:anywhere}"
+        ".swing-review-compact .review-note :is(h2,h3,strong),"
+        ".swing-review-compact .review-history>summary{font-size:12px;font-weight:800}"
+        ".swing-review-compact .review-note p{margin:4px 0}"
+        ".swing-review-compact .wo07-market-head h2{font-size:13px;font-weight:800}"
+        ".swing-review-compact .wo07-card{padding:9px}"
+        ".swing-review-compact .bulk-import-progress ul{padding-left:18px;margin:5px 0}"
+        ".swing-review-compact .bulk-import-progress li{display:flex;gap:5px;flex-wrap:wrap}"
+        ".swing-review-compact .review-history{border:1px solid var(--line);border-radius:6px;padding:7px 9px}"
+        ".swing-review-compact .review-history>summary{cursor:pointer;min-height:28px}"
+        "@media(max-width:760px){.swing-review-compact .wo07-workspace{align-items:flex-start}"
+        ".swing-review-compact .wo07-review-pack{width:auto}}"
+        "</style>")
+
+
+def _bulk_import_current(value, projection):
+    if value is None or value.get("unavailable"):
+        return False
+    workspace = projection.get("workspace")
+    return bool(workspace is not None and not projection["error"]
+        and value.get("run_identity") == workspace["run_identity"]
+        and any(package["expected"] is not None
+            and package.get("run_identity") == value.get("run_identity")
+            and package.get("request_identity") == value["request_identity"]
+            and package.get("review_pack_identity") == value["review_pack_identity"]
+            for package in projection["packages"]))
+
+
+def _bulk_import_panel(value, *, current=False):
     if value is None:
         return ""
+    if value.get("unavailable"):
+        return '<section class="review-note" role="alert"><strong>IMPORT STATUS UNAVAILABLE</strong><p>Retained operation evidence could not be read. No current success is established.</p></section>'
     terminal = value["state"] in {
         "VALIDATION_FAILED", "COMPLETED", "COMPLETED_WITH_FAILURE", "FAILED",
     }
@@ -4695,8 +4734,12 @@ def _bulk_import_panel(value):
         'data-terminal="' + str(terminal).lower() + '">'
         '<strong>BULK ANSWER IMPORT · <span data-bulk-state>'
         + escape(value["state"].replace("_", " ")) + '</span></strong>'
-        '<p>Durable batch · <code>' + escape(value["batch_identity"]) + '</code><br>'
-        'Review Pack · ' + escape(value["review_pack_identity"]) + '</p>'
+        '<p>' + ('CURRENT RUN / PACK' if current else 'RETAINED OPERATION · NOT VERIFIED FOR CURRENT PACK')
+        + '</p><p>Run · <code>' + escape(value.get("run_identity") or "UNAVAILABLE") + '</code><br>'
+        'Request · <code>' + escape(value["request_identity"]) + '</code><br>'
+        'Durable batch · <code>' + escape(value["batch_identity"]) + '</code><br>'
+        'Review Pack · <code>' + escape(value["review_pack_identity"]) + '</code><br>'
+        'Received · ' + escape(value["received_at"]) + '</p>'
         + ("" if value.get("failure") is None else
            '<p role="alert">' + escape(value["failure"].replace("_", " ")) + '</p>')
         + '<ul data-bulk-candidates>' + candidates + '</ul>'
@@ -4705,7 +4748,7 @@ def _bulk_import_panel(value):
     )
 
 
-def _receipt_native_review(projection, promotions_v2=(), bulk_import=None):
+def _receipt_native_review(projection, promotions_v2=(), bulk_import=None, *, answer_notice=None):
     """Render immutable receipt applicability separately from consumer state."""
     from kronos.swing.v1.review_evidence_binding import canonical
 
@@ -4728,11 +4771,27 @@ def _receipt_native_review(projection, promotions_v2=(), bulk_import=None):
             '<button type="submit">VALIDATE SELECTED ANSWER</button>'
             '<small>Checks these selected bytes against Current Review. This does not import the Answer.</small></form>')
 
-    body = (_bulk_import_panel(bulk_import)
-        + '<div class="review-note"><strong>NATIVE REVIEW · RECEIPT-BOUND EVIDENCE</strong>'
+    current_import = _bulk_import_current(bulk_import, projection)
+    historical = []
+    body = _intake_workspace_header(projection, show_internal=not promotions_v2)
+    body += '<section class="review-note current-review-operation"><strong>Current Review operation</strong>'
+    if current_import:
+        body += '<p>Exact current run, request and pack match the retained batch below.</p>'
+    elif bulk_import is not None and bulk_import.get("unavailable"):
+        body += '<p role="alert">IMPORT STATUS UNAVAILABLE · no current success is established.</p>'
+    else:
+        body += '<p>No verified import batch for the current run and Question Pack. Older completed activity does not establish current success.</p>'
+    body += '</section>' + _answer_rejection_banner(answer_notice, projection)
+    if (bulk_import is not None and not bulk_import.get("unavailable")
+            and bulk_import["state"] == "COMPLETED" and not current_import
+            and bulk_import.get("run_identity") is not None
+            and projection.get("workspace") is not None and not projection["error"]):
+        historical.append(_bulk_import_panel(bulk_import))
+    else:
+        body += _bulk_import_panel(bulk_import, current=current_import)
+    body += ('<div class="review-note"><strong>NATIVE REVIEW · RECEIPT-BOUND EVIDENCE</strong>'
         '<p>Chart → Question Pack → Answer → immutable acceptance receipt. '
-        'Evidence intake only; no trading or execution authority.</p></div>'
-        + _intake_workspace_header(projection, show_internal=not promotions_v2))
+        'Evidence intake only; no trading or execution authority.</p></div>')
     body += '<div id="current-question-pack" class="review-note wo07-toolbar" aria-label="Current Review pack actions">'
     for market in ("NSE", "MCX"):
         ready = [row for row in projection["rows"] if row["market"] == market and row["complete"] and row["expected"]]
@@ -4746,12 +4805,19 @@ def _receipt_native_review(projection, promotions_v2=(), bulk_import=None):
     body += '</div>'
     for package in projection["packages"]:
         query = urlencode(dict(market=package["market"], publication=package["identity"]))
-        body += ('<div class="review-note wo07-review-pack"><strong>' + escape(package["market"])
+        pack_panel = ('<div class="review-note wo07-review-pack"><strong>' + escape(package["market"])
             + (' CURRENT REVIEW PACK' if package["expected"] is not None else ' RETAINED REVIEW PACK · STALE') + '</strong><br>'
             '<a href="/swing/v1/native-request-pdf?' + escape(query) + '">'
             + escape(package["question_filename"]) + '</a><br>Answer filename: ' + escape(package["answer_filename"])
+            + '<br>Run · <code>' + escape(package.get("run_identity") or "UNAVAILABLE") + '</code>'
+            + '<br>Request · <code>' + escape(package.get("request_identity") or "UNAVAILABLE") + '</code>'
+            + '<br>Pack · <code>' + escape(package.get("review_pack_identity") or "UNAVAILABLE") + '</code>'
             + selected_answer_validation(package["market"], package["expected"])
             + action("native-review-answer", package["market"], package["expected"], "UPLOAD ANSWER") + '</div>')
+        if package["expected"] is None and not projection["error"]:
+            historical.append(pack_panel)
+        else:
+            body += pack_panel
     package_by_market = {package["market"]: package for package in projection["packages"]}
     workspace = projection.get("workspace")
     analysis_boundary = ("UNAVAILABLE" if workspace is None else
@@ -4895,7 +4961,9 @@ def _receipt_native_review(projection, promotions_v2=(), bulk_import=None):
         if not any(row["market"] == market for row in ordered):
             body += ('<section class="market-panel wo07-market"><div class="wo07-market-head"><h2>' + market
                 + ' REVIEW</h2><p>No current bound candidates.</p></div></section>')
-    return body + '</div>'
+    history = ('<details class="review-history"><summary>Historical Review activity</summary>'
+        + ''.join(historical) + '</details>') if historical else ''
+    return body + '</div>' + history
 
 
 def _native_review_requirements(

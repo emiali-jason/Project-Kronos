@@ -2064,6 +2064,9 @@ class NativeReviewIntakeWorkflow:
                         and row["market"] == market and row["question_ready"] for row in rows)
                         for instrument in instruments)
                     packages.append(dict(market=market, identity=publication.identity,
+                        run_identity=mapping["native_run_identity"],
+                        request_identity=mapping["request_identity"],
+                        review_pack_identity=mapping["review_pack_identity"],
                         question_filename=self.filenames(mapping)[0], answer_filename=self.filenames(mapping)[1],
                         expected=self.expected(market, instruments, _response=_response) if current else None))
             except (OSError, ValueError) as error:

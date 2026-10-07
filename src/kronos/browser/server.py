@@ -2768,7 +2768,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 bulk_status = (None if self.server.bulk_import is None else
                     self.server.bulk_import.presentation(bulk_identity))
             except (OSError, ValueError):
-                bulk_status = None
+                bulk_status = {"unavailable": True}
             try:
                 with intake.page_response() if intake is not None else nullcontext() as prepared:
                     review = self.server.native_review.snapshot()
