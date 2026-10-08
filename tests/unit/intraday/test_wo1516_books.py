@@ -105,7 +105,11 @@ def test_wo15_cached_reads_and_restart(tmp_path):
 def test_wo15_shared_shell_and_no_controls(tmp_path,product):
     books,*_ = fixture(tmp_path)
     html=render_portfolio(_ready(),books.portfolio(),product=product)
-    assert 'action="/portfolio"' not in html if product=="SWING" else 'method="get"' in html
+    if product == "SWING":
+        # Missing Swing owner evidence is unavailable, never an empty book.
+        assert "SWING PORTFOLIO UNAVAILABLE" in html and "VALID EMPTY" not in html
+    else:
+        assert 'method="get"' in html
     assert 'method="post" action="/portfolio' not in html
     assert 'DELETE' not in html and 'SPONSOR EXIT' not in html
     assert '/assets/brand' in html or 'brandmark' in html

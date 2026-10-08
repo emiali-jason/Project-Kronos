@@ -159,20 +159,72 @@ def test_governed_timeout_or_cleanup_failure_never_publishes_handoff() -> None:
 def test_rejected_provider_audit_is_counted_before_fence_and_write_free_after() -> None:
     server, serving = _running_server()
     calls = []
+    pulse_entered = Event()
+    release_pulse = Event()
+    pulse_errors = []
+    original_pulse = server._service_actions_admitted
+
+    def audit_request(**_kwargs):
+        assert server.maintenance_admission.snapshot()["owners"].get("PROVIDER_CALLBACK") == 1
+        calls.append("request")
+        return object()
+
+    def audit_result(*_args):
+        assert server.maintenance_admission.snapshot()["owners"].get("PROVIDER_CALLBACK") == 1
+        calls.append("result")
+
+    def held_pulse():
+        if get_ident() == pulse.ident:
+            pulse_entered.set()
+            assert release_pulse.wait(10), "Controlled pulse was not released"
+        original_pulse()
+
+    def run_pulse():
+        try:
+            server.service_actions()
+        except BaseException as error:
+            pulse_errors.append(error)
+
+    pulse = Thread(target=run_pulse, daemon=True, name="maintenance-audit-overlap")
+    server._service_actions_admitted = held_pulse
     server.connection_governance = SimpleNamespace(
-        request=lambda **_kwargs: calls.append("request") or object(),
-        result=lambda *_args: calls.append("result"),
+        request=audit_request,
+        result=audit_result,
     )
     try:
         first, _, _ = _request(server, "POST", "/provider/connect")
         assert first == 403 and calls == ["request", "result"]
+        # OPEN admission permits unrelated pulses after the audit completes.
+        # Establish aggregate zero through the real fence and drain instead.
+        pulse.start()
+        assert pulse_entered.wait(3), "Real server pulse did not enter"
+        owners = server.maintenance_admission.snapshot()["owners"]
+        assert owners.get("SERVER_PULSE", 0) >= 1
+        assert "PROVIDER_CALLBACK" not in owners
+        generation = "e" * 64
+        assert server.maintenance_admission.claim(generation)
+        server.maintenance_admission.draining(generation)
+        release_pulse.set()
+        assert server.maintenance_admission.wait_for_zero(generation, 3)
+        pulse.join(3)
+        assert not pulse.is_alive()
+        assert not pulse_errors, pulse_errors
         assert server.maintenance_admission.snapshot()["owners"] == {}
-        assert server.maintenance_admission.claim("e" * 64)
         second, _, body = _request(server, "POST", "/provider/connect")
         assert second == 503 and "not admitted" in body
         assert calls == ["request", "result"]
     finally:
-        server.shutdown(); server.server_close(); serving.join(3)
+        release_pulse.set()
+        if pulse.ident is not None:
+            pulse.join(3)
+        try:
+            server.shutdown()
+        finally:
+            server.server_close()
+            serving.join(3)
+        assert not pulse.is_alive(), "Controlled pulse leaked during cleanup"
+        assert not serving.is_alive(), "Fixture listener leaked during cleanup"
+        assert not pulse_errors, pulse_errors
 
 
 def test_failed_signed_handoff_stays_fenced_without_stopping_listener() -> None:

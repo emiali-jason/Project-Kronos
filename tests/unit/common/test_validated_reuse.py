@@ -232,8 +232,37 @@ def test_browser_constructs_swing_population_once(server, monkeypatch, route):
         calls.append(kwargs)
         return original(**kwargs)
     monkeypatch.setattr(srv.trade_window, "observation_operational_handoffs_v2", counted)
+    if route.startswith("/reports?"):
+        import kronos.application.swing_reports as sources
+        import kronos.browser.server as browser
+
+        reader = sources.read_swing_reports_sources
+        projector = browser.project_historical_reports
+        reads, projections = [], []
+
+        def read(*args, **kwargs):
+            evidence = reader(*args, **kwargs)
+            reads.append(evidence)
+            return evidence
+
+        def project(*args, **kwargs):
+            projections.append(kwargs["evidence"])
+            return projector(*args, **kwargs)
+
+        monkeypatch.setattr(sources, "read_swing_reports_sources", read)
+        monkeypatch.setattr(browser, "project_historical_reports", project)
+
     status, _ = get(srv, route)
-    assert status == 200 and len(calls) == 1
+    assert status == 200
+    if route.startswith("/reports?"):
+        # WO-16 captures historical evidence, projects once, then revalidates
+        # sources before responding. Journal retains its operational owner.
+        assert not calls
+        assert len(reads) == 2
+        assert reads[0] == reads[1]
+        assert len(projections) == 1 and projections[0] is reads[0]
+    else:
+        assert len(calls) == 1
 
 
 

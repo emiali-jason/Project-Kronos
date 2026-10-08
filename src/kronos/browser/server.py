@@ -2831,16 +2831,45 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         if path == "/portfolio":
             from kronos.browser.views import render_portfolio
             query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
-            if set(query) - {"product", "search", "direction", "monitoring"} or any(len(v) != 1 for v in query.values()):
+            product = query.get("product", ["SWING"])[0]
+            allowed = {"product", "search", "direction", "monitoring"}
+            if product == "SWING":
+                allowed.update({"market", "family", "mode", "state"})
+            if set(query) - allowed or any(len(v) != 1 for v in query.values()):
                 self._text(HTTPStatus.BAD_REQUEST, "Portfolio filter is invalid.")
                 return
-            product = query.get("product", ["SWING"])[0]
             search = query.get("search", [""])[0]
             direction = query.get("direction", [""])[0]
             monitoring = query.get("monitoring", [""])[0]
             if (product not in {"SWING", "INTRADAY"} or len(search) > 80 or direction not in {"", "LONG", "SHORT"}
                     or monitoring not in {"", "LIVE", "INTERRUPTED", "IDLE", "UNAVAILABLE"}):
                 self._text(HTTPStatus.BAD_REQUEST, "Portfolio filter is invalid.")
+                return
+            if product == "SWING":
+                from kronos.application.swing_portfolio import (
+                    PORTFOLIO_FILTERS, read_swing_portfolio,
+                )
+                filters = {name: query.get(name, [""])[0]
+                           for name in ("market", "family", "mode", "state")}
+                if any(value not in PORTFOLIO_FILTERS[name]
+                       for name, value in filters.items()):
+                    self._text(HTTPStatus.BAD_REQUEST, "Portfolio filter is invalid.")
+                    return
+                projection = read_swing_portfolio(
+                    self.server.native_review, self.server.step32_workflow,
+                    as_of=datetime.now(UTC), trade_window=self.server.trade_window,
+                    mcx_control=self.server.mcx_v1_control,
+                    search=search, direction=direction, monitoring=monitoring,
+                    **filters,
+                )
+                body = render_portfolio(
+                    snapshot, product=product, search=search, direction=direction,
+                    monitoring=monitoring, swing_projection=projection, **filters,
+                )
+                self._respond(
+                    HTTPStatus.OK if projection.available else HTTPStatus.SERVICE_UNAVAILABLE,
+                    body.encode("utf-8"), "text/html; charset=utf-8",
+                )
                 return
             books = getattr(self.server, "intraday_books", None)
             try:

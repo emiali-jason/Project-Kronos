@@ -7474,13 +7474,240 @@ def _intraday_report_row(item, projection):
         + '</a></td>', 1)
 
 
-def render_portfolio(snapshot, rows=(), *, product="SWING", search="", direction="", monitoring=""):
+_SWING_PORTFOLIO_CSS = """
+.swing-portfolio{min-width:0;max-width:100%;font-size:12px;line-height:1.45}
+.swing-portfolio *{box-sizing:border-box}.swing-portfolio h2{font-size:12px;letter-spacing:.04em;margin:0;color:var(--blue)}
+.swing-portfolio h3{font-size:12px;margin:0 0 5px}.swing-portfolio p{margin:6px 0;overflow-wrap:anywhere}
+.swing-portfolio-head,.swing-portfolio-section-head{display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.swing-portfolio-note{color:var(--muted)}.swing-portfolio-summary{border:1px solid var(--line);border-radius:8px;background:#071827;padding:10px;margin:10px 0}
+.swing-portfolio-filters{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;border:1px solid var(--line);border-radius:8px;padding:10px;margin:10px 0}
+.swing-portfolio-filters label{display:grid;gap:4px;min-width:0;color:var(--muted)}
+.swing-portfolio-filters input,.swing-portfolio-filters select{width:100%;min-width:0;padding:7px;border:1px solid #31506a;border-radius:6px;background:#04131f;color:var(--text);font:inherit}
+.swing-portfolio-filters button,.swing-portfolio .button{font-size:12px;padding:6px 9px}
+.swing-portfolio-filter-actions{display:flex;gap:7px;align-items:end;flex-wrap:wrap}
+.swing-portfolio-section{min-width:0;margin-top:14px;border:1px solid var(--line);border-radius:8px;padding:10px;background:rgba(6,23,37,.88)}
+.swing-portfolio-section-head{margin-bottom:6px}.swing-portfolio-table-wrap{width:100%;max-width:100%;overflow-x:auto;border:1px solid var(--line);border-radius:6px;margin-top:8px}
+.swing-portfolio-table{width:100%;min-width:1100px;border-collapse:collapse;table-layout:fixed;font-size:12px}
+.swing-portfolio-table th,.swing-portfolio-table td{vertical-align:top;text-align:left;border-bottom:1px solid var(--line);padding:8px;overflow-wrap:anywhere;white-space:normal}
+.swing-portfolio-table th{color:var(--muted);font-weight:650;background:#081c2c}.swing-portfolio-table th:first-child{width:19%}
+.swing-portfolio-table th:nth-child(2){width:13%}.swing-portfolio-table th:nth-child(3){width:12%}.swing-portfolio-table th:last-child{width:20%}
+.swing-portfolio-table td strong,.swing-portfolio-table td span{display:block}.swing-portfolio-table td span{color:var(--muted);margin-top:3px}
+.swing-portfolio-evidence{margin-top:7px}.swing-portfolio-evidence summary{cursor:pointer;color:#a5d9ff;overflow-wrap:anywhere}
+.swing-portfolio-evidence dl{display:grid;gap:4px;margin:7px 0}.swing-portfolio-evidence dt{color:var(--muted)}.swing-portfolio-evidence dd{margin:0 0 4px;overflow-wrap:anywhere}
+.swing-portfolio-links{display:flex;gap:6px;flex-wrap:wrap}.swing-portfolio-links a{text-decoration:underline;color:#a5d9ff;overflow-wrap:anywhere}
+.swing-portfolio-attention{color:var(--amber)!important;font-weight:750}.swing-portfolio-closed{color:var(--muted)}
+.swing-portfolio-unavailable{border:1px solid #793b40;border-radius:8px;background:#2c151c;color:#ffc3c6;padding:10px;margin:10px 0}
+.swing-portfolio-groups{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:8px}
+.swing-portfolio-group{min-width:0;border:1px solid var(--line);border-radius:6px;padding:8px}.swing-portfolio-group dl{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:4px;margin:5px 0 0}
+.swing-portfolio-group dt{color:var(--muted);overflow-wrap:anywhere}.swing-portfolio-group dd{margin:0;overflow-wrap:anywhere}
+.swing-portfolio :is(a,button,input,select,summary,[tabindex]):focus-visible{outline:2px solid var(--blue);outline-offset:3px}
+@media(max-width:760px){.swing-portfolio-filters{grid-template-columns:repeat(2,minmax(0,1fr))}.swing-portfolio-groups{grid-template-columns:minmax(0,1fr)}.swing-portfolio-filter-actions{grid-column:1/-1}.swing-portfolio-filter-actions>*{flex:1 1 auto;text-align:center}}
+"""
+
+
+def _swing_portfolio_value(value):
+    if value is None or value == "":
+        return "UNKNOWN"
+    if hasattr(value, "isoformat"):
+        value = value.isoformat()
+    return escape(str(value))
+
+
+def _swing_portfolio_links(links):
+    from urllib.parse import urlsplit
+
+    rendered = []
+    for label, href in links:
+        if not isinstance(href, str) or not href.startswith("/") or href.startswith("//"):
+            continue
+        if any(ord(character) < 32 or character == "\\" for character in href):
+            continue
+        parsed = urlsplit(href)
+        if parsed.scheme or parsed.netloc:
+            continue
+        rendered.append('<a href="' + escape(href, quote=True) + '">' + escape(str(label)) + '</a>')
+    return '<div class="swing-portfolio-links">' + ''.join(rendered) + '</div>'
+
+
+def _swing_portfolio_table(title, rows, empty, *, note=""):
+    parts = ['<section class="swing-portfolio-section"><div class="swing-portfolio-section-head"><h2>'
+             + escape(title) + '</h2><span>' + str(len(rows)) + ' VISIBLE</span></div>']
+    if note:
+        parts.append('<p class="swing-portfolio-note">' + escape(note) + '</p>')
+    if not rows:
+        return ''.join(parts) + '<p>' + escape(empty) + '</p></section>'
+    parts.append('<div class="swing-portfolio-table-wrap" role="region" tabindex="0" aria-label="'
+        + escape(title + ' — scroll horizontally for all columns') + '"><table class="swing-portfolio-table">'
+        '<thead><tr><th scope="col">Instrument / exact contract</th><th scope="col">Truth / state</th>'
+        '<th scope="col">Quantity / provenance</th><th scope="col">Factual entry / exit</th>'
+        '<th scope="col">Stop / target</th><th scope="col">Monitoring / price</th>'
+        '<th scope="col">Attention / evidence</th></tr></thead><tbody>')
+    for row in rows:
+        raw_monitoring = row.get("monitoring")
+        monitoring = {"ACTIVE": "LIVE", "UNKNOWN": "UNAVAILABLE"}.get(raw_monitoring, raw_monitoring)
+        value = lambda name: _swing_portfolio_value(monitoring if name == "monitoring" else row.get(name))
+        attention = row.get("attention") or ()
+        if isinstance(attention, str):
+            attention = (attention,)
+        state = str(row.get("state") or "UNKNOWN")
+        parts.append('<tr data-position-identity="' + escape(str(row.get("identity") or ""), quote=True) + '"><td><strong>'
+            + value("instrument") + '</strong><span>' + value("contract") + '</span><span>Expiry: '
+            + value("expiry") + '</span><span>' + value("market") + ' · ' + value("family")
+            + ' · ' + value("direction") + '</span></td><td><strong>' + value("truth")
+            + '</strong><span>Mode: ' + value("mode") + '</span><strong class="'
+            + ('swing-portfolio-closed' if state == 'CLOSED' else '') + '">' + escape(state)
+            + '</strong></td><td><strong>Lots: ' + value("lots") + '</strong><span>Units: '
+            + value("units") + '</span><span>' + value("quantity_provenance")
+            + '</span></td><td><strong>Entry: ' + value("entry") + '</strong><span>' + value("entry_at")
+            + '</span><strong>Exit: ' + value("exit") + '</strong><span>' + value("exit_at")
+            + '</span><span>Closure: ' + value("closure_reason") + '</span></td><td><strong>Stop: '
+            + value("stop") + '</strong><strong>Target: ' + value("target")
+            + '</strong><span>Model reference entry: ' + value("model_entry")
+            + '</span></td><td><strong>' + value("monitoring") + '</strong><span>Latest admitted observed price: '
+            + value("current_price") + '</span><span>Observed at: ' + value("current_price_at")
+            + '</span><span>Received at: ' + value("price_received_at")
+            + '</span><span>Observation age (seconds): ' + value("quote_age_seconds")
+            + '</span><span>Valuation: ' + value("valuation_state") + '</span>')
+        if row.get("current_price") is None and row.get("last_price") is not None:
+            parts.append('<span>Retained price (not current valuation): ' + value("last_price")
+                + '</span><span>Retained at: ' + value("last_price_at") + '</span>')
+        parts.append('</td><td>')
+        if attention:
+            parts.append(''.join('<p class="swing-portfolio-attention">' + escape(str(item).replace('_', ' '))
+                                 + '</p>' for item in attention))
+        else:
+            parts.append('<p class="swing-portfolio-note">No retained attention flag</p>')
+        parts.append(_swing_portfolio_links(row.get("links") or ()))
+        evidence = (("Identity", row.get("identity")),
+                    ("Authority", row.get("authority")),
+                    ("Position identity", row.get("position_identity")),
+                    ("Canonical monitoring state", row.get("source_monitoring")),
+                    ("Quote received at", row.get("price_received_at")),
+                    ("Monetary value", row.get("monetary_value")),
+                    ("Retained monetary P&L", row.get("monetary_pnl")),
+                    ("Monetary multiplier", row.get("monetary_multiplier")),
+                    ("Monetary basis", row.get("monetary_basis")),
+                    ("Costs", row.get("costs")),
+                    ("Related objective models", row.get("related_models")),
+                    ("Related Sponsor positions", row.get("related_positions"))) + tuple(row.get("evidence") or ())
+        parts.append('<details class="swing-portfolio-evidence"><summary>Exact provenance / retained evidence</summary><dl>'
+            + ''.join('<dt>' + escape(str(label).replace('_', ' ')) + '</dt><dd>'
+                      + _swing_portfolio_value(item) + '</dd>' for label, item in evidence)
+            + '</dl></details></td></tr>')
+    return ''.join(parts) + '</tbody></table></div></section>'
+
+
+def _render_swing_portfolio(snapshot, tabs, projection, *, search, direction, monitoring, market, family, mode, state):
+    parts = ['<div class="swing-portfolio"><div class="swing-portfolio-head"><h2>SWING PORTFOLIO</h2>'
+             '<span>Observational current-state projection</span></div>']
+    parts.append('<p class="swing-portfolio-note">Waiting plans, Sponsor positions, objective models and observations retain separate truth. '
+                 'A price interruption does not close a position. Observations contribute zero position exposure.</p>')
+    filters = '<form class="swing-portfolio-filters" method="get" action="/portfolio"><input type="hidden" name="product" value="SWING">'
+    filters += '<label>Instrument / contract / identity<input name="search" maxlength="80" value="' + escape(search, quote=True) + '"></label>'
+    choices = (
+        ("market", market, ("", "NSE", "MCX", "UNRESOLVED")),
+        ("family", family, ("", "NSE", "GOLDM", "SILVERM", "COPPER", "CRUDEOIL", "NATURALGAS", "UNRESOLVED")),
+        ("mode", mode, ("", "PAPER", "LIVE", "OBJECTIVE_MODEL", "OBSERVATION")),
+        ("state", state, ("", "WAITING", "ACTIVE", "ACTION_REQUIRED", "CLOSED")),
+        ("direction", direction, ("", "LONG", "SHORT")),
+        ("monitoring", monitoring, ("", "LIVE", "INTERRUPTED", "IDLE", "UNAVAILABLE")),
+    )
+    for name, selected, options in choices:
+        filters += '<label>' + name.title() + '<select name="' + name + '">' + ''.join(
+            '<option value="' + option + '"' + (' selected' if selected == option else '') + '>'
+            + escape(option.replace('_', ' ') or 'ALL') + '</option>' for option in options) + '</select></label>'
+    parts.append(filters + '<div class="swing-portfolio-filter-actions"><button type="submit">APPLY</button>'
+                 '<a class="button" href="/portfolio?product=SWING">RESET</a></div></form>')
+    if projection is None or not projection.available:
+        issues = () if projection is None else projection.issues
+        parts.append('<div class="swing-portfolio-unavailable" role="alert"><strong>SWING PORTFOLIO UNAVAILABLE</strong>'
+                     '<p>As of ' + _swing_portfolio_value(None if projection is None else projection.as_of) + '</p>'
+                     '<p>Current exposure and completeness are UNKNOWN. Required canonical source evidence is unavailable; an empty book cannot be established.</p>'
+                     + ''.join('<p>' + escape(str(issue)) + '</p>' for issue in issues) + '</div>')
+    else:
+        coverage = projection.coverage or {}
+        position_sources_complete = coverage.get("position_sources_complete") is True
+        current_plan_sources_complete = coverage.get("current_plan_sources_complete") is True
+        parts.append('<section class="swing-portfolio-summary"><div class="swing-portfolio-section-head"><h2>EXPOSURE / COVERAGE</h2><span>As of '
+                     + _swing_portfolio_value(projection.as_of) + '</span></div>'
+                     '<p>Source: ' + escape(projection.source_status)
+                     + '. Counts and quantities retain their source units; they are not combined monetary values.</p>')
+        parts.append('<details class="swing-portfolio-evidence"><summary>Source completeness / valuation coverage</summary><dl>'
+            + ''.join('<dt>' + escape(str(key).replace('_', ' ')) + '</dt><dd>' + _swing_portfolio_value(value)
+                      + '</dd>' for key, value in coverage.items()) + '</dl></details>')
+        if not current_plan_sources_complete:
+            parts.append('<p class="swing-portfolio-attention">CURRENT PLAN COVERAGE UNAVAILABLE</p>'
+                '<p>Waiting / armed plans are UNKNOWN. Retained entered positions remain visible; absent current advisory evidence cannot establish an empty waiting book.</p>')
+        if not position_sources_complete:
+            parts.append('<p class="swing-portfolio-attention">POSITION SOURCE COMPLETENESS UNKNOWN</p>')
+        parts.append('<p>Gross / net P&amp;L, multiplier and costs: UNKNOWN unless separately verified by the governing monetary contract.</p>')
+        parts.extend('<p class="swing-portfolio-attention">' + escape(str(issue)) + '</p>' for issue in projection.issues)
+        if projection.exposure_groups:
+            parts.append('<div class="swing-portfolio-groups">')
+            for group in projection.exposure_groups:
+                parts.append('<div class="swing-portfolio-group"><h3>' + _swing_portfolio_value(group.get("market"))
+                    + ' · ' + _swing_portfolio_value(group.get("family")) + ' · ' + _swing_portfolio_value(group.get("direction"))
+                    + '</h3><dl>' + ''.join('<dt>' + escape(str(key).replace('_', ' ')) + '</dt><dd>'
+                        + _swing_portfolio_value(value) + '</dd>' for key, value in group.items()
+                        if key not in {"market", "family", "direction"}) + '</dl></div>')
+            parts.append('</div>')
+        parts.append('</section>')
+        buckets = (
+            ("WAITING / ARMED PLANS", projection.waiting_plans,
+             "NO MATCHING WAITING / ARMED PLANS" if current_plan_sources_complete else "WAITING / ARMED PLANS UNKNOWN — CURRENT PLAN COVERAGE UNAVAILABLE",
+             "Plans are not entered trades and contribute no position exposure."),
+            ("ENTERED PAPER / MANUAL-LIVE POSITIONS", projection.positions, "NO MATCHING SPONSOR POSITIONS",
+             "Manual LIVE entry and factual closure require Sponsor-attested evidence. ACTION REQUIRED is not a fill or factual exit."),
+            ("OBJECTIVE MODELS", projection.objective_models, "NO MATCHING OBJECTIVE MODELS",
+             "Objective models retain independent state. Their representation is not added to Sponsor position exposure."),
+            ("OBSERVATION TRACKS", projection.observations, "NO MATCHING OBSERVATION TRACKS",
+             "Non-position observations contribute zero position exposure."),
+        )
+        closed_positions = getattr(projection, "closed_positions", ())
+        validation_positions = getattr(projection, "validation_positions", ())
+        if not any(rows for _, rows, _, _ in buckets) and not (
+                (closed_positions or validation_positions) and any((search, direction, monitoring, market, family, mode, state))):
+            filtered = any((search, direction, monitoring, market, family, mode, state))
+            if position_sources_complete and current_plan_sources_complete:
+                empty_title = 'NO MATCHING SWING PORTFOLIO RECORDS' if filtered else 'VALID EMPTY — NO CURRENT SWING POSITIONS OR WAITING PLANS'
+                empty_note = 'All required sources were validated. Monetary valuation remains UNKNOWN where authority is absent.'
+            elif position_sources_complete:
+                empty_title = ('NO MATCHING RETAINED SWING PORTFOLIO RECORDS' if filtered else 'NO RETAINED ENTERED POSITIONS') + ' — CURRENT PLAN COVERAGE UNAVAILABLE'
+                empty_note = 'Retained position sources were validated. Waiting / armed plans remain UNKNOWN; the current waiting book cannot be established.'
+            else:
+                empty_title = 'SWING PORTFOLIO COMPLETENESS UNKNOWN'
+                empty_note = 'Source completeness does not establish an empty current portfolio.'
+            parts.append('<div class="swing-portfolio-summary"><strong>'
+                + empty_title + '</strong><p>' + empty_note + '</p></div>')
+        for title, rows, empty, note in buckets:
+            parts.append(_swing_portfolio_table(title, rows, empty, note=note))
+        if validation_positions:
+            parts.append('<details class="swing-portfolio-evidence"><summary>VALIDATION-ONLY REPRESENTATIONS</summary>'
+                + _swing_portfolio_table("HISTORICAL STEP-32 VALIDATION ONLY", validation_positions,
+                    "NO MATCHING VALIDATION-ONLY REPRESENTATIONS", note="Historical validation representations contribute zero production exposure. "
+                    "They are separate from entered Sponsor positions.") + '</details>')
+        if closed_positions or state == "CLOSED":
+            parts.append('<details class="swing-portfolio-evidence"' + (' open' if state == "CLOSED" else '')
+                + '><summary>CLOSED POSITIONS / JOURNAL HISTORY</summary>'
+                + _swing_portfolio_table("CLOSED POSITIONS", closed_positions,
+                    "NO MATCHING CLOSED POSITIONS", note="Closed positions contribute no current exposure. "
+                    "Detailed history remains with the canonical Journal and lifecycle owner.") + '</details>')
+    parts.append('<p class="swing-portfolio-note">Canonical lifecycle controls and history: '
+        '<a href="/swing/active">Swing active positions</a> · <a href="/swing/mcx-v1">MCX exact-contract workspace</a> · '
+        '<a href="/journal?product=SWING">Swing Journal</a> · <a href="/reports?product=SWING">Swing Reports</a>.</p></div>')
+    return _page(title="Portfolio", subtitle="Current governed Swing state and exposure.", snapshot=snapshot,
+                 active_nav="Portfolio", active_tab="", body=tabs + ''.join(parts), extra_styles=_SWING_PORTFOLIO_CSS)
+
+
+def render_portfolio(snapshot, rows=(), *, product="SWING", search="", direction="", monitoring="",
+                     market="", family="", mode="", state="", swing_projection=None):
     """Shared destination; consumes compact exposure only, with no action form."""
     tabs = '<div class="reports-head"><div class="reports-products">' + ''.join(
         '<a class="button ' + ('active' if product == value else '') + '" href="/portfolio?product='
         + value + '">' + value + '</a>' for value in ("SWING", "INTRADAY")) + '</div></div>'
     if product == "SWING":
-        body = '<div class="workflow-empty">SWING PORTFOLIO — NOT YET OPERATIONAL</div>'
+        return _render_swing_portfolio(snapshot, tabs, swing_projection, search=search, direction=direction,
+            monitoring=monitoring, market=market, family=family, mode=mode, state=state)
     else:
         filters = '<aside class="reports-filter"><h2>FILTER EXPOSURE</h2><form method="get" action="/portfolio"><input type="hidden" name="product" value="INTRADAY">'
         filters += '<label>Opportunity / subject / contract<input name="search" maxlength="80" value="' + escape(search) + '"></label>'
