@@ -2881,6 +2881,8 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 from_date = date.fromisoformat(from_value) if from_value else None
                 to_date = date.fromisoformat(to_value) if to_value else None
                 if quick:
+                    if product is ReportProduct.SWING and (from_value or to_value):
+                        raise ValueError("REPORTS_CONFLICTING_DATE_FILTERS")
                     if governed_date is None:
                         raise ValueError("REPORT_GOVERNED_CURRENT_DATE_UNAVAILABLE")
                     if quick == "TODAY":
@@ -2936,17 +2938,37 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                                "Swing V2 reconciliation unavailable; Reports history currentness is unknown.")
                     return
                 try:
-                    preliminary = self.server.trade_window.observation_operational_handoffs_v2(
-                        governed_current_trading_date=governed_date,
-                    )
-                    operational = with_completion_trading_dates(
-                        preliminary, governed_date,
-                        self.server.application.swing_trading_date_for,
-                    )
-                    journal = self.server.native_review.journal_current_snapshot()
+                    from kronos.application.swing_reports import read_swing_reports_sources
+                    if governed_date is None:
+                        raise ValueError("REPORTS_GOVERNED_DATE_UNAVAILABLE")
+                    if self.server.mcx_v1_control is None:
+                        raise ValueError("REPORTS_MCX_OWNER_UNAVAILABLE")
+                    evidence = read_swing_reports_sources(
+                        self.server.trade_window, self.server.native_review,
+                        self.server.mcx_v1_control, governed_date,
+                        self.server.application.swing_trading_date_for)
                 except (ValueError, OSError, KeyError, TypeError):
                     self._text(HTTPStatus.SERVICE_UNAVAILABLE,
                                "Swing Reports source evidence unavailable; records are not empty.")
+                    return
+                from kronos.browser.reports import ReportsEvidenceUnavailable
+                try:
+                    projection = project_historical_reports(
+                        (), evidence.journal, reports_query,
+                        governed_current_trading_date=governed_date, evidence=evidence)
+                except ReportsEvidenceUnavailable:
+                    self._text(HTTPStatus.SERVICE_UNAVAILABLE,
+                               "Swing Reports retained relationship unavailable; records are not empty.")
+                    return
+                try:
+                    if read_swing_reports_sources(
+                            self.server.trade_window, self.server.native_review,
+                            self.server.mcx_v1_control, governed_date,
+                            self.server.application.swing_trading_date_for) != evidence:
+                        raise ValueError("REPORTS_SOURCE_CHANGED_DURING_READ")
+                except (ValueError, OSError, KeyError, TypeError):
+                    self._text(HTTPStatus.SERVICE_UNAVAILABLE,
+                               "Swing Reports changed source evidence unavailable; records are not empty.")
                     return
                 # An admitted reconciliation may have failed while these reads
                 # were in progress. Do not publish the previously readable cache.
@@ -2958,12 +2980,6 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                     self._text(HTTPStatus.SERVICE_UNAVAILABLE,
                                "Swing V2 reconciliation unavailable; Reports history currentness is unknown.")
                     return
-                projection = project_historical_reports(
-                    operational,
-                    journal,
-                    reports_query,
-                    governed_current_trading_date=governed_date,
-                )
             if path == "/reports/export.xlsx":
                 generated_at = datetime.now(UTC)
                 self._respond(

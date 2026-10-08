@@ -134,6 +134,70 @@ def _xlsx_rows(payload: bytes, sheet: str = "sheet1.xml") -> list[list[str]]:
     return rows
 
 
+@pytest.mark.parametrize('population,timestamp_kind', (
+    ('SPONSOR_DECISION', 'DECISION'),
+    ('ADVISORY_PLAN', 'PLAN_CREATED'),
+    ('POSITION', 'DECISION'),
+))
+def test_reports_excel_timestamp_does_not_claim_noncompleted_rows_are_exits(
+    tmp_path, population, timestamp_kind,
+):
+    projection = project_historical_reports(
+        (_record('CANBK', ObservationMode.PAPER),), _empty_journal(tmp_path),
+        ReportsQuery(), governed_current_trading_date=NOW.date(),
+    )
+    item = replace(
+        projection.records[0], completed=False, population_kind=population,
+        relevant_timestamp=NOW, record_date=NOW.date(), entry=None, exit=None, pnl=None,
+        source_facts=(('timestamp_kind', timestamp_kind),),
+    )
+    projection = replace(
+        projection, records=(item,), page_records=(item,),
+        overview=replace(projection.overview, completed_records=0),
+    )
+    rows = _xlsx_rows(export_reports_xlsx(projection, generated_at=NOW))
+    assert rows[0][1] == 'Recorded At'
+    assert rows[1][1] == '2026-08-25 15:30:00 IST'
+    assert rows[1][rows[0].index('Source Facts')] == json.dumps(item.source_facts)
+    exported = json.loads(export_reports_json(projection))['records'][0]
+    assert exported['completed'] is False
+    assert exported['timestamp'] == NOW.isoformat()
+    assert dict(json.loads(exported['source_facts']))['timestamp_kind'] == timestamp_kind
+
+
+def test_swing_reports_wrap_full_coverage_and_provenance_without_styling_intraday(tmp_path):
+    from kronos.browser.views import _report_detail
+
+    projection = project_historical_reports(
+        (_record('CRUDEOIL26OCTFUT', ObservationMode.PAPER),), _empty_journal(tmp_path),
+        ReportsQuery(), governed_current_trading_date=NOW.date(),
+    )
+    record_id = 'RETAINED-DECISION-' + 'a' * 64
+    source_id = 'RETAINED-SOURCE-' + 'b' * 64
+    item = replace(
+        projection.records[0], record_identity=record_id,
+        source_contract_identity=source_id, source_facts=(('plan_sha256', 'c' * 64),),
+    )
+    projection = replace(projection, records=(item,), page_records=(item,))
+    html = render_reports(_ready(), projection, selected_record_id=record_id)
+    assert 'class="journal-detail reports-detail swing-reports-detail"' in html
+    assert record_id in html and source_id in html and 'c' * 64 in html
+    style = html.split('<style>.reports-coverage', 1)[1].split('</style>', 1)[0]
+    assert '.reports-coverage pre{white-space:pre-wrap;overflow-wrap:anywhere;min-width:0}' in style
+    assert '.swing-reports-detail :is(h2,strong,details,.journal-detail-grid>div,.v1-context-row)' in style
+    assert '{min-width:0;overflow-wrap:anywhere}' in style
+    assert 'overflow:hidden' not in style and 'text-overflow:ellipsis' not in style
+    assert '.reports-table-wrap{overflow-x:auto;' in html
+    intraday = replace(
+        projection, query=ReportsQuery(product=ReportProduct.INTRADAY),
+        records=(), page_records=(), total_records=0, page_count=0,
+    )
+    assert '<style>.reports-coverage' not in render_reports(_ready(), intraday)
+    intraday_detail = _report_detail(replace(item, intraday_facts=json.dumps({'record_identity': record_id})))
+    assert 'class="journal-detail reports-detail"' in intraday_detail
+    assert 'swing-reports-detail' not in intraday_detail and record_id in intraday_detail
+
+
 def test_reports_projection_separates_families_and_excludes_active(tmp_path) -> None:
     records = (
         _record("CANBK", ObservationMode.PAPER),
@@ -151,7 +215,8 @@ def test_reports_projection_separates_families_and_excludes_active(tmp_path) -> 
         "MCX": ReportFamily.LIVE,
         "SAIL": ReportFamily.PAPER_OBSERVATION,
     }
-    assert projection.overview.net_pnl == Decimal("250")
+    assert projection.overview.gross_pnl == Decimal("250")
+    assert projection.overview.net_pnl is None
     assert projection.overview.win_rate is None
 
 
@@ -246,7 +311,7 @@ def test_reports_excel_is_valid_filtered_mixed_family_workbook(tmp_path) -> None
     summary = dict(_xlsx_rows(payload, "sheet2.xml"))
 
     assert rows[0][:6] == [
-        "Date", "Completed / Exited At", "Instrument", "Direction", "Family", "Status"
+        "Date", "Recorded At", "Instrument", "Direction", "Family", "Status"
     ]
     assert len(rows) == 4
     assert {row[4] for row in rows[1:]} == {
@@ -327,7 +392,7 @@ def test_reports_unavailable_exit_and_position_pnl_are_not_zero(tmp_path) -> Non
     assert record.exit is None
     assert record.pnl is None and projection.overview.net_pnl is None
     html = render_reports(_ready(), projection)
-    assert "₹0" not in html and "Net P/L</span><strong>UNAVAILABLE" in html
+    assert "₹0" not in html and "Gross P/L</span><strong>UNAVAILABLE" in html
 
 
 def test_reports_preserves_legacy_v1_trade_without_backfill(tmp_path) -> None:
@@ -407,6 +472,7 @@ def test_reports_browser_route_and_filtered_exports_are_read_only(tmp_path) -> N
             LocalTradingViewEvidenceStore((tmp_path / "legacy").resolve())
         ),
     )
+    server.mcx_v1_control = _empty_mcx_reports_owner(tmp_path/'empty-mcx',workflow)
     thread = Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
@@ -481,6 +547,18 @@ def _reports_get(server, route):
         connection.close()
 
 
+def _empty_mcx_reports_owner(root, native):
+    """Read-only fixture adapter around actual empty MCX stores, not authority."""
+    from types import SimpleNamespace
+    from kronos.swing.v1.mcx_trade_plan import LocalMcxTradePlanStore
+    from kronos.swing.v1.mcx_contract_lifecycle import McxContractBoundLifecycle, LocalMcxHistoricalContractStore
+    lifecycle = native._active_lifecycle
+    return SimpleNamespace(lifecycle=lifecycle, plans=LocalMcxTradePlanStore(root/'plans'),
+                           native_review=native,
+                           bound=McxContractBoundLifecycle(lifecycle,LocalMcxHistoricalContractStore(root/'bindings')),
+                           close=lambda:None)
+
+
 @pytest.fixture
 def compatibility_reports_server(tmp_path):
     """Real cached Step-33 evidence; scheduled reconciliation stays separate."""
@@ -495,6 +573,7 @@ def compatibility_reports_server(tmp_path):
     )
     application.current_swing_trading_date = lambda: NOW.date()
     server = create_browser_server(application, port=0, native_review=workflow)
+    server.mcx_v1_control = _empty_mcx_reports_owner(tmp_path/'empty-mcx',workflow)
     assert workflow.journal_current_snapshot().records == cached.records
     assert cached.records
     server._next_swing_journal_reconciliation = float('inf')
@@ -572,7 +651,7 @@ def test_reports_compatibility_missing_source_is_explicit_without_repair(
 
     owner, method = ((server.native_review, 'journal_current_snapshot')
                      if source == 'STEP33' else
-                     (server.trade_window, 'observation_operational_handoffs_v2'))
+                     (server.trade_window._observation_research_v2, 'snapshot'))
     monkeypatch.setattr(owner, method, unavailable)
     before = _reports_inventory(tmp_path)
     status, body = _reports_get(server, route+'?product=SWING')

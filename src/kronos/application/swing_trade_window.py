@@ -2026,6 +2026,30 @@ class SwingTradeWindowWorkflow:
     ) -> tuple[ObservationOperationalHandoffV2, ...]:
         """Supply stable Swing-only Journal/Reports data without implementing UX."""
 
+        state, position_facts = self.reports_position_facts()
+        return self._observation_research_v2.operational_handoffs(
+            current_facts=current_facts,
+            governed_current_trading_date=governed_current_trading_date,
+            completion_trading_dates=completion_trading_dates,
+            position_facts=position_facts,
+            websocket_state=state,
+        )
+
+    def reports_generation(self) -> int:
+        """Observe the existing generation fence without holding it over I/O."""
+
+        with self._projection_lock:
+            if self._projection_changes:
+                raise ValueError("REPORTS_OBSERVATION_CHANGE_IN_PROGRESS")
+            return self._projection_generation
+
+    def reports_position_facts(self):
+        """Read retained position facts without reconciliation or subscriptions.
+
+        Reports also uses this existing presentation boundary for independently
+        validated historical V1/V2 sources. Operational completeness is unchanged.
+        """
+
         hub = self._shared_monitoring_hub
         required = hub is not None and hub.subscription_count > 0
         state = websocket_presentation_state(
@@ -2033,7 +2057,7 @@ class SwingTradeWindowWorkflow:
             connection_state=None if hub is None else hub.connection_state,
         )
         position_facts: dict[str, GovernedPositionPresentationFactsV2] = {}
-        for result in self._observation_decisions.values():
+        for result in self._observation_decisions.copy().values():
             plan_identity = result.snapshot.conventional_trade_plan_identity
             if plan_identity is None:
                 continue
@@ -2073,13 +2097,7 @@ class SwingTradeWindowWorkflow:
                     ),
                 )
             )
-        return self._observation_research_v2.operational_handoffs(
-            current_facts=current_facts,
-            governed_current_trading_date=governed_current_trading_date,
-            completion_trading_dates=completion_trading_dates,
-            position_facts=position_facts,
-            websocket_state=state,
-        )
+        return state, position_facts
 
     def start_paper_observation_track(
         self,

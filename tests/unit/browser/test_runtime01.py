@@ -588,6 +588,10 @@ def test_slice8_compact_history_real_http_consumers_are_read_only(running, tmp_p
     server, governance, provider, calls, root = running
     service, paper, track = _selected_history_service(tmp_path / 'selected')
     server.trade_window._observation_research_v2 = service
+    # Reports independently reads the exact V1 owner as well as prospective V2.
+    server.trade_window._observation_research = service.v1
+    from tests.unit.browser.test_browser_reports import _empty_mcx_reports_owner
+    server.mcx_v1_control = _empty_mcx_reports_owner(tmp_path/'empty-mcx',server.native_review)
     server.trade_window._paper_observation_tracking = PaperObservationTrackingWorkflow(paper)
     server.intraday_journal = SimpleNamespace(snapshot=lambda **_: JournalSnapshot((), ()))
     monkeypatch.setattr(server.application, 'current_swing_trading_date', lambda: NOW.date())

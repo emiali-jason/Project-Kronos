@@ -25,6 +25,10 @@ def server(tmp_path):
     srv=create_browser_server(app,port=0,native_review=NativeReviewWorkflow(NativeReviewEvidenceStore((tmp_path/'native').resolve())),
         v1_review=SwingV1ReviewWorkflow(LocalTradingViewEvidenceStore((tmp_path/'legacy').resolve())))
     srv.intraday_books=books
+    # The Swing combined population requires an installed historical source.
+    # This fixture adapter contains no market worker or Intraday authority.
+    from tests.unit.browser.test_browser_reports import _empty_mcx_reports_owner
+    srv.mcx_v1_control=_empty_mcx_reports_owner(tmp_path/'empty-mcx',srv.native_review)
     thread=Thread(target=srv.serve_forever,daemon=True);thread.start()
     yield srv,books,lifecycle
     srv.shutdown();thread.join(timeout=2);srv.server_close()

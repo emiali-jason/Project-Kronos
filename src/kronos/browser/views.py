@@ -2920,7 +2920,9 @@ def render_reports(
         ("Live", str(overview.live_positions)),
         ("Observations", str(overview.paper_observations)),
         ("Completed", str(overview.completed_records)),
-        ("Net P/L", "UNAVAILABLE" if overview.net_pnl is None else "₹" + _number(overview.net_pnl)),
+        (("Net P/L" if query.product is ReportProduct.INTRADAY else "Gross P/L"),
+         "UNAVAILABLE" if (overview.net_pnl if query.product is ReportProduct.INTRADAY else overview.gross_pnl) is None
+         else "₹" + _number(overview.net_pnl if query.product is ReportProduct.INTRADAY else overview.gross_pnl)),
     )
     summary = '<div class="reports-summary">' + ''.join(
         '<div class="reports-metric"><span>' + escape(label) + '</span><strong>'
@@ -2948,10 +2950,26 @@ def render_reports(
         unsupported = ('<p>Factual one-lot model records. Observation is counterfactual, not exposure. '
                        'Research authority remains WO-12. LIVE_POSITION_NOT_COMMISSIONED_V1.</p>')
     detail = next(
-        (item for item in projection.records if item.record_identity == selected_record_id),
+        (item for item in projection.records if item.record_identity == selected_record_id
+         or (query.product is ReportProduct.SWING and selected_record_id not in {None, "UNAVAILABLE", "OPTIONAL_MISSING", "NOT_APPLICABLE"}
+             and selected_record_id in {item.decision_identity,
+                                        dict(item.source_facts).get("track"),
+                                        dict(item.source_facts).get("position"),
+                                        dict(item.source_facts).get("step33")})),
         None,
     )
     detail_view = '' if detail is None else _report_detail(detail)
+    if query.product is ReportProduct.SWING:
+        from kronos.browser.reports import _coverage
+        import json
+        unsupported += ('<style>.reports-coverage,.swing-reports-detail{min-width:0}'
+                        '.reports-coverage pre{white-space:pre-wrap;overflow-wrap:anywhere;min-width:0}'
+                        '.swing-reports-detail :is(h2,strong,details,.journal-detail-grid>div,.v1-context-row)'
+                        '{min-width:0;overflow-wrap:anywhere}</style>'
+                        '<section class="reports-coverage"><h2>COVERAGE & RELATIONSHIPS</h2><pre>'
+                        + escape(json.dumps(_coverage(projection), sort_keys=True, indent=2))
+                        + '</pre><p>Decisions and advisory plans are not actual trades. '
+                        'Literal MCX history is UNRESOLVED. Costs and net P/L are UNKNOWN.</p></section>')
     table = _reports_table(projection)
     filters = _reports_filter_panel(projection)
     return _page(
@@ -3066,7 +3084,7 @@ def _reports_table(projection: HistoricalReportsProjection) -> str:
     return (
         '<div class="reports-table-wrap"><table class="reports-table"><thead><tr>'
         '<th>Date</th><th>Time</th><th>Instrument</th><th>Side</th><th>Family</th><th>Status</th>'
-        '<th>Entry</th><th>Exit</th><th>P/L</th><th>Target</th><th>SL</th>'
+        '<th>Entry</th><th>Exit</th><th>' + ('P/L' if intraday else 'Gross P/L') + '</th><th>Target</th><th>SL</th>'
         '<th>Position Outcome</th><th>Track Outcome</th></tr></thead><tbody>'
         + rows + '</tbody></table></div>' + pagination
     )
@@ -3119,25 +3137,30 @@ def _report_detail(item: HistoricalReportRecord) -> str:
             for key, value in data.items()) + '</dl></section>'
     values = (
         ("Family", item.family.value.replace('_', ' ')), ("Status", item.status),
-        (("Recorded decision boundary" if item.paper_history_representation in {"COMPACT_HISTORICAL", "HISTORY_UNAVAILABLE"} and item.status != "COMPLETE" else "Completed / exited at"), item.relevant_timestamp.astimezone(_KOLKATA).strftime(
+        (("Recorded decision boundary" if not item.completed or item.paper_history_representation in {"COMPACT_HISTORICAL", "HISTORY_UNAVAILABLE"} and item.status != "COMPLETE" else "Completed / exited at"), item.relevant_timestamp.astimezone(_KOLKATA).strftime(
             "%d %b %Y · %H:%M IST"
         )),
         ("Decision", item.decision_identity), ("Step-31 severity", item.step31_severity),
         ("Risk at decision", item.risk_state), ("Activation", item.activation_disposition),
         ("Entry / observation entry", _report_value(item.entry)), ("Exit", _report_value(item.exit)),
-        ("P/L", "—" if item.pnl is None else "₹" + _number(item.pnl)),
+        ("Gross P/L", "UNKNOWN" if item.pnl is None else "₹" + _number(item.pnl)),
         ("Target", _report_value(item.target)), ("Stop", _report_value(item.stop)),
         ("Sponsor Position outcome", item.sponsor_position_outcome),
         ("Paper Track outcome", item.paper_track_outcome),
         ("Objective model", item.objective_outcome),
     )
+    values += (("Market", item.market), ("Contract family", item.contract_family),
+               ("Population", item.population_kind), ("Relationships", item.relationship_state),
+               ("Timestamp meaning", dict(item.source_facts).get("timestamp_kind", "UNAVAILABLE")),
+               ("Costs / net P/L", "UNKNOWN / UNKNOWN"))
+    values += tuple((key, value) for key,value in item.source_facts)
     values += _paper_history_fields(item)
     fields = ''.join(
         '<div><span>' + escape(label) + '</span><strong>' + escape(value) + '</strong></div>'
         for label, value in values
     )
     return (
-        '<section class="journal-detail reports-detail"><h2>' + escape(item.instrument)
+        '<section class="journal-detail reports-detail swing-reports-detail"><h2>' + escape(item.instrument)
         + ' · HISTORICAL DETAIL</h2><div class="journal-detail-grid">' + fields
         + '</div><details class="native-diagnostics"><summary>GOVERNED EVIDENCE</summary>'
         '<div class="v1-context-row"><span>Record</span><strong>' + escape(item.record_identity)

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -28,6 +28,10 @@ from kronos.swing.v1.observation_research_ledger_v2 import (
 _IST = ZoneInfo("Asia/Kolkata")
 REPORTS_EXPORT_SCHEMA = "KRONOS-SPONSOR-HISTORICAL-REPORTS-V1"
 REPORTS_AUTHORITY = "FACTUAL_HISTORY_ONLY_NO_RESEARCH_TRADING_OR_BROKER_AUTHORITY"
+
+
+class ReportsEvidenceUnavailable(ValueError):
+    """A demonstrated retained-source relationship failure, not a projector bug."""
 
 
 class ReportProduct(StrEnum):
@@ -67,7 +71,8 @@ class ReportsQuery:
 
     def __post_init__(self) -> None:
         if (
-            type(self.product) is not ReportProduct
+            (self.product is ReportProduct.SWING and (self.exit_reason or self.completeness))
+            or type(self.product) is not ReportProduct
             or type(self.view) is not ReportView
             or (self.from_date is not None and type(self.from_date) is not date)
             or (self.to_date is not None and type(self.to_date) is not date)
@@ -120,6 +125,12 @@ class HistoricalReportRecord:
     paper_source_count: int | None = None
     paper_consolidation_identity: str | None = None
     paper_history_detail_reason: str | None = None
+    market: str = "UNAVAILABLE"
+    contract_family: str = "UNAVAILABLE"
+    population_kind: str = "POSITION"
+    relationship_state: str = "VALID_HISTORY"
+    completed: bool = True
+    source_facts: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,6 +146,7 @@ class ReportsOverview:
     max_drawdown: None = None
     daily_pnl: None = None
     effectiveness: None = None
+    gross_pnl: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -146,6 +158,7 @@ class HistoricalReportsProjection:
     overview: ReportsOverview
     page_count: int
     total_records: int
+    coverage: tuple[tuple[str, str, int], ...] = ()
 
 
 def project_historical_reports(
@@ -154,6 +167,7 @@ def project_historical_reports(
     query: ReportsQuery,
     *,
     governed_current_trading_date: date | None,
+    evidence=None,
 ) -> HistoricalReportsProjection:
     """Project immutable evidence into one filtered, paginated historical book."""
 
@@ -161,6 +175,10 @@ def project_historical_reports(
         return HistoricalReportsProjection(
             query, governed_current_trading_date, (), (), _overview(()), 0, 0
         )
+    if evidence is not None:
+        from kronos.browser.swing_reports_population import compose_swing_reports
+        records, coverage = compose_swing_reports(evidence)
+        return _project_records(records, query, governed_current_trading_date, coverage)
     by_decision: dict[str, HistoricalReportRecord] = {}
     for item in operational:
         record = _from_operational(item)
@@ -220,6 +238,9 @@ def export_reports_json(projection: HistoricalReportsProjection) -> bytes:
         "product": projection.query.product.value,
         "filters": _filters(projection.query),
         "records": [_export_record(item) for item in projection.records],
+        **({"coverage": _coverage(projection), "timezone": "Asia/Kolkata",
+            "net_pnl": "UNKNOWN", "costs": "UNKNOWN"}
+           if projection.query.product is ReportProduct.SWING else {}),
     }, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
 
 
@@ -230,8 +251,10 @@ def export_reports_csv(projection: HistoricalReportsProjection) -> bytes:
     writer.writeheader()
     writer.writerows(
         {key: _safe_csv(value) for key, value in _intraday_values(item).items()}
-        if item.intraday_facts is not None else _export_record(item)
+        if item.intraday_facts is not None else _safe_swing_csv_record(item, projection)
         for item in projection.records)
+    if projection.coverage and not projection.records:
+        writer.writerow({"row_type": "COVERAGE", "report_coverage": json.dumps(_coverage(projection), sort_keys=True)})
     return target.getvalue().encode("utf-8")
 
 
@@ -276,6 +299,10 @@ def export_reports_xlsx(
         ("Authority", REPORTS_AUTHORITY),
     )
 
+    if projection.query.product is ReportProduct.SWING:
+        summary_rows += (("Coverage", json.dumps(_coverage(projection), sort_keys=True)),
+                         ("Timezone", "Asia/Kolkata"), ("Costs", "UNKNOWN"),
+                         ("Gross P/L", _xlsx_value(projection.overview.gross_pnl)))
     target = io.BytesIO()
     with ZipFile(target, "w", compression=ZIP_DEFLATED, compresslevel=9) as archive:
         _xlsx_write(archive, "[Content_Types].xml", _xlsx_content_types())
@@ -398,6 +425,7 @@ def _matches(item: HistoricalReportRecord, query: ReportsQuery) -> bool:
         and (not query.status or query.status.casefold() in (
             item.status + " " + item.sponsor_position_outcome + " "
             + item.paper_track_outcome
+            + (" " + item.objective_outcome if query.product is ReportProduct.SWING else "")
         ).casefold())
     )
 
@@ -407,8 +435,8 @@ def _overview(records: tuple[HistoricalReportRecord, ...]) -> ReportsOverview:
         item for item in records
         if item.family in {ReportFamily.PAPER, ReportFamily.LIVE}
     )
-    net_pnl = (
-        None if not positions or any(item.pnl is None for item in positions)
+    gross_pnl = (
+        None if not positions or any(item.pnl is None or item.market == "UNRESOLVED" for item in positions)
         else sum((item.pnl for item in positions if item.pnl is not None), Decimal("0"))
     )
     return ReportsOverview(
@@ -418,8 +446,9 @@ def _overview(records: tuple[HistoricalReportRecord, ...]) -> ReportsOverview:
         paper_observations=sum(
             item.family is ReportFamily.PAPER_OBSERVATION for item in records
         ),
-        completed_records=len(records),
-        net_pnl=net_pnl,
+        completed_records=sum(item.completed for item in records),
+        net_pnl=None,
+        gross_pnl=gross_pnl,
     )
 
 
@@ -468,6 +497,12 @@ def _export_record(item: HistoricalReportRecord) -> dict[str, object]:
         "paper_source_count": "UNAVAILABLE" if item.paper_source_count is None else item.paper_source_count,
         "paper_consolidation_identity": item.paper_consolidation_identity or "UNAVAILABLE",
         "paper_history_detail_reason": item.paper_history_detail_reason or "NONE",
+        "market": item.market, "contract_family": item.contract_family,
+        "population_kind": item.population_kind, "relationship_state": item.relationship_state,
+        "completed": item.completed, "source_facts": json.dumps(item.source_facts),
+        "pnl_basis": "GROSS_PRICE_ONLY" if item.pnl is not None else "UNKNOWN",
+        "costs": "UNKNOWN", "net_pnl": "UNKNOWN",
+        "row_type": "RECORD", "report_coverage": "",
     }
 
 
@@ -481,6 +516,8 @@ def _export_record_fields() -> tuple[str, ...]:
         "paper_history_representation", "paper_raw_detail_availability",
         "paper_first_observation_at", "paper_last_observation_at", "paper_fact_count",
         "paper_source_count", "paper_consolidation_identity", "paper_history_detail_reason",
+        "market", "contract_family", "population_kind", "relationship_state", "completed",
+        "source_facts", "pnl_basis", "costs", "net_pnl", "row_type", "report_coverage",
     )
 
 
@@ -491,14 +528,14 @@ def _value(value: Decimal | None) -> str:
 def _xlsx_headers() -> tuple[str, ...]:
     return (
         "Date",
-        "Completed / Exited At",
+        "Recorded At",
         "Instrument",
         "Direction",
         "Family",
         "Status",
         "Entry / Observation Entry",
         "Exit",
-        "P/L",
+        "Gross P/L",
         "Target",
         "SL",
         "Sponsor Position Outcome",
@@ -511,6 +548,8 @@ def _xlsx_headers() -> tuple[str, ...]:
         "Decision Identity",
         "Source Contract",
         "Source Contract Version",
+        "Market", "Contract Family", "Population Kind", "Relationships", "Source Facts",
+        "P/L Basis", "Costs", "Net P/L",
     )
 
 
@@ -519,7 +558,7 @@ def _xlsx_record(item: HistoricalReportRecord) -> tuple[object, ...]:
         ReportFamily.PAPER: "PAPER POSITION",
         ReportFamily.LIVE: "LIVE POSITION",
         ReportFamily.PAPER_OBSERVATION: "PAPER OBSERVATION",
-    }[item.family]
+    }.get(item.family, item.family.value)
     return (
         item.record_date.isoformat(),
         _xlsx_timestamp(item.relevant_timestamp),
@@ -546,6 +585,9 @@ def _xlsx_record(item: HistoricalReportRecord) -> tuple[object, ...]:
         item.decision_identity,
         item.source_contract_identity,
         item.source_contract_version,
+        item.market, item.contract_family, item.population_kind, item.relationship_state,
+        json.dumps(item.source_facts), "GROSS_PRICE_ONLY" if item.pnl is not None else "UNKNOWN",
+        "UNKNOWN", "UNKNOWN",
     )
 
 
@@ -829,3 +871,39 @@ def project_intraday_reports(rows, query, *, governed_current_trading_date=None)
     start = (query.page - 1) * query.page_size
     return HistoricalReportsProjection(query, governed_current_trading_date, records,
         records[start:start + query.page_size], overview, (total + query.page_size - 1) // query.page_size, total)
+
+
+def _project_records(records, query, governed_date, coverage):
+    if len({item.record_identity for item in records}) != len(records):
+        raise ValueError("REPORTS_DUPLICATE_PRIMARY")
+    ordered = tuple(sorted(records, key=lambda item: (-item.relevant_timestamp.timestamp(), item.record_identity)))
+    filtered = tuple(item for item in ordered if _matches(item, query))
+    start = (query.page-1)*query.page_size
+    return HistoricalReportsProjection(query, governed_date, filtered,
+                                      filtered[start:start+query.page_size], _overview(filtered),
+                                      (len(filtered)+query.page_size-1)//query.page_size,
+                                      len(filtered), coverage)
+
+
+def _coverage(projection):
+    return {
+        "sources": [{"source": source, "state": state, "count": count}
+                    for source,state,count in projection.coverage],
+        "filtered_population": "VALID_EMPTY" if not projection.records else "VALID_HISTORY",
+        "markets": {market: sum(item.market==market for item in projection.records)
+                    for market in ("NSE", "MCX", "UNRESOLVED")},
+        "families": {family: sum(item.market=="MCX" and item.contract_family==family
+                                 for item in projection.records)
+                     for family in ("GOLDM", "SILVERM", "COPPER", "CRUDEOIL", "NATURALGAS")},
+        "missing_relationships": sum(item.relationship_state=="VALID_V1_ONLY_V2_ABSENT"
+                                     for item in projection.records),
+        "operational_v2_completeness": "INDEPENDENT_OPERATIONAL_GUARD_UNCHANGED",
+    }
+
+
+def _safe_swing_csv_record(item, projection):
+    values = _export_record(item)
+    values["report_coverage"] = json.dumps(_coverage(projection), sort_keys=True)
+    # Numeric facts retain signs. All free text is formula-safe.
+    numeric = {"entry", "exit", "pnl", "target", "stop"}
+    return {key: value if key in numeric else _safe_csv(value) for key,value in values.items()}

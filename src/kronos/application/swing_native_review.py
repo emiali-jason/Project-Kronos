@@ -1031,6 +1031,23 @@ class NativeReviewWorkflow:
                 raise ValueError("JOURNAL_UNAVAILABLE:V3_READINESS_NOT_RESTORED")
             return self._trade_journal.snapshot()
 
+    def reports_journal_snapshot(self) -> TradeJournalSnapshot:
+        """Validate immutable Step-33 bytes; never repair the current cache."""
+
+        snapshot = self.journal_current_snapshot()
+        retained = self._trade_journal.store.load()
+        if ({item.journal_record_id: item for item in retained}
+                != {item.journal_record_id: item for item in snapshot.records}):
+            raise ValueError("REPORTS_STEP33_RETAINED_SOURCE_CHANGED")
+        lifecycle = self._active_lifecycle.snapshot()
+        retained_lifecycle = self._active_lifecycle.store.load()
+        for name, identity in (("positions", "position_id"), ("events", "event_id"),
+                               ("closures", "closure_id")):
+            if ({getattr(item, identity): item for item in getattr(lifecycle, name)}
+                    != {getattr(item, identity): item for item in getattr(retained_lifecycle, name)}):
+                raise ValueError("REPORTS_LIFECYCLE_RETAINED_SOURCE_CHANGED")
+        return snapshot
+
     def journal_position_monitoring_evidence(
         self, position_id: str
     ) -> tuple[str, str | None, str | None]:
