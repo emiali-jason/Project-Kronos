@@ -290,27 +290,27 @@ def test_monitorability_and_forbidden_authority():
 def test_persistence_idempotency_conflict_supersession_and_restoration(tmp_path):
     store = Wo09Store(tmp_path)
     record, reqs = evaluated(space="OBSTACLE_CLOSE")
-    first = store.retain(record, reqs)
-    assert store.retain(record, reqs) == first
+    first = store.retain(record, reqs, expected=store.expectation(record.canonical_subject_identity))
+    assert store.retain(record, reqs, expected=store.expectation(record.canonical_subject_identity)) == first
     assert store.restore_current()[0][1] == record
     assert store.load_requirements(record.readiness_identity) == reqs
     newer, newer_reqs = evaluate_readiness(source(), evidence(space="LIMITED_SPACE"), created_at=NOW.replace(minute=1))
-    pointer = store.retain(newer, newer_reqs)
+    pointer = store.retain(newer, newer_reqs, expected=store.expectation(newer.canonical_subject_identity))
     assert pointer.superseded_readiness_identity == record.readiness_identity
     assert store.load_readiness(record.readiness_identity) == record
     assert store.load_requirements(record.readiness_identity) == reqs
     with pytest.raises(Wo09PersistenceError, match="NON_FORWARD_SUPERSESSION"):
-        store.retain(record, reqs)
+        store.retain(record, reqs, expected=store.expectation(record.canonical_subject_identity))
     path = store.readiness / f"{record.readiness_identity}.json"
     path.write_bytes(b"{}")
     with pytest.raises(Wo09PersistenceError, match="IMMUTABILITY_CONFLICT"):
-        store.retain(record, reqs)
+        store.retain(record, reqs, expected=store.expectation(record.canonical_subject_identity))
 
 
 def test_reassessment_pointer_preserves_snapshot(tmp_path):
     app = IntradayWo09Application(Wo09Store(tmp_path))
     record, requirements = evaluated()
-    app.store.retain(record, requirements)
+    app.store.retain(record, requirements, expected=app.store.expectation(record.canonical_subject_identity))
     pointer = app.mark_reassessment_due(record.canonical_subject_identity, at=NOW.replace(minute=2))
     assert pointer.currentness is CurrentnessState.REASSESSMENT_DUE
     assert app.store.load_readiness(record.readiness_identity).currentness is CurrentnessState.CURRENT
@@ -323,7 +323,7 @@ def test_watch_lifecycle_disconnect_and_no_tick_promotion(tmp_path):
         source(answers={"Q3": "WEAK_OR_MIXED_BASE", "Q7": "OBSTACLE_CLOSE"}),
         evidence(space="OBSTACLE_CLOSE"), created_at=NOW,
     )
-    app.store.retain(record, reqs)
+    app.store.retain(record, reqs, expected=app.store.expectation(record.canonical_subject_identity))
     assert record.readiness_state is ReadinessState.NEAR_READY
     watches = app.register_reassessment_watches(record, reqs, at=NOW)
     assert len(watches) == 2 and all(item.state is WatchState.ACTIVE for item in watches)
@@ -418,14 +418,22 @@ def test_next_wo_handoff_only_for_now_and_contains_no_trade_fields():
 def test_application_handoff_binds_current_pointer_and_restores(tmp_path):
     app = IntradayWo09Application(Wo09Store(tmp_path))
     record, requirements = evaluated()
-    app.store.retain(record, requirements)
-    handoff = app.create_handoff(record, created_at=NOW)
+    app.store.retain(record, requirements, expected=app.store.expectation(record.canonical_subject_identity))
+    from kronos.intraday.evidence_currentness import NewWorkNotEligible
+    with pytest.raises(NewWorkNotEligible, match="FIRST_FIVE_TIME_NOT_ESTABLISHED"):
+        app.create_handoff(record, created_at=NOW)
+    assert not app.store.handoffs.exists()
+    # Exact historical retention remains readable, but does not commission an
+    # original first-five producer or new application handoff authority.
+    from tests.unit.intraday.recovery_r2b_fixtures import historical_handoff
+    handoff = historical_handoff(app.store, record, created_at=NOW,
+                                first_five_of_five_at=NOW)
     pointer = app.store.load_pointer(record.canonical_subject_identity)
     assert pointer is not None
     assert handoff.current_pointer_integrity == pointer.integrity_identity
     assert app.store.load_handoff(handoff.handoff_identity) == handoff
     app.mark_reassessment_due(record.canonical_subject_identity, at=NOW.replace(minute=1))
-    with pytest.raises(ValueError, match="SOURCE_NOT_CURRENT"):
+    with pytest.raises(ValueError, match="WO09_HANDOFF_SOURCE_NOT_CURRENT"):
         app.create_handoff(record, created_at=NOW.replace(minute=2))
 
 
@@ -468,7 +476,7 @@ def test_browser_route_reads_persisted_cards_without_calculation(tmp_path):
     store = Wo09Store(tmp_path.resolve())
     app = IntradayWo09Application(store)
     record, requirements = evaluated(answers={"Q7": "OBSTACLE_CLOSE"}, space="OBSTACLE_CLOSE")
-    store.retain(record, requirements)
+    store.retain(record, requirements, expected=store.expectation(record.canonical_subject_identity))
     projection = IntradayWo09Projection(store)
     status = projection.status_document()
     assert status["calculations"] == 0 and status["provider_calls"] == 0

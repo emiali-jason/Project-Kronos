@@ -13,7 +13,7 @@ def instrument_record(data):
     return InstrumentRecord(**values)
 
 
-def load_intake(application, identity, *, session, now, arming=True):
+def _load_intake_graph(application, identity, *, session, now, arming=True):
     h = application.store.load(identity)
     hd = wo10_require(h, "WO10_SELECTED_TRADE_HANDOFF_V1")
     s = application.store.load(hd["selection_identity"])
@@ -56,7 +56,7 @@ def load_intake(application, identity, *, session, now, arming=True):
         raise ValueError("WO11_EXPRESSION_LINEAGE_MISMATCH")
     if instant(sd["selected_at"]) != instant(hd["selected_at"]) or instant(hd["selected_at"]) > now:
         raise ValueError("WO11_SELECTION_TIME_INVALID")
-    if arming and application.decision_state(c, now=now, session=session) != "EXECUTABLE":
+    if arming and application.decision_state(c, now=now, session=session, _check_authority=False) != "EXECUTABLE":
         raise ValueError("WO11_HANDOFF_NOT_CURRENT_EXECUTABLE")
     from kronos.intraday.wo10_futures_market import require_session
     require_session(session, now, exchange="MCX" if contract["active_mcx"] else "NSE")
@@ -85,3 +85,9 @@ def load_intake(application, identity, *, session, now, arming=True):
         selected_lots=sd["sponsor_selected_lots"], selected_at=sd["selected_at"], advisory=advisory.data,
         monetary_units=money.get("rupees_per_quoted_point"),
         semantic_expression=digest(dict(future=e["future"], direction=cd["direction"], plan_identity=cd["plan_identity"])))
+
+
+def load_intake(application, identity, *, session, now, arming=True, eligibility=None):
+    from kronos.application.intraday_evidence_currentness import require_boundary
+    require_boundary(eligibility).capture_lifecycle(handoff_identity=identity)
+    return _load_intake_graph(application, identity, session=session, now=now, arming=arming)

@@ -1,4 +1,6 @@
 """Projection and explicit Sponsor choice; Browser owns no numerical policy."""
+from kronos.intraday.wo09_persistence import Wo09PublicationConflict
+from kronos.intraday.evidence_currentness import NewWorkNotEligible
 from html import escape
 from uuid import uuid4
 
@@ -102,6 +104,12 @@ class IntradayFuturesControl:
             result = self.application.construct_current(**payload)
             return {"outcome": "RETAINED", "result_identity": result.identity,
                     "state": result.data.get("state", result.data.get("executability")), "reason": result.data.get("reason")}
+        except Wo09PublicationConflict as error:
+            return dict(outcome="REJECTED", reason=error.failure_reason,
+                        failure_stage=error.failure_stage, failure_reason=error.failure_reason)
+        except NewWorkNotEligible as error:
+            return dict(outcome="REJECTED", reason=str(error),
+                        failure_stage="NEW_WORK_ELIGIBILITY", failure_reason=error.reason.value)
         except (ValueError, KeyError, OSError, TypeError):
             return {"outcome": "REJECTED", "reason": "WO10_CONSTRUCTION_NOT_PERMITTED"}
 
@@ -123,6 +131,12 @@ class IntradayFuturesControl:
             selection = self.application.select(payload["comparison_identity"], choice=payload["choice"],
                                                 lots=payload["lots"], action_identity=payload["action_identity"], session=session)
             return {"outcome":"RETAINED", "selection_identity":selection.identity, "advisory":selection.data["advisory_risk"]}
+        except Wo09PublicationConflict as error:
+            return dict(outcome="REJECTED", reason=error.failure_reason,
+                        failure_stage=error.failure_stage, failure_reason=error.failure_reason)
+        except NewWorkNotEligible as error:
+            return dict(outcome="REJECTED", reason=str(error),
+                        failure_stage="NEW_WORK_ELIGIBILITY", failure_reason=error.reason.value)
         except (ValueError, KeyError, OSError):
             return {"outcome":"REJECTED", "reason":"WO10_SELECTION_NOT_PERMITTED"}
 

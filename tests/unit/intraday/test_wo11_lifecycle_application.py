@@ -24,7 +24,7 @@ from tests.unit.intraday.test_native_pullback_decision import source_document,bu
 from tests.unit.intraday.test_native_pullback_policy import SESSION,candles
 from kronos.market.schedule import MarketDaySchedule,MarketWindow,TradingDayStatus
 
-def early_source_fixture(direction='LONG', subject=SUBJECT, session=SESSION, binding=None, bundle=None):
+def early_source_fixture(direction='LONG', subject=SUBJECT, session=SESSION, binding=None, bundle=None, native_source=True):
     exchange='MCX' if subject.startswith('MCX-') else 'NSE'
     current=MarketDaySchedule(exchange,START.date(),session,'Asia/Kolkata',TradingDayStatus.TRADING,
         (MarketWindow(START,START+timedelta(hours=6,minutes=15)),),'DOMAIN008_ISOLATED','1')
@@ -53,7 +53,7 @@ def early_source_fixture(direction='LONG', subject=SUBJECT, session=SESSION, bin
     run=evaluate_probables_v2_run(source_discovery_run_identity='DISCOVERY',universe_identity='UNIVERSE',universe_version='1',
         reconciliation_identity='RECONCILIATION',reconciliation_version='1',market_session_identity=session,analysis_boundary=BOUNDARY,
         member_evidence=(mapping,),unavailable_members=(),provenance=('ISOLATED',))
-    return source_document(facts,mapping,run.results[0],run.run_identity,mcx_binding=binding,machine_bundle=bundle),facts,mapping,run
+    return (source_document(facts,mapping,run.results[0],run.run_identity,mcx_binding=binding,machine_bundle=bundle) if native_source else None),facts,mapping,run
 
 def selected_fixture(tmp_path,monkeypatch,direction):
     from kronos.application.intraday_futures import IntradayFuturesApplication
@@ -73,15 +73,13 @@ def selected_fixture(tmp_path,monkeypatch,direction):
     from kronos.application.intraday_native_selection import NativePullbackPublication
     d,=NativePullbackPublication(native,clock=lambda:BOUNDARY,commissioned_at=BOUNDARY).publish(run,(m,),facts=(f,),newly_published=True)
     assert d.data['result']=='PULLBACK',d.data
-    request=VisualReconciliationInput(SUBJECT,direction,'run','result','cycle','pack','chart','answer','a'*64,'visual','correspondence',
-        (m.semantic_evidence.evidence_identity,),tuple(observation(k,v) for k,v in POSITIVE.items()),q10_classification=Q10Classification.NOT_APPLICABLE)
-    visual=create_reconciliation_record(request,created_at=BOUNDARY)
-    readiness,watch=evaluate_readiness(visual,evidence(subject=SUBJECT,direction=direction,analysis_boundary=BOUNDARY,
-        machine_evidence_identity=m.semantic_evidence.evidence_identity,machine_evidence_integrity=m.semantic_evidence.integrity_identity),created_at=BOUNDARY)
-    wo09=Wo09Store(tmp_path/'wo09');wo09.retain(readiness,watch)
-    h=IntradayWo09Application(wo09).create_handoff(readiness,created_at=BOUNDARY,first_five_of_five_at=BOUNDARY)
-    app=IntradayFuturesApplication(FuturesStore(tmp_path/'futures'),wo09,clock=lambda:BOUNDARY,
-        structural_loader=NativeStructuralLoader(native),operational_guard=lambda:True)
+    from tests.unit.intraday.recovery_r2b_fixtures import governed_graph,historical_handoff
+    graph=governed_graph(tmp_path,m,run,f,clock=lambda:BOUNDARY)
+    wo09=graph.wo09;readiness=graph.readiness
+    wo09.retain(readiness,graph.requirements,expected=wo09.expectation(readiness.canonical_subject_identity))
+    h=historical_handoff(wo09,readiness,created_at=BOUNDARY,first_five_of_five_at=BOUNDARY)
+    app=IntradayFuturesApplication(graph.futures,wo09,clock=lambda:BOUNDARY,
+        structural_loader=NativeStructuralLoader(native),operational_guard=lambda:True,eligibility=graph.boundary)
     master,underlying=futures.master(SUBJECT)
     provider=futures.Provider(now=BOUNDARY)
     authority=dict(master=master,underlying=underlying,active_mcx=None,economics=None,configuration=futures.config())
@@ -126,8 +124,9 @@ def fixture(tmp_path,monkeypatch,direction='LONG',background_runner=None):
     clock=[BOUNDARY]
     app=IntradayLifecycleApplication(futures=futures,store=LifecycleStore(tmp_path/'wo11'),clock=lambda:clock[0],
         session_source=lambda subject,now:session(now),
-        timing_source=lambda current:qualify_timing(current,later_facts(f,clock[0],direction),acquired_at=clock[0]),operational_guard=lambda:True,
+        timing_source=lambda current:qualify_timing(current,later_facts(f,clock[0],direction),acquired_at=clock[0]),operational_guard=lambda:True,eligibility=futures.eligibility,
         background_runner=(background_runner or (lambda operation,_name:operation())))
+    app.eligibility.clock=app.clock
     cap=Capability();hub=SharedSwingMonitoringHub();app.bind_monitoring(hub,lambda:cap)
     return app,h,f,provider,clock,cap,hub
 
@@ -197,6 +196,20 @@ def test_corrupt_reachable_graph_fail_closed(tmp_path,monkeypatch):
     path.write_text('{}')
     with pytest.raises((ValueError,TypeError)):
         app.store.restore()
+
+
+def test_direct_constructor_without_eligibility_is_history_only(tmp_path,monkeypatch):
+    app,h,*_=fixture(tmp_path,monkeypatch)
+    direct=IntradayLifecycleApplication(futures=app.futures,
+        store=LifecycleStore(tmp_path/'history-only'),clock=app.clock,
+        session_source=app.session_source,timing_source=app.timing_source,
+        operational_guard=app.operational_guard)
+    assert direct.eligibility is None
+    assert direct.projection()['cards']==[]
+    from kronos.intraday.evidence_currentness import NewWorkNotEligible
+    with pytest.raises(NewWorkNotEligible,match='WO11_NEW_WORK_ELIGIBILITY_AUTHORITY_UNAVAILABLE'):
+        direct.action(handoff_identity=h.identity,action='OBSERVE',action_identity='NO-AUTHORITY')
+    assert direct.store.restore()==() and not direct.store.root.exists()
 
 
 def test_no_quantity_or_price_fields_in_control(tmp_path,monkeypatch):

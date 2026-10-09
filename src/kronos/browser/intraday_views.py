@@ -389,6 +389,7 @@ def render_intraday_review(
     review_v2_status: dict[str, object] | None = None,
     focused_candidate: str | None = None,
     review_v2_answer_result: IntradayReviewV2InboxImportResult | None = None,
+    new_work_denial: str | None = None,
 ) -> str:
     """Render persisted exact-current Review and WO-10 analytical state."""
 
@@ -475,6 +476,8 @@ def render_intraday_review(
         'card.focus({preventScroll:true});card.scrollIntoView({block:"start"});}'
         '});});</script>'
     )
+    if new_work_denial is not None:
+        body = '<aside role="alert">' + escape(new_work_denial) + '</aside>' + body
     return render_browser_page(
         title="Intraday Native Review",
         subtitle="Exact-current Probables · one complete TradingView composite per candidate.",
@@ -1957,7 +1960,7 @@ def _review_v2_control_script() -> str:
         'try{const r=await fetch("' + REVIEW_V2_CREATE_ROUTE + '",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});'
         'const d=await r.json();if(!r.ok||d.outcome!=="COMPLETE"||'
         '! ["CURRENTIZED","ALREADY_CURRENT"].includes(d.currentization_state))'
-        'throw new Error("Reload Review to check the exact current Probables.");location.reload();}'
+        'throw new Error(d.failure_reason||"Reload Review to check the exact current Probables.");location.reload();}'
         'catch(e){b.disabled=false;window.alert("Review intake currentization failed: "+String(e));}});})();</script>'
     )
 
@@ -2343,7 +2346,7 @@ document.querySelectorAll('[data-review-v2-batch-answer-upload]').forEach(input=
     const file=input.files[0];
     if(!file||(!file.name.toLowerCase().endsWith('.json')&&!['application/json','text/json'].includes(file.type))){alert('Choose one combined V2 JSON Answer Pack.');return;}
     const response=await fetch(input.dataset.reviewV2BatchAnswerUpload,{method:'POST',headers:{'Content-Type':'application/json'},body:file});
-    if(!response.ok){alert('V2 combined Answer upload rejected.');return;}
+    if(!response.ok){const d=await response.json().catch(()=>null);alert(d?.message||d?.reason||'V2 combined Answer upload rejected.');return;}
     document.open();document.write(await response.text());document.close();
   });
 });

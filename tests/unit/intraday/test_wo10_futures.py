@@ -27,7 +27,7 @@ from kronos.market.schedule import MarketDaySchedule, MarketWindow, TradingDaySt
 from tests.unit.intraday.test_wo09_readiness import source, evidence
 from tests.unit.intraday.test_wo13_pullback import _evidence, _fact
 
-NOW = datetime(2026, 9, 11, 5, 0, tzinfo=timezone.utc)
+NOW = datetime(2026, 9, 11, 5, 45, tzinfo=timezone.utc)
 IST = ZoneInfo("Asia/Kolkata")
 
 
@@ -39,12 +39,30 @@ def session(now=NOW, exchange="NSE"):
 
 
 def intake(tmp_path, direction="LONG", subject="NSE-EQ-LUPIN", **changes):
-    r, req = evaluate_readiness(source(subject=subject, direction=direction),
-                                evidence(subject=subject, direction=direction, **changes), created_at=NOW)
-    store = Wo09Store(tmp_path / "wo09")
-    store.retain(r, req)
-    h = IntradayWo09Application(store).create_handoff(r, created_at=NOW, first_five_of_five_at=NOW)
-    return store, r, h
+    from tests.unit.intraday.recovery_r2b_fixtures import governed_graph, historical_handoff
+    if subject.startswith("NSE-"):
+        from tests.unit.intraday.test_wo11_lifecycle_application import early_source_fixture
+        _,facts,mapping,run=early_source_fixture(direction,subject)
+        graph=governed_graph(tmp_path,mapping,run,facts,clock=lambda:NOW)
+        r,req=graph.readiness,graph.requirements
+        if changes:
+            from kronos.intraday.wo09_readiness import build_wo09_evidence
+            record=graph.reconciliation.store.restore_current(r.review_cycle_identity)
+            visual=graph.review.review_store.load_visual_evidence(r.visual_evidence_identity)
+            e=build_wo09_evidence(record,mapping.semantic_evidence,mapping.completed_evidence,visual)
+            # Explicit isolated negative criterion fixture; no upstream fact minted.
+            aliases={"space":"trade_space","follow":"follow_through",
+                     "fifteen":"fifteen_minute_direction","one_hour":"one_hour_direction"}
+            r,req=evaluate_readiness(record,replace(e,**{aliases.get(k,k):v for k,v in changes.items()}),created_at=NOW)
+        store=graph.wo09
+        store._isolated_graph=graph
+    else:
+        r,req=evaluate_readiness(source(subject=subject,direction=direction),
+            evidence(subject=subject,direction=direction,**changes),created_at=NOW)
+        store=Wo09Store(tmp_path/'wo09')
+    store.retain(r,req,expected=store.expectation(r.canonical_subject_identity))
+    h=historical_handoff(store,r,created_at=NOW,first_five_of_five_at=NOW)
+    return store,r,h
 
 
 def master(subject="NSE-EQ-LUPIN", *, expiries=None):
@@ -96,7 +114,7 @@ def config(**changes):
 def fixture(tmp_path, direction="LONG", subject="NSE-EQ-LUPIN"):
     store, readiness, h = intake(tmp_path, direction, subject)
     a = adapt_wo09(h, readiness, store.load_pointer(subject), now=NOW, session_identity=h.session_identity,
-                   setup_family=Wo13SetupFamily.INTRADAY_PULLBACK_CONTINUATION, setup_evidence_identity="machine", instrument_identity=subject)
+                   setup_family=Wo13SetupFamily.INTRADAY_PULLBACK_CONTINUATION, setup_evidence_identity=readiness.machine_evidence_identities[0], instrument_identity=subject)
     # Exact existing geometry evidence helpers; no fake historical handoff.
     roles = __import__("kronos.intraday.wo13_geometry", fromlist=["Wo13StructuralRole"]).Wo13StructuralRole
     long = direction == "LONG"
@@ -108,7 +126,7 @@ def fixture(tmp_path, direction="LONG", subject="NSE-EQ-LUPIN"):
     g = construct_wo13_pullback_geometry(e)
     population = create_wo13_target_constraint_population(setup_geometry=g)
     m, u = master(subject)
-    app = IntradayFuturesApplication(FuturesStore(tmp_path/"futures"), store, clock=lambda: NOW, operational_guard=lambda: True)
+    app = IntradayFuturesApplication(store._isolated_graph.futures, store, clock=lambda: NOW, operational_guard=lambda: True, eligibility=store._isolated_graph.boundary)
     kwargs = dict(request_identity="test-operation", adapter=a, geometry_evidence=e, target_population=population,
                   master=m, provider=Provider(), session_source=session, underlying=u, configuration=config())
     return app, kwargs
@@ -216,7 +234,7 @@ def test_idempotence_and_conflict(tmp_path):
 
 def test_supersession(tmp_path):
     app, kw = fixture(tmp_path); c = app.evaluate(**kw)
-    app.wo09.mark_currentness("NSE-EQ-LUPIN", CurrentnessState.REASSESSMENT_DUE, updated_at=NOW+timedelta(seconds=1))
+    app.wo09.mark_currentness("NSE-EQ-LUPIN", CurrentnessState.REASSESSMENT_DUE, updated_at=NOW+timedelta(seconds=1), expected=app.wo09.expectation("NSE-EQ-LUPIN"))
     assert app.decision_state(c, now=NOW, session=session()) == "SUPERSEDED"
 
 
@@ -271,26 +289,39 @@ def test_composition_is_inert(tmp_path):
     assert app.restore() == () and not (tmp_path/"new").exists()
 
 
-@pytest.mark.parametrize("family", ["CRUDE", "COPPER", "GOLDM", "SILVERM"])
-@pytest.mark.parametrize("monetary",["available","missing","stale","inconsistent"])
-def test_mcx_exact_native_contract_authority(tmp_path, family, monetary):
+def _mcx_component_inputs(family):
     from tests.unit.instrument.test_active_derivative_selection import _snapshot, CATALOGUE
     from kronos.instrument.active_derivative import GovernedActiveDerivativeResolver
     from kronos.market.calendar import MarketCalendarPublisher
-    from kronos.intraday.wo14 import create_wo14_instrument_economics
     from kronos.browser.intraday_futures_control import domain008_session
     master_snapshot = _snapshot(NOW)
-    resolved = GovernedActiveDerivativeResolver(catalogue=CATALOGUE, provider_snapshot=master_snapshot,
-                                                calendar_publisher=MarketCalendarPublisher()).resolve_all(NOW)
-    active = resolved.for_subject(family).binding
+    active = GovernedActiveDerivativeResolver(catalogue=CATALOGUE,
+        provider_snapshot=master_snapshot, calendar_publisher=MarketCalendarPublisher()).resolve_all(NOW).for_subject(family).binding
     assert active is not None
-    contract_id = active.active_binding.derivative_contract_id
-    subject = active.canonical_subject_id
     future_row = next(x for x in master_snapshot.records if x.provider_record_identity == active.provider_record_identity)
-    native_session = domain008_session(MarketCalendarPublisher(), subject, NOW,
-                                       contract={"name":future_row.name,"expiry":future_row.expiry.isoformat()})
-    store,r,h = intake(tmp_path, subject=subject, market_family="MCX", exact_mcx_contract_identity=contract_id,
-                       exact_mcx_roll_lineage=active.binding_identity, session_identity=native_session.schedule.session_id)
+    native_session = domain008_session(MarketCalendarPublisher(), active.canonical_subject_id, NOW,
+        contract={"name":future_row.name,"expiry":future_row.expiry.isoformat()})
+    return master_snapshot, active, future_row, native_session
+
+
+@pytest.mark.parametrize("family", ["CRUDE", "COPPER", "GOLDM", "SILVERM"])
+@pytest.mark.parametrize("monetary",["available","missing","stale","inconsistent"])
+def test_mcx_exact_native_contract_authority(tmp_path, family, monetary):
+    """Owning market/mapping/Risk components; no WO09 or selection authority."""
+    from types import SimpleNamespace
+    from kronos.intraday.wo14 import create_wo14_instrument_economics
+    from kronos.intraday.wo10_futures_risk import risk_advisory
+    master_snapshot,active,future_row,native_session=_mcx_component_inputs(family)
+    contract_id=active.active_binding.derivative_contract_id
+    subject=active.canonical_subject_id
+    # Only the exact factual fields consumed by select_future. This is NOT a
+    # NextWoHandoff, no positive readiness is fabricated or persisted, and no
+    # operational Application admission/selection is invoked by this test.
+    component_input=SimpleNamespace(market_family="MCX",canonical_subject_identity=subject,
+        exact_mcx_contract_identity=contract_id,exact_mcx_roll_lineage=active.binding_identity,
+        session_identity=native_session.schedule.session_id,direction="LONG",
+        handoff_identity="ISOLATED-COMPONENT-INPUT-NOT-A-HANDOFF",
+        readiness_identity="ISOLATED-COMPONENT-INPUT-NOT-READINESS")
     econ = create_wo14_instrument_economics(economics_version="1.0.0", canonical_subject_identity=subject,
         instrument_identity=contract_id, actual_contract_identity=contract_id, roll_lineage_identity=active.binding_identity,
         lot_size=active.lot_size, contract_multiplier=D(1), tick_size=active.tick_size, tick_value=None,
@@ -302,33 +333,63 @@ def test_mcx_exact_native_contract_authority(tmp_path, family, monetary):
         if monetary=="stale":args['observed_at']=NOW-timedelta(days=1)
         else:args['tick_value']=D('999999')
         econ=create_wo14_instrument_economics(**args)
-    c, rows = select_future(master_snapshot,h,native_session,now=NOW,active_mcx=active,economics=econ)
+    c, rows = select_future(master_snapshot,component_input,native_session,now=NOW,active_mcx=active,economics=econ)
     assert len(rows) == 1 and rows[0] == future_row and c.data["underlying"] is None
     snap, baseline = build_snapshot(c, normalize_full_quotes(raw_quotes(rows),rows),operation_identity="test-op",
                                    request_identity="test-q", received_at=NOW,session=native_session)
     assert snap.data["basis"] is None and snap.data["basis_state"] == "NOT_APPLICABLE"
     assert baseline is not None
-    adapter=adapt_wo09(h,r,store.load_pointer(subject),now=NOW,session_identity=h.session_identity,
-                       setup_family=Wo13SetupFamily.INTRADAY_PULLBACK_CONTINUATION,setup_evidence_identity="machine",instrument_identity=contract_id)
-    from kronos.intraday.wo13_geometry import Wo13StructuralRole as Role
-    facts=[_fact(adapter,price,role,session=h.session_identity) for price,role in (
-        ("100",Role.QUALIFICATION_CANDLE_HIGH),("96",Role.PULLBACK_STRUCTURAL_LOW),("112",Role.PRIOR_IMPULSE_HIGH))]
-    ev=_evidence(adapter,qualification=(facts[0],),pullback=(facts[1],),impulse=(facts[2],),session=h.session_identity)
-    population=create_wo13_target_constraint_population(setup_geometry=construct_wo13_pullback_geometry(ev))
-    app=IntradayFuturesApplication(FuturesStore(tmp_path/"mcx-futures"),store,clock=lambda:NOW,operational_guard=lambda:True)
-    comparison=app.evaluate(request_identity="mcx-test",adapter=adapter,geometry_evidence=ev,target_population=population,
-        master=master_snapshot,provider=Provider(),session_source=lambda now:domain008_session(MarketCalendarPublisher(),subject,now,contract=c.data["future"]),
-        active_mcx=active,economics=econ,configuration=config(risk_reference_amount="1000000"))
-    assert comparison.data["executability"]=="EXECUTABLE"
-    fact=app.store.load(comparison.data['risk_fact_identity']).data
-    assert fact['state']==('AVAILABLE' if monetary=='available' else 'RISK_FACT_UNAVAILABLE')
-    if monetary=='available':assert D(fact['risk_per_lot'])==D(4)*active.lot_size
-    else:assert fact['risk_per_lot'] is None
-    assert app.select(comparison.identity,choice="SELECTED_FUTURE",lots=1,session=native_session,action_identity="mcx-sponsor").data["sponsor_selected_lots"]==1
+    # Explicit numerical input to the mapper, not a Native setup publication.
+    plan=record("WO10_CANONICAL_TRADE_PLAN_V1",wo09={"handoff_identity":component_input.handoff_identity},
+        subject=subject,direction="LONG",session_identity=component_input.session_identity,
+        created_at=NOW,state="AVAILABLE",entry=D("100"),stop=D("96"),target=D("112"),
+        invalidation="ISOLATED-THESIS-CONTEXT")
+    expression=map_future(plan,snap)
+    assert expression.data["state"]=="EXECUTABLE"
+    fact,advisory=assess_risk(expression,config(risk_reference_amount="1000000"),now=NOW)
+    assert fact.data['state']==('AVAILABLE' if monetary=='available' else 'RISK_FACT_UNAVAILABLE')
+    if monetary=='available':assert D(fact.data['risk_per_lot'])==D(4)*active.lot_size
+    else:assert fact.data['risk_per_lot'] is None
+    # Quantity remains advisory at this boundary; this does not assert a lawful
+    # MCX Sponsor selection when native positive WO09 authority is unavailable.
+    quantity_advisory=risk_advisory(fact,config(risk_reference_amount="1000000"),now=NOW,lots=1)
+    assert quantity_advisory.data["sponsor_selected_lots"]==1
+    assert quantity_advisory.data["authority"]=="ADVISORY_ONLY_NO_VETO"
     with pytest.raises(ValueError,match="LINEAGE|ECONOMICS_INVALID"):
-        from kronos.intraday.wo10_futures_market import select_future as select
         wrong = replace(valid_econ, actual_contract_identity="other")
-        select(master_snapshot,h,native_session,now=NOW,active_mcx=active,economics=wrong)
+        select_future(master_snapshot,component_input,native_session,now=NOW,active_mcx=active,economics=wrong)
+    assert not tuple(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize("family", ["CRUDE", "COPPER", "GOLDM", "SILVERM"])
+def test_real_mcx_composition_preserves_unavailable_i3_i5(tmp_path,family):
+    """Commissioned M1-M5 chain remains fail-closed, independently of Risk."""
+    from tests.unit.intraday.test_wo11_lifecycle_application import early_source_fixture
+    from tests.unit.intraday.recovery_r2b_fixtures import governed_graph
+    from kronos.intraday.wo09_readiness import CriterionId,CriterionState,ReadinessState,HardGate
+    from kronos.intraday.visual_reconciliation_v2 import VisualReconciliationOutcome
+    _,active,_,native_session=_mcx_component_inputs(family)
+    subject=active.canonical_subject_id
+    _,facts,mapping,run=early_source_fixture(subject=subject,session=native_session.schedule.session_id,native_source=False)
+    graph=governed_graph(tmp_path,mapping,run,facts,clock=lambda:NOW,binding=active)
+    r=graph.readiness
+    visual=graph.boundary.paired.load_evidence(r.visual_evidence_identity)
+    assert tuple(x.question_id for x in visual.native_answers)==("M1","M2","M3","M4","M5")
+    assert r.wo07f_outcome is VisualReconciliationOutcome.CONFIRMED and r.hard_gate is HardGate.NONE
+    criteria={x.criterion_id:x for x in r.criteria}
+    assert criteria[CriterionId.I3].state is CriterionState.UNAVAILABLE
+    assert criteria[CriterionId.I5].state is CriterionState.UNAVAILABLE
+    assert r.readiness_state is ReadinessState.READINESS_UNAVAILABLE and r.satisfied_count is None
+    app=IntradayWo09Application(graph.wo09,eligibility=graph.boundary)
+    reconciled=graph.boundary.reconciliation.load(r.wo07f_identity)
+    retained,_=app.evaluate_governed(reconciled,mapping.semantic_evidence,mapping.completed_evidence,
+        visual,created_at=NOW,exact_mcx_contract_identity=active.active_binding.derivative_contract_id,
+        exact_mcx_roll_lineage=active.binding_identity)
+    assert retained==r and app.restore()[0][1]==r
+    with pytest.raises(ValueError,match="WO09_HANDOFF_INVALID"):
+        app.create_handoff(retained,created_at=NOW)
+    assert not graph.wo09.handoffs.exists()
+    assert graph.futures.records("WO10_SPONSOR_COMPARISON_V1")==()
 
 
 def test_natgas_commissioning_remains_held(tmp_path):
@@ -440,7 +501,7 @@ def test_breakout_reuses_same_existing_engine(tmp_path,direction):
     app,kw=fixture(tmp_path,direction)
     h=kw["adapter"].wo09;r=app.wo09.load_readiness(h.readiness_identity)
     a=adapt_wo09(h,r,app.wo09.load_pointer(h.canonical_subject_identity),now=NOW,session_identity=h.session_identity,
-        setup_family=Wo13SetupFamily.INTRADAY_RANGE_BREAKOUT,setup_evidence_identity="machine",instrument_identity=h.canonical_subject_identity)
+        setup_family=Wo13SetupFamily.INTRADAY_RANGE_BREAKOUT,setup_evidence_identity=r.machine_evidence_identities[0],instrument_identity=h.canonical_subject_identity)
     # Existing test helper uses its historical session label; supply exact successor session on all facts.
     from tests.unit.intraday.test_wo13_breakout import _facts
     facts=_facts(a)

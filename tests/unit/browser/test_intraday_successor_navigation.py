@@ -81,7 +81,7 @@ def test_opportunities_readiness_link_only_current_five(tmp_path):
     projection=IntradayWo09Projection(app.wo09)
     html=render_intraday_wo09(_snapshot(),projection.status_document())
     assert html.count('href="/intraday/trade-candidates"')==2
-    app.wo09.mark_currentness("NSE-EQ-LUPIN",CurrentnessState.REASSESSMENT_DUE,updated_at=NOW+timedelta(seconds=1))
+    app.wo09.mark_currentness("NSE-EQ-LUPIN",CurrentnessState.REASSESSMENT_DUE,updated_at=NOW+timedelta(seconds=1), expected=app.wo09.expectation("NSE-EQ-LUPIN"))
     html=render_intraday_wo09(_snapshot(),projection.status_document())
     assert html.count('href="/intraday/trade-candidates"')==1
 

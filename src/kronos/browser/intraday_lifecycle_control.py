@@ -1,4 +1,6 @@
 """Sponsor projection only; the application owns all prospective lifecycle facts."""
+from kronos.intraday.wo09_persistence import Wo09PublicationConflict
+from kronos.intraday.evidence_currentness import NewWorkNotEligible
 from html import escape
 import json
 from uuid import uuid4
@@ -21,6 +23,12 @@ class IntradayLifecycleControl:
             else:
                 raise ValueError("WO11_EXACT_ACTION_FIELDS_REQUIRED")
             return dict(outcome="RETAINED",identity=result.identity)
+        except Wo09PublicationConflict as error:
+            return dict(outcome="REJECTED", reason=error.failure_reason,
+                        failure_stage=error.failure_stage, failure_reason=error.failure_reason)
+        except NewWorkNotEligible as error:
+            return dict(outcome="REJECTED", reason=str(error),
+                        failure_stage="NEW_WORK_ELIGIBILITY", failure_reason=error.reason.value)
         except (ValueError,TypeError,KeyError,OSError,RuntimeError) as error:
             return dict(outcome="REJECTED",reason=str(error) if isinstance(error,ValueError) and str(error).startswith(("WO11_","LIVE_","NATGAS_")) else "WO11_ACTION_UNAVAILABLE")
 

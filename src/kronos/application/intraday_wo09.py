@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
+from kronos.intraday.evidence_currentness import require_original_first_five
+
 from kronos.application.intraday_wo09_notifications import (
     project_notification, project_reassessment_notification,
 )
@@ -26,10 +28,11 @@ from kronos.intraday.wo09_watch import (
 class IntradayWo09Application:
     """Execute only on an explicit caller request; construction/restoration is inert."""
 
-    def __init__(self, store: Wo09Store) -> None:
+    def __init__(self, store: Wo09Store, *, eligibility=None) -> None:
         if type(store) is not Wo09Store:
             raise ValueError("WO09_APPLICATION_STORE_INVALID")
         self.store = store
+        self.eligibility = eligibility
 
     def evaluate_governed(
         self, record: VisualReconciliationRecord,
@@ -41,6 +44,11 @@ class IntradayWo09Application:
         exact_mcx_roll_lineage: str | None = None,
         natgas_commissioning_state: str | None = None,
     ) -> tuple[ReadinessRecord, tuple[RequirementRecord, ...]]:
+        from kronos.application.intraday_evidence_currentness import require_boundary
+        boundary = require_boundary(self.eligibility)
+        expected = boundary.capture_readiness(record=record, semantic=semantic, selection=selection,
+            visual=visual, created_at=created_at, exact_mcx_contract_identity=exact_mcx_contract_identity,
+            exact_mcx_roll_lineage=exact_mcx_roll_lineage, natgas_commissioning_state=natgas_commissioning_state)
         evidence = build_wo09_evidence(
             record, semantic, selection, visual,
             exact_mcx_contract_identity=exact_mcx_contract_identity,
@@ -50,7 +58,9 @@ class IntradayWo09Application:
         readiness, requirements = evaluate_readiness(
             record, evidence, created_at=created_at
         )
-        self.store.retain(readiness, requirements)
+        with boundary.final_readiness(expected) as mutation:
+            mutation.retain_readiness(readiness, requirements)
+        self.store.notify_publication(mutation.notices)
         notification = project_notification(readiness)
         if notification is not None:
             self.store.retain_notification(notification)
@@ -114,7 +124,8 @@ class IntradayWo09Application:
         return triggered
 
     def mark_reassessment_due(self, subject: str, *, at: datetime) -> CurrentPointer:
-        pointer = self.store.mark_currentness(subject, CurrentnessState.REASSESSMENT_DUE, updated_at=at)
+        expected = self.store.expectation(subject)
+        pointer = self.store.mark_currentness(subject, CurrentnessState.REASSESSMENT_DUE, updated_at=at, expected=expected)
         record = self.store.load_readiness(pointer.readiness_identity)
         source = project_notification(record, currentness=pointer.currentness, effective_at=at)
         if source is not None:
@@ -136,7 +147,9 @@ class IntradayWo09Application:
         )
         if self.store.load_pointer(readiness.canonical_subject_identity) != pointer:
             raise ValueError("WO09_HANDOFF_CURRENT_POINTER_CHANGED")
-        self.store.retain_handoff(handoff)
+        # Content-bound caller time is not original-event provenance.
+        require_original_first_five()
+        self.store.retain_handoff(handoff, expected=self.store.expectation(readiness.canonical_subject_identity))
         return handoff
 
     def restore(self) -> tuple[tuple[CurrentPointer, ReadinessRecord], ...]:

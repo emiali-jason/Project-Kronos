@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from kronos.intraday.evidence_currentness import NewWorkNotEligible
+
 from functools import wraps
 
 from kronos.browser.intraday_chart_preview import CHART_PREVIEW_ROUTE, current_chart_preview
@@ -855,14 +857,14 @@ class IntradayBrowserRoutes:
                 if self._lifecycle_control is None or request.query or request.content_type != "application/json" or not request.body or len(request.body)>4096:
                     raise ValueError
                 document = self._lifecycle_control.execute_document(json.loads(request.body))
-                return BrowserRouteResponse(json.dumps(document), status=HTTPStatus.OK if document["outcome"]=="RETAINED" else HTTPStatus.BAD_REQUEST, content_type="application/json; charset=utf-8")
+                return BrowserRouteResponse(json.dumps(document), status=HTTPStatus.OK if document["outcome"]=="RETAINED" else HTTPStatus.CONFLICT if (document.get("failure_stage"), document.get("failure_reason")) == ("PUBLICATION_CONFLICT", "WO09_PUBLICATION_EXPECTATION_CHANGED") else HTTPStatus.BAD_REQUEST, content_type="application/json; charset=utf-8")
             if request.path in {FUTURES_CONTROL_ROUTE, CONSTRUCTION_CONTROL_ROUTE, RISK_PREVIEW_ROUTE}:
                 if self._futures_control is None or request.query or request.content_type != "application/json" or not request.body or len(request.body)>4096:
                     raise ValueError
                 document = (self._futures_control.construct_document(json.loads(request.body)) if request.path == CONSTRUCTION_CONTROL_ROUTE
                             else self._futures_control.preview_document(json.loads(request.body)) if request.path == RISK_PREVIEW_ROUTE
                             else self._futures_control.execute_document(json.loads(request.body)))
-                return BrowserRouteResponse(json.dumps(document), status=HTTPStatus.OK if document["outcome"] in {"RETAINED", "PREVIEW"} else HTTPStatus.BAD_REQUEST,
+                return BrowserRouteResponse(json.dumps(document), status=HTTPStatus.OK if document["outcome"] in {"RETAINED", "PREVIEW"} else HTTPStatus.CONFLICT if (document.get("failure_stage"), document.get("failure_reason")) == ("PUBLICATION_CONFLICT", "WO09_PUBLICATION_EXPECTATION_CHANGED") else HTTPStatus.BAD_REQUEST,
                                             content_type="application/json; charset=utf-8")
             if request.path == "/control/intraday-live-shadow/v1":
                 if self._probables_v2_control is None:
@@ -931,7 +933,7 @@ class IntradayBrowserRoutes:
                         HTTPStatus.OK
                         if outcome == "COMPLETE" or document["idempotent"]
                         else HTTPStatus.CONFLICT
-                        if document["failure_reason"] in {
+                        if document.get("failure_stage") == "NEW_WORK_ELIGIBILITY" or document["failure_reason"] in {
                             "INTRADAY_REVIEW_V2_REQUEST_IDENTITY_CONFLICT",
                             "INTRADAY_REVIEW_V2_OPERATION_CONFLICT",
                         }
@@ -1387,6 +1389,8 @@ class IntradayBrowserRoutes:
                         reconciliation_batch_result=reconciliation_batch_result,
                     )
                 )
+        except NewWorkNotEligible as error:
+            return self._new_work_denial(request, snapshot_provider, error)
         except ValueError:
             return BrowserRouteResponse(
                 "Intraday Review request rejected.",
@@ -1419,8 +1423,18 @@ class IntradayBrowserRoutes:
             )
         )
 
+    def _new_work_denial(self, request, snapshot_provider, error):
+        reason = error.reason.value
+        message = "New work unavailable: " + reason + ". Retained dated evidence remains readable."
+        if request.content_type == "application/json" or request.path == REVIEW_V2_CHART_ROUTE:
+            return BrowserRouteResponse(json.dumps({"outcome": "REJECTED", "failure_stage": "NEW_WORK_ELIGIBILITY", "reason": reason, "message": message}), status=HTTPStatus.CONFLICT, content_type="application/json; charset=utf-8")
+        return self._render_review_v2_result(snapshot_provider, None,
+            new_work_denial=message, status=HTTPStatus.CONFLICT)
+
+
     def _render_review_v2_result(
         self, snapshot_provider: BrowserSnapshotProvider, answer_inbox_result: object,
+        *, new_work_denial=None, status=HTTPStatus.OK,
     ) -> BrowserRouteResponse:
         return BrowserRouteResponse(render_intraday_review(
             snapshot_provider(),
@@ -1430,7 +1444,8 @@ class IntradayBrowserRoutes:
             available_probables_v2_run=self._current_probables_v2(),
             review_v2_status=self._review_v2_status(),
             review_v2_answer_result=answer_inbox_result,
-        ))
+            new_work_denial=new_work_denial,
+        ), status=status)
 
 
     def _receive_review_v2_chart(self, request: BrowserPostRequest) -> BrowserRouteResponse:
@@ -1464,6 +1479,8 @@ class IntradayBrowserRoutes:
                                 "chart_revision_identity": chart.chart_revision_identity}),
                     content_type="application/json; charset=utf-8",
                 )
+        except NewWorkNotEligible as error:
+            return BrowserRouteResponse(json.dumps({"outcome": "REJECTED", "reason": error.reason.value, "failure_stage": "NEW_WORK_ELIGIBILITY"}), status=HTTPStatus.CONFLICT, content_type="application/json; charset=utf-8")
         except ValueError:
             reason, status = "INVALID_CANDIDATE_BINDING", HTTPStatus.BAD_REQUEST
         except ReviewError as error:

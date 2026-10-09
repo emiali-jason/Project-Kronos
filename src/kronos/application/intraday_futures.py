@@ -1,6 +1,10 @@
 """Explicit prospective WO-10 orchestration; construction/restoration is inert."""
 from datetime import datetime, timezone
 from time import monotonic
+from contextlib import nullcontext
+from kronos.application.intraday_evidence_currentness import require_boundary
+from kronos.intraday.wo09_persistence import Wo09PublicationConflict
+from kronos.intraday.evidence_currentness import NewWorkNotEligible
 
 from kronos.intraday.wo10_futures_contract import record, require, moment, fresh, digest, normalize
 from kronos.intraday.wo10_construction import validate_intake, construct_plan
@@ -10,13 +14,14 @@ from kronos.intraday.wo10_futures_store import FuturesStore
 
 
 class IntradayFuturesApplication:
-    def __init__(self, store, wo09_store, *, clock=None, operational_guard=None, structural_loader=None, acquisition_source=None):
+    def __init__(self, store, wo09_store, *, clock=None, operational_guard=None, structural_loader=None, acquisition_source=None, eligibility=None):
         self.store = store
         self.wo09 = wo09_store
         self.clock = clock or (lambda: datetime.now(timezone.utc))
         self.operational_guard = operational_guard
         self.structural_loader = structural_loader
         self.acquisition_source = acquisition_source
+        self.eligibility = eligibility
         # Only snapshots commissioned in this process can be selected as current.
         self._current_process_snapshots = set()
         self._market_authorities = {}
@@ -34,8 +39,7 @@ class IntradayFuturesApplication:
     def construct_current(self, *, handoff_identity, request_identity):
         """Only exact identities enter the Sponsor composition; no geometry inputs."""
         self._guard()
-        with self.store.transaction(construction=True):
-            return self._construct_current(handoff_identity=handoff_identity, request_identity=request_identity)
+        return self._construct_current(handoff_identity=handoff_identity, request_identity=request_identity)
 
     def _construct_current(self, *, handoff_identity, request_identity):
         from kronos.intraday.native_structural_selection import UNAVAILABLE
@@ -44,23 +48,23 @@ class IntradayFuturesApplication:
         if not all(type(v) is str and v.strip() and "/" not in v and "\\" not in v
                    for v in (handoff_identity, request_identity)):
             raise ValueError("WO10_REQUEST_IDENTITY_REQUIRED")
+        # A request identity cannot be reused against a different source, even
+        # when that different source is no longer operationally eligible.
+        with self.store.transaction(construction=True):
+            previous = self._construction_result(request_identity, handoff_identity)
         handoff = self.wo09.load_handoff(handoff_identity)
+        boundary = require_boundary(self.eligibility)
+        expected = boundary.capture_futures(handoff_identity=handoff_identity)
         readiness, pointer = self._intake(handoff, self.clock())
-        # An identity is a commissioned attempt, including unavailable outcomes.
-        previous = [r for r in self.store.records("WO10_CONSTRUCTION_OPERATION_V1")
-                    if r.data["request_identity"] == request_identity]
-        if previous:
-            if len(previous) != 1 or previous[0].data["handoff_identity"] != handoff_identity:
-                raise ValueError("WO10_REQUEST_IDEMPOTENCY_CONFLICT")
-            result_id = previous[0].data.get("result_identity")
-            if result_id is None:
-                raise ValueError("WO10_INTERRUPTED_OPERATION_REQUIRES_NEW_REQUEST")
-            return self.store.load(result_id)
-        if any(r.data["request_identity"] == request_identity for r in self.store.records("WO10_CONSTRUCTION_REQUEST_V1")):
-            raise ValueError("WO10_INTERRUPTED_OPERATION_REQUIRES_NEW_REQUEST")
-        self.store.retain(record("WO10_CONSTRUCTION_REQUEST_V1", request_identity=request_identity,
-            handoff_identity=handoff_identity, readiness_identity=readiness.readiness_identity,
-            state="STARTED", attribution="EXPLICIT_CONSTRUCTION_REQUEST_ACTOR_NOT_ESTABLISHED", created_at=self.clock()))
+        # Reserve only the immutable attempt under the construction lock. Source
+        # guards, WO09, Provider acquisition and callbacks never nest below it.
+        with self.store.transaction(construction=True):
+            previous = self._construction_result(request_identity, handoff_identity)
+            if previous is not None:
+                return previous
+            self.store.retain(record("WO10_CONSTRUCTION_REQUEST_V1", request_identity=request_identity,
+                handoff_identity=handoff_identity, readiness_identity=readiness.readiness_identity,
+                state="STARTED", attribution="EXPLICIT_CONSTRUCTION_REQUEST_ACTOR_NOT_ESTABLISHED", created_at=self.clock()))
         try:
             if self.structural_loader is None:
                 raise ValueError(UNAVAILABLE)
@@ -70,12 +74,14 @@ class IntradayFuturesApplication:
             readiness, pointer = self._intake(handoff, self.clock())
             adapter, evidence, population = adapt_native(selection, handoff, readiness, pointer, now=self.clock())
             self._guard(); self._intake(handoff, self.clock())
+        except (Wo09PublicationConflict, NewWorkNotEligible):
+            raise
         except (ValueError, OSError, KeyError, TypeError) as error:
             reason = str(error) if isinstance(error, ValueError) else "STRUCTURAL_SOURCE_INTEGRITY_INVALID"
             return self._unavailable(handoff, request_identity, reason)
         # Freeze source lineage before any possible acquisition. Recheck currentness
         # before retaining either a plan or the later comparison.
-        with self.store.transaction():
+        with boundary.final_futures(expected):
             self._intake(handoff, self.clock())
             plan = construct_plan(adapter, evidence, population, now=self.clock())
             self._intake(handoff, self.clock())
@@ -92,6 +98,8 @@ class IntradayFuturesApplication:
                 raise ValueError("WO10_CURRENT_MARKET_AUTHORITY_UNAVAILABLE")
             comparison = self.evaluate(request_identity=request_identity, adapter=adapter, geometry_evidence=evidence,
                                        target_population=population, **inputs)
+        except (Wo09PublicationConflict, NewWorkNotEligible):
+            raise
         except (ValueError, OSError, KeyError, TypeError) as error:
             reason = str(error) if isinstance(error, ValueError) else "WO10_ACQUISITION_INPUT_UNAVAILABLE"
             return self._unavailable(handoff, request_identity, reason, plan=plan, state="FUTURE_SNAPSHOT_UNAVAILABLE")
@@ -100,6 +108,24 @@ class IntradayFuturesApplication:
             native_selection_integrity=selection.integrity, target_population_identity=selection.data["target_population_identity"],
             result_identity=comparison.identity, state="COMPLETED", created_at=self.clock()))
         return comparison
+
+    def _construction_result(self, request_identity, handoff_identity):
+        previous = [r for r in self.store.records("WO10_CONSTRUCTION_OPERATION_V1")
+                    if r.data["request_identity"] == request_identity]
+        if previous:
+            if len(previous) != 1 or previous[0].data["handoff_identity"] != handoff_identity:
+                raise ValueError("WO10_REQUEST_IDEMPOTENCY_CONFLICT")
+            result_id = previous[0].data.get("result_identity")
+            if result_id is None:
+                raise ValueError("WO10_INTERRUPTED_OPERATION_REQUIRES_NEW_REQUEST")
+            return self.store.load(result_id)
+        requests = [r for r in self.store.records("WO10_CONSTRUCTION_REQUEST_V1")
+                    if r.data["request_identity"] == request_identity]
+        if requests:
+            if len(requests) != 1 or requests[0].data["handoff_identity"] != handoff_identity:
+                raise ValueError("WO10_REQUEST_IDEMPOTENCY_CONFLICT")
+            raise ValueError("WO10_INTERRUPTED_OPERATION_REQUIRES_NEW_REQUEST")
+        return None
 
     def _unavailable(self, handoff, request_identity, reason, *, plan=None, state="TRADE_PLAN_UNAVAILABLE", native_selection=None):
         with self.store.transaction():
@@ -134,6 +160,8 @@ class IntradayFuturesApplication:
             raise ValueError("WO10_REQUEST_IDENTITY_REQUIRED")
         now = self.clock()
         handoff = adapter.wo09
+        boundary = require_boundary(self.eligibility)
+        expected = boundary.capture_futures(handoff_identity=handoff.handoff_identity)
         readiness, pointer = self._intake(handoff, now)
         adapter.__post_init__()
         session = session_source(now)
@@ -171,91 +199,96 @@ class IntradayFuturesApplication:
             started = self.store.retain(record("WO10_ACQUISITION_OPERATION_V1", request_identity=request_identity,
                                               fingerprint=fingerprint, opportunity_identity=opportunity.identity,
                                               state="STARTED", started_at=now, request_attempts=0))
-            attempts = 0
-            try:
-                plan = construct_plan(adapter, geometry_evidence, target_population, now=now)
+        attempts = 0
+        try:
+            plan = construct_plan(adapter, geometry_evidence, target_population, now=now)
+            self._guard(); self._intake(handoff, self.clock())
+            self.store.retain(plan)
+            if plan.data["state"] != "AVAILABLE":
+                raise ValueError("WO10_TRADE_PLAN_UNAVAILABLE")
+            self._guard(); self._intake(handoff, self.clock())
+            if master is None and acquire_master is not None:
+                attempts += 1
+                began_master = monotonic()
+                master = acquire_master(request_identity=request_identity + ":MASTER", timeout=7)
+                if monotonic() - began_master > 7:
+                    raise ValueError("WO10_MASTER_ACQUISITION_TIMEOUT")
+            contract, instruments = select_future(master, handoff, session, now=now,
+                                                   underlying=underlying, active_mcx=active_mcx, economics=economics)
+            self.store.retain(contract)
+            self._guard(); self._intake(handoff, self.clock()); revalidate_market()
+            self.store.retain(record("WO10_ACQUISITION_OPERATION_V1", request_identity=request_identity,
+                                    fingerprint=fingerprint, state="QUOTE_REQUESTED", operation_identity=started.identity,
+                                    started_at=self.clock(), instruments=[x.provider_record_identity for x in instruments],
+                                    request_attempts=attempts+1, timeout_seconds=7, automatic_retries=0))
+            began = monotonic(); attempts += 1
+            quotes = provider.full_quotes(instruments, request_identity=request_identity + ":QUOTE", timeout=7)
+            elapsed = monotonic() - began
+            completed = self.clock()
+            self.store.retain(record("WO10_ACQUISITION_OPERATION_V1", request_identity=request_identity,
+                                    fingerprint=fingerprint, state="QUOTE_RECEIVED", operation_identity=started.identity,
+                                    quote_request_identity=request_identity + ":QUOTE", received_at=completed,
+                                    request_attempts=attempts, elapsed_seconds=elapsed, quotes=quotes,
+                                    authority="FACTS_ONLY_NOT_CURRENT_SNAPSHOT"))
+            if elapsed > 7:
+                raise ValueError("WO10_QUOTE_TIMEOUT")
+            self._guard(); self._intake(handoff, completed)
+            c = contract.data
+            key = dict(contract_record=c["future"]["provider_record_identity"], provider=c["future"]["provider"],
+                       master_identity=c["master_identity"], session_identity=c["session_identity"])
+            baselines = [x for x in self.store.records("SESSION_FIRST_OBSERVED_OI_BASELINE_V1") if x.data["key"] == key]
+            if len(baselines) > 1:
+                raise ValueError("WO10_OI_BASELINE_CONFLICT")
+            snapshot, baseline = build_snapshot(contract, quotes, operation_identity=started.identity,
+                                                 request_identity=request_identity + ":QUOTE", received_at=completed,
+                                                 session=session_source(completed), baseline=baselines[0] if baselines else None)
+            self.store.retain(snapshot)
+            if baseline is not None:
+                self.store.retain(baseline)
+            expression = self.store.retain(map_future(plan, snapshot))
+            fact, advisory = assess_risk(expression, configuration, now=completed)
+            if configuration is not None:
+                self.store.retain(configuration)
+            self.store.retain(fact); self.store.retain(advisory)
+            state = expression.data["state"]
+            comparison = record("WO10_SPONSOR_COMPARISON_V1", subject=handoff.canonical_subject_identity,
+                                direction=handoff.direction, readiness_identity=handoff.readiness_identity,
+                                handoff_identity=handoff.handoff_identity, opportunity_identity=opportunity.identity,
+                                plan_identity=plan.identity, snapshot_identity=snapshot.identity,
+                                expression_identity=expression.identity, risk_fact_identity=fact.identity,
+                                advisory_identity=advisory.identity, reference_identity=advisory.data["reference_identity"], created_at=completed,
+                                executability=state, option_buy="NOT_COMMISSIONED_V1", option_sell="NOT_COMMISSIONED_V1")
+            self._guard(); self._intake(handoff, self.clock()); revalidate_market()
+            # Re-resolve against the current session/date before publishing.
+            check, _ = select_future(master, handoff, session_source(self.clock()), now=self.clock(),
+                                     underlying=underlying, active_mcx=active_mcx, economics=economics)
+            if check.data["future"] != contract.data["future"]:
+                raise ValueError("WO10_FUTURE_CONTRACT_CHANGED")
+            with boundary.final_futures(expected):
                 self._guard(); self._intake(handoff, self.clock())
-                self.store.retain(plan)
-                if plan.data["state"] != "AVAILABLE":
-                    raise ValueError("WO10_TRADE_PLAN_UNAVAILABLE")
-                self._guard(); self._intake(handoff, self.clock())
-                if master is None and acquire_master is not None:
-                    attempts += 1
-                    began_master = monotonic()
-                    master = acquire_master(request_identity=request_identity + ":MASTER", timeout=7)
-                    if monotonic() - began_master > 7:
-                        raise ValueError("WO10_MASTER_ACQUISITION_TIMEOUT")
-                contract, instruments = select_future(master, handoff, session, now=now,
-                                                       underlying=underlying, active_mcx=active_mcx, economics=economics)
-                self.store.retain(contract)
-                self._guard(); self._intake(handoff, self.clock()); revalidate_market()
-                self.store.retain(record("WO10_ACQUISITION_OPERATION_V1", request_identity=request_identity,
-                                        fingerprint=fingerprint, state="QUOTE_REQUESTED", operation_identity=started.identity,
-                                        started_at=self.clock(), instruments=[x.provider_record_identity for x in instruments],
-                                        request_attempts=attempts+1, timeout_seconds=7, automatic_retries=0))
-                began = monotonic(); attempts += 1
-                quotes = provider.full_quotes(instruments, request_identity=request_identity + ":QUOTE", timeout=7)
-                elapsed = monotonic() - began
-                completed = self.clock()
-                self.store.retain(record("WO10_ACQUISITION_OPERATION_V1", request_identity=request_identity,
-                                        fingerprint=fingerprint, state="QUOTE_RECEIVED", operation_identity=started.identity,
-                                        quote_request_identity=request_identity + ":QUOTE", received_at=completed,
-                                        request_attempts=attempts, elapsed_seconds=elapsed, quotes=quotes,
-                                        authority="FACTS_ONLY_NOT_CURRENT_SNAPSHOT"))
-                if elapsed > 7:
-                    raise ValueError("WO10_QUOTE_TIMEOUT")
-                self._guard(); self._intake(handoff, completed)
-                c = contract.data
-                key = dict(contract_record=c["future"]["provider_record_identity"], provider=c["future"]["provider"],
-                           master_identity=c["master_identity"], session_identity=c["session_identity"])
-                baselines = [x for x in self.store.records("SESSION_FIRST_OBSERVED_OI_BASELINE_V1") if x.data["key"] == key]
-                if len(baselines) > 1:
-                    raise ValueError("WO10_OI_BASELINE_CONFLICT")
-                snapshot, baseline = build_snapshot(contract, quotes, operation_identity=started.identity,
-                                                     request_identity=request_identity + ":QUOTE", received_at=completed,
-                                                     session=session_source(completed), baseline=baselines[0] if baselines else None)
-                self.store.retain(snapshot)
-                if baseline is not None:
-                    self.store.retain(baseline)
-                expression = self.store.retain(map_future(plan, snapshot))
-                fact, advisory = assess_risk(expression, configuration, now=completed)
-                if configuration is not None:
-                    self.store.retain(configuration)
-                self.store.retain(fact); self.store.retain(advisory)
-                state = expression.data["state"]
-                comparison = record("WO10_SPONSOR_COMPARISON_V1", subject=handoff.canonical_subject_identity,
-                                    direction=handoff.direction, readiness_identity=handoff.readiness_identity,
-                                    handoff_identity=handoff.handoff_identity, opportunity_identity=opportunity.identity,
-                                    plan_identity=plan.identity, snapshot_identity=snapshot.identity,
-                                    expression_identity=expression.identity, risk_fact_identity=fact.identity,
-                                    advisory_identity=advisory.identity, reference_identity=advisory.data["reference_identity"], created_at=completed,
-                                    executability=state, option_buy="NOT_COMMISSIONED_V1", option_sell="NOT_COMMISSIONED_V1")
-                self._guard(); self._intake(handoff, self.clock()); revalidate_market()
-                # Re-resolve against the current session/date before publishing.
-                check, _ = select_future(master, handoff, session_source(self.clock()), now=self.clock(),
-                                         underlying=underlying, active_mcx=active_mcx, economics=economics)
-                if check.data["future"] != contract.data["future"]:
-                    raise ValueError("WO10_FUTURE_CONTRACT_CHANGED")
                 prior = self.store.current(handoff.canonical_subject_identity)
-                self.store.publish(comparison, previous=None if prior is None else prior.identity)
+                self.store.publish(comparison, previous=None if prior is None else prior.identity, emit_notifications=False)
                 self.store.retain(record("WO10_ACQUISITION_OPERATION_V1", request_identity=request_identity,
                                         fingerprint=fingerprint, opportunity_identity=opportunity.identity,
                                         state="COMPLETED", operation_identity=started.identity,
                                         started_at=now, completed_at=completed, request_attempts=attempts,
                                         comparison_identity=comparison.identity))
-                self._current_process_snapshots.add(snapshot.identity)
-                if authority_source is not None:
-                    self._market_authorities[snapshot.identity] = (authority_source, digest({k:v for k,v in authority.items() if k not in {"configuration", "economics"}}))
-                return comparison
-            except Exception as error:
-                code = str(error) if isinstance(error, ValueError) and str(error).startswith("WO10_") else "WO10_ACQUISITION_OR_CONSTRUCTION_FAILED"
-                self.store.retain(record("WO10_ACQUISITION_OPERATION_V1", request_identity=request_identity,
-                                        fingerprint=fingerprint, opportunity_identity=opportunity.identity,
-                                        state="FAILED", operation_identity=started.identity, reason=code,
-                                        request_attempts=attempts, failed_at=self.clock()))
-                raise ValueError(code) from error
+            self._current_process_snapshots.add(snapshot.identity)
+            if authority_source is not None:
+                self._market_authorities[snapshot.identity] = (authority_source, digest({k:v for k,v in authority.items() if k not in {"configuration", "economics"}}))
+            self.store.notify_publication(comparison.identity)
+            return comparison
+        except (Wo09PublicationConflict, NewWorkNotEligible):
+            raise
+        except Exception as error:
+            code = str(error) if isinstance(error, ValueError) and str(error).startswith("WO10_") else "WO10_ACQUISITION_OR_CONSTRUCTION_FAILED"
+            self.store.retain(record("WO10_ACQUISITION_OPERATION_V1", request_identity=request_identity,
+                                    fingerprint=fingerprint, opportunity_identity=opportunity.identity,
+                                    state="FAILED", operation_identity=started.identity, reason=code,
+                                    request_attempts=attempts, failed_at=self.clock()))
+            raise ValueError(code) from error
 
-    def decision_state(self, comparison, *, now, session):
+    def decision_state(self, comparison, *, now, session, _check_authority=True):
         c = require(comparison, "WO10_SPONSOR_COMPARISON_V1")
         if self.store.current(c["subject"]) != comparison:
             return "SUPERSEDED"
@@ -265,7 +298,7 @@ class IntradayFuturesApplication:
         if p is None or p.readiness_identity != c["readiness_identity"] or p.currentness.value != "CURRENT":
             return "SUPERSEDED"
         authority = self._market_authorities.get(snapshot.identity)
-        if authority is not None:
+        if authority is not None and _check_authority:
             try:
                 current = authority[0]()
                 if digest({k:v for k,v in current.items() if k not in {"configuration", "economics"}}) != authority[1]:
@@ -300,7 +333,20 @@ class IntradayFuturesApplication:
         if type(action_identity) is not str or not action_identity.strip() or choice not in {"SELECTED_FUTURE", "NONE"}:
             raise ValueError("WO10_SPONSOR_ACTION_INVALID")
         now = self.clock()
-        with self.store.transaction():
+        comparison = self.store.load(comparison_identity)
+        c = require(comparison, "WO10_SPONSOR_COMPARISON_V1")
+        if choice == "SELECTED_FUTURE" and (type(lots) is not int or lots <= 0):
+            raise ValueError("WO10_SPONSOR_SELECTION_NOT_PERMITTED")
+        advisory = self.preview_risk(comparison.identity, lots=lots, now=now)
+        if choice == "SELECTED_FUTURE":
+            if self.decision_state(comparison, now=now, session=session) != "EXECUTABLE":
+                raise ValueError("WO10_SPONSOR_SELECTION_NOT_PERMITTED")
+            boundary = require_boundary(self.eligibility)
+            expected = boundary.capture_futures(handoff_identity=c["handoff_identity"])
+            scope = boundary.final_futures(expected)
+        else:
+            scope = self.store.transaction()
+        with scope:
             comparison = self.store.load(comparison_identity)
             c = require(comparison, "WO10_SPONSOR_COMPARISON_V1")
             for previous in self.store.records("WO10_SPONSOR_SELECTION_V1"):
@@ -321,10 +367,9 @@ class IntradayFuturesApplication:
             if choice == "NONE":
                 if lots is not None or self.store.current(c["subject"]) != comparison:
                     raise ValueError("WO10_NONE_SELECTION_INVALID")
-            elif (self.decision_state(comparison, now=now, session=session) != "EXECUTABLE"
+            elif (self.decision_state(comparison, now=now, session=session, _check_authority=False) != "EXECUTABLE"
                   or type(lots) is not int or lots <= 0):
                 raise ValueError("WO10_SPONSOR_SELECTION_NOT_PERMITTED")
-            advisory = self.preview_risk(comparison.identity, lots=lots, now=now)
             self.store.retain(advisory)
             selection = record("WO10_SPONSOR_SELECTION_V1", comparison_identity=comparison.identity,
                                comparison=c, choice=choice, sponsor_selected_lots=lots,
@@ -339,9 +384,19 @@ class IntradayFuturesApplication:
                                         selection=selection.data, plan=plan.data, snapshot=snapshot.data,
                                         expression=expression.data, advisory_risk=advisory.data,
                                         selected_at=now, authority="SELECTED_TRADE_ONLY_NO_ACTIVATION"))
-            from kronos.application.notifications import notify_journal_persisted
-            notify_journal_persisted(self.store, "SELECTION", selection.identity)
-            return selection
+            # The selected source effect fixes its existing projection callbacks.
+            book = getattr(self.store, "book_listener", None)
+            journal = getattr(self.store, "journal_listener", None)
+        for attribute, listener, failure in (
+            ("book_failure", book, "INTRADAY_BOOK_SOURCE_UNAVAILABLE"),
+            ("journal_failure", journal, "JOURNAL_PROJECTION_UNAVAILABLE"),
+        ):
+            if listener is not None:
+                try:
+                    listener("SELECTION", selection.identity)
+                except Exception:
+                    setattr(self.store, attribute, failure)
+        return selection
 
     def preview_risk(self, comparison_identity, *, lots=None, now=None):
         """Pure read-only projection; no persisted preview or operational acquisition."""

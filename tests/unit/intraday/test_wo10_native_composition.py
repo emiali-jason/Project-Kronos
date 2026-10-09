@@ -26,14 +26,14 @@ def native(tmp_path, direction="LONG", family="PULLBACK", *, targets=False):
     source = dict(identity="EXACT-SOURCE", subject=h.canonical_subject_identity, direction=direction,
         analysis_cycle="EXACT-NATIVE-CYCLE", analysis_boundary=normalize(h.analysis_boundary),
         session=h.session_identity, trading_date="2026-09-11", exact_contract=None, roll_lineage=None,
-        machine_identity="machine", machine_integrity=h.machine_evidence_integrity, candles={})
-    def ref(name, high, low, side, structure="machine"):
+        machine_identity=h.machine_evidence_identities[0], machine_integrity=h.machine_evidence_integrity, candles={})
+    def ref(name, high, low, side, structure=None):
         c = dict(subject=h.canonical_subject_identity, session=h.session_identity, trading_date="2026-09-11",
             start=normalize(h.analysis_boundary-timedelta(minutes=15)), end=normalize(h.analysis_boundary),
             completion="COMPLETE", available_at=normalize(h.analysis_boundary), timeframe="15M", HIGH=str(high), LOW=str(low))
         source["candles"][name] = c
         return dict(source_identity=source["identity"], candle_identity=name, candle_integrity=digest(c),
-            field=side, price=c[side], structure_identity=structure, timeframe="15M")
+            field=side, price=c[side], structure_identity=h.machine_evidence_identities[0] if structure is None else structure, timeframe="15M")
     roles = dict(QUALIFICATION_CANDLE_HIGH=ref("QUALIFICATION", 100 if direction == "LONG" else 102, 98 if direction == "LONG" else 100, "HIGH"),
                  QUALIFICATION_CANDLE_LOW=ref("QUALIFICATION", 100 if direction == "LONG" else 102, 98 if direction == "LONG" else 100, "LOW"))
     if family == "PULLBACK":
@@ -49,8 +49,8 @@ def native(tmp_path, direction="LONG", family="PULLBACK", *, targets=False):
     constraints = [dict(role="SESSION_STRUCTURAL_HIGH" if direction == "LONG" else "SESSION_STRUCTURAL_LOW",
         reference=ref("CONSTRAINT", 107,93,"HIGH" if direction == "LONG" else "LOW"))] if targets else []
     values = dict(programme_identity=PROGRAMME, contract_version="1.0.0", policy_identity=POLICY[0], policy_version=POLICY[1], policy_checksum=POLICY[2],
-        subject=h.canonical_subject_identity, direction=direction, setup_family=family, setup_identity="machine", analysis_cycle=source["analysis_cycle"],
-        analysis_boundary=source["analysis_boundary"], session=h.session_identity, trading_date="2026-09-11", machine_identity="machine",
+        subject=h.canonical_subject_identity, direction=direction, setup_family=family, setup_identity=h.machine_evidence_identities[0], analysis_cycle=source["analysis_cycle"],
+        analysis_boundary=source["analysis_boundary"], session=h.session_identity, trading_date="2026-09-11", machine_identity=h.machine_evidence_identities[0],
         machine_integrity=h.machine_evidence_integrity, instrument_identity=h.canonical_subject_identity, exact_contract=None, roll_lineage=None,
         created_at=normalize(NOW), sources={source["identity"]:digest(source)}, roles=roles,
         original_range_identity="RANGE-1" if family == "BREAKOUT" else None, target_population_identity="EXACT-TARGET-POPULATION",
@@ -197,7 +197,7 @@ def test_no_approved_producer_and_no_historical_backfill(tmp_path):
 @pytest.mark.parametrize("when", ["before","after"])
 def test_readiness_supersession_at_structural_load(tmp_path,when):
     app,kw,v,_=native(tmp_path);retain(app,v);h=kw["adapter"].wo09
-    def supersede():app.wo09.mark_currentness(h.canonical_subject_identity,CurrentnessState.REASSESSMENT_DUE,updated_at=NOW+timedelta(seconds=1))
+    def supersede():app.wo09.mark_currentness(h.canonical_subject_identity,CurrentnessState.REASSESSMENT_DUE,updated_at=NOW+timedelta(seconds=1), expected=app.wo09.expectation(h.canonical_subject_identity))
     if when=="before":supersede()
     else:
         load=app.structural_loader.load

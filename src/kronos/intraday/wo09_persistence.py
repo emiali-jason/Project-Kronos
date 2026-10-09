@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime
 from hashlib import sha256
@@ -9,12 +10,13 @@ import json
 import os
 from pathlib import Path
 import tempfile
+from threading import Lock, get_ident, local
 
 from kronos.intraday.visual_reconciliation_v2 import VisualReconciliationOutcome
 from kronos.intraday.wo09_readiness import (
     AttentionState, CriterionId, CriterionSnapshot, CriterionState, CurrentnessState,
     HardGate, Monitorability, NextWoHandoff, ReadinessRecord, ReadinessState,
-    RequirementRecord, artifact_bytes,
+    RequirementRecord, artifact_bytes, create_next_wo_handoff,
 )
 from kronos.intraday.wo09_watch import WatchState, Wo09Watch
 from kronos.application.intraday_wo09_notifications import Wo09NotificationSource, Wo09NotificationState
@@ -61,9 +63,77 @@ class CurrentPointer:
             raise ValueError("WO09_CURRENT_POINTER_INVALID")
 
 
+@dataclass(frozen=True, slots=True)
+class Wo09PublicationExpectation:
+    """Observed predecessor only; this is never analytical authorization."""
+    root_key: Path
+    canonical_subject_identity: str
+    pointer: CurrentPointer | None
+
+
+class Wo09PublicationConflict(Wo09PersistenceError):
+    failure_stage = "PUBLICATION_CONFLICT"
+    failure_reason = "WO09_PUBLICATION_EXPECTATION_CHANGED"
+
+    def __init__(self):
+        super().__init__(self.failure_reason)
+
+
+class Wo09MutationReentry(Wo09PersistenceError):
+    def __init__(self):
+        super().__init__("WO09_MUTATION_REENTRY_NOT_PERMITTED")
+
+
+# PROCESS_LOCAL. Strong references prevent controller replacement while a waiter
+# exists. The registry mutex is released before waiting on a subject controller.
+_MUTATION_CONTROLLERS = {}
+_MUTATION_REGISTRY_LOCK = Lock()
+_ACTIVE_MUTATION = local()
+
+
+class _Wo09Mutation:
+    """One fixed owner/thread-bound effect inside one outer transaction."""
+    def __init__(self, owner, expected):
+        self._owner, self._expected = owner, expected
+        self._thread = get_ident()
+        self._closed = False
+        self._used = False
+        self._notices = []
+
+    @property
+    def notices(self):
+        return tuple(self._notices)
+
+    def _begin(self, subject):
+        if (self._closed or self._thread != get_ident()
+                or getattr(_ACTIVE_MUTATION, "token", None) is not self
+                or self._used or subject != self._expected.canonical_subject_identity
+                or self._owner.root.resolve() != self._expected.root_key):
+            raise Wo09PersistenceError("WO09_MUTATION_TOKEN_INVALID")
+        self._owner._compare(self._expected)
+        self._used = True  # A failed write cannot be retried through this token.
+
+    def retain_readiness(self, record, requirements):
+        self._begin(record.canonical_subject_identity)
+        result, notice = self._owner._retain_readiness(record, requirements)
+        if notice is not None:
+            self._notices.append(self._owner._capture_notice(*notice))
+        return result
+
+    def mark_currentness(self, subject, state, *, updated_at):
+        self._begin(subject)
+        result = self._owner._mark_currentness(subject, state, updated_at=updated_at)
+        self._notices.append(self._owner._capture_notice("CURRENTNESS", subject))
+        return result
+
+    def retain_handoff(self, handoff):
+        self._begin(handoff.canonical_subject_identity)
+        self._owner._retain_handoff(handoff)
+
+
 class Wo09Store:
     def __init__(self, root: Path = DEFAULT_ROOT) -> None:
-        self.root = root
+        self.root = Path(root)
         self.readiness = root / "readiness"
         self.requirements = root / "requirements"
         self.handoffs = root / "handoffs"
@@ -71,11 +141,94 @@ class Wo09Store:
         self.watches = root / "watches"
         self.notifications = root / "notifications"
 
-    def retain(self, record: ReadinessRecord, requirements: tuple[RequirementRecord, ...]) -> CurrentPointer:
+    def _validated_pointer(self, subject):
+        pointer = self.load_pointer(subject)
+        if pointer is not None:
+            readiness = self.load_readiness(pointer.readiness_identity)
+            if (pointer.canonical_subject_identity != subject
+                    or readiness.canonical_subject_identity != subject
+                    or readiness.integrity_identity != pointer.readiness_integrity):
+                raise Wo09PersistenceError("WO09_RESTORATION_INTEGRITY_MISMATCH")
+        return pointer
+
+    def expectation(self, subject: str) -> Wo09PublicationExpectation:
+        if type(subject) is not str or not subject:
+            raise Wo09PersistenceError("WO09_PUBLICATION_SUBJECT_INVALID")
+        return Wo09PublicationExpectation(self.root.resolve(), subject, self._validated_pointer(subject))
+
+    def _check_expectation(self, expected):
+        if (type(expected) is not Wo09PublicationExpectation
+                or expected.root_key != self.root.resolve()
+                or type(expected.canonical_subject_identity) is not str
+                or not expected.canonical_subject_identity
+                or expected.pointer is not None and type(expected.pointer) is not CurrentPointer):
+            raise Wo09PersistenceError("WO09_PUBLICATION_EXPECTATION_INVALID")
+        if expected.pointer is not None:
+            expected.pointer.__post_init__()
+            if expected.pointer.canonical_subject_identity != expected.canonical_subject_identity:
+                raise Wo09PersistenceError("WO09_PUBLICATION_EXPECTATION_INVALID")
+
+    def _compare(self, expected):
+        self._check_expectation(expected)
+        # Corruption is checked before equality and remains an integrity failure.
+        if self._validated_pointer(expected.canonical_subject_identity) != expected.pointer:
+            raise Wo09PublicationConflict()
+
+    @contextmanager
+    def transaction(self, *, expected: Wo09PublicationExpectation):
+        if getattr(_ACTIVE_MUTATION, "token", None) is not None:
+            raise Wo09MutationReentry()
+        self._check_expectation(expected)
+        key = (expected.root_key, expected.canonical_subject_identity)
+        with _MUTATION_REGISTRY_LOCK:
+            controller = _MUTATION_CONTROLLERS.setdefault(key, Lock())
+        with controller:
+            token = _Wo09Mutation(self, expected)
+            _ACTIVE_MUTATION.token = token
+            try:
+                self._compare(expected)
+                yield token
+            finally:
+                token._closed = True
+                _ACTIVE_MUTATION.token = None
+
+    def _capture_notice(self, kind, identity):
+        # Ephemeral committed reference, not a persisted schema or permission.
+        return (kind, identity, tuple(
+            (attribute, getattr(self, attribute, None), failure)
+            for attribute, failure in (
+                ("notification_listener", "NOTIFICATION_PROJECTION_UNAVAILABLE"),
+                ("journal_listener", "JOURNAL_PROJECTION_UNAVAILABLE"),
+            )
+        ))
+
+    def notify_publication(self, notices):
+        """Dispatch captured committed references after all owner guards release."""
+        for kind, identity, callbacks in notices:
+            for attribute, listener, failure in callbacks:
+                if listener is not None:
+                    try:
+                        listener(kind, identity)
+                    except Exception:
+                        setattr(self, attribute.replace("listener", "failure"), failure)
+
+    def retain(self, record: ReadinessRecord, requirements: tuple[RequirementRecord, ...],
+               *, expected: Wo09PublicationExpectation) -> CurrentPointer:
+        with self.transaction(expected=expected) as mutation:
+            result = mutation.retain_readiness(record, requirements)
+        self.notify_publication(mutation.notices)
+        return result
+
+    def _retain_readiness(self, record, requirements):
         if type(record) is not ReadinessRecord or len(requirements) != 5:
             raise Wo09PersistenceError("WO09_PERSISTENCE_INPUT_INVALID")
+        record.__post_init__()
         if tuple(item.criterion.criterion_id for item in requirements) != tuple(CriterionId):
             raise Wo09PersistenceError("WO09_REQUIREMENT_SET_INVALID")
+        for requirement in requirements:
+            requirement.__post_init__()
+            if requirement.readiness_identity != record.readiness_identity:
+                raise Wo09PersistenceError("WO09_REQUIREMENT_SET_INVALID")
         self._retain(self.readiness / f"{record.readiness_identity}.json", artifact_bytes(record))
         for requirement in requirements:
             self._retain(self.requirements / f"{requirement.requirement_identity}.json", artifact_bytes(requirement))
@@ -83,22 +236,33 @@ class Wo09Store:
         if prior is not None and prior.readiness_identity == record.readiness_identity:
             if prior.readiness_integrity != record.integrity_identity:
                 raise Wo09PersistenceError("WO09_CURRENT_POINTER_CONFLICT")
-            return prior
+            return prior, None
         if prior is not None and record.created_at <= prior.updated_at:
             raise Wo09PersistenceError("WO09_NON_FORWARD_SUPERSESSION")
-        pointer = create_pointer(
-            record, currentness=CurrentnessState.CURRENT,
-            superseded=None if prior is None else prior.readiness_identity,
-            updated_at=record.created_at,
-        )
+        pointer = create_pointer(record, currentness=CurrentnessState.CURRENT,
+            superseded=None if prior is None else prior.readiness_identity, updated_at=record.created_at)
         self._atomic(self.current / f"{_safe(record.canonical_subject_identity)}.json", artifact_bytes(pointer))
-        from kronos.application.notifications import notify_persisted
-        notify_persisted(self, "READINESS", record.readiness_identity)
-        return pointer
+        return pointer, ("READINESS", record.readiness_identity)
 
-    def retain_handoff(self, handoff: NextWoHandoff) -> None:
+    def retain_handoff(self, handoff: NextWoHandoff, *, expected: Wo09PublicationExpectation) -> None:
+        with self.transaction(expected=expected) as mutation:
+            mutation.retain_handoff(handoff)
+
+    def _retain_handoff(self, handoff):
         if type(handoff) is not NextWoHandoff:
             raise Wo09PersistenceError("WO09_HANDOFF_PERSISTENCE_INPUT_INVALID")
+        handoff.__post_init__()
+        pointer = self._validated_pointer(handoff.canonical_subject_identity)
+        if pointer is None:
+            raise Wo09PersistenceError("WO09_HANDOFF_CURRENT_POINTER_REQUIRED")
+        readiness = self.load_readiness(pointer.readiness_identity)
+        bound = create_next_wo_handoff(readiness, created_at=handoff.created_at,
+            current_readiness_identity=pointer.readiness_identity,
+            current_pointer_integrity=pointer.integrity_identity,
+            currentness=pointer.currentness, superseded_readiness_identity=pointer.superseded_readiness_identity,
+            first_five_of_five_at=handoff.first_five_of_five_at)
+        if bound != handoff:
+            raise Wo09PersistenceError("WO09_HANDOFF_SOURCE_BINDING_INVALID")
         self._retain(self.handoffs / f"{handoff.handoff_identity}.json", artifact_bytes(handoff))
 
     def load_handoff(self, identity: str) -> NextWoHandoff:
@@ -133,7 +297,14 @@ class Wo09Store:
                 latest[item.canonical_subject_identity] = item
         return tuple(sorted(latest.values(), key=lambda item: item.source_identity))
 
-    def mark_currentness(self, subject: str, state: CurrentnessState, *, updated_at: datetime) -> CurrentPointer:
+    def mark_currentness(self, subject: str, state: CurrentnessState, *, updated_at: datetime,
+                         expected: Wo09PublicationExpectation) -> CurrentPointer:
+        with self.transaction(expected=expected) as mutation:
+            result = mutation.mark_currentness(subject, state, updated_at=updated_at)
+        self.notify_publication(mutation.notices)
+        return result
+
+    def _mark_currentness(self, subject: str, state: CurrentnessState, *, updated_at: datetime) -> CurrentPointer:
         prior = self.load_pointer(subject)
         if prior is None:
             raise Wo09PersistenceError("WO09_CURRENT_POINTER_NOT_FOUND")
@@ -148,8 +319,6 @@ class Wo09Store:
                                  superseded=prior.superseded_readiness_identity,
                                  updated_at=updated_at)
         self._atomic(self.current / f"{_safe(subject)}.json", artifact_bytes(pointer))
-        from kronos.application.notifications import notify_persisted
-        notify_persisted(self, "CURRENTNESS", subject)
         return pointer
 
     def load_readiness(self, identity: str) -> ReadinessRecord:

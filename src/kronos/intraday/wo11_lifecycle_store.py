@@ -14,6 +14,7 @@ from kronos.intraday.wo10_futures_store import _sync_directory
 class LifecycleStore:
     def __init__(self, root):
         self.root = Path(root)
+        self._deferred_notices = {}
 
     @contextmanager
     def transaction(self):
@@ -120,7 +121,7 @@ class LifecycleStore:
             results.append(self.current(d["claim"]))
         return tuple(results)
 
-    def publish(self, transition, *, claim, previous):
+    def publish(self, transition, *, claim, previous, emit_notifications=True):
         current = self.current(claim)
         if (current.identity if current else None) != previous:
             raise ValueError("WO11_CURRENT_POINTER_CHANGED")
@@ -146,9 +147,46 @@ class LifecycleStore:
         finally:
             if os.path.exists(temporary):
                 os.unlink(temporary)
-        from kronos.application.notifications import notify_persisted, notify_book_persisted
-        notify_book_persisted(self, "TRACK", transition.current.identity)
-        keys = ("state", "entry", "exit", "monitoring")
-        if current is None or any(current.data[k] != transition.current.data[k] for k in keys):
-            notify_persisted(self, "TRACK", transition.current.identity)
+        if emit_notifications:
+            self.notify_publication(current, transition.current)
+        else:
+            changed = current is None or any(
+                current.data[k] != transition.current.data[k]
+                for k in ("state", "entry", "exit", "monitoring")
+            )
+            self._deferred_notices[transition.current.identity] = (
+                None if current is None else current.identity,
+                getattr(self, "book_listener", None),
+                getattr(self, "notification_listener", None) if changed else None,
+                getattr(self, "journal_listener", None) if changed else None,
+            )
         return transition.current
+
+    def notify_publication(self, previous, current):
+        # Only committed immutable identities enter the existing callback filters.
+        retained = self.load(current.identity)
+        if retained != current:
+            raise ValueError("WO11_PUBLICATION_NOTICE_INVALID")
+        if previous is not None and self.load(previous.identity) != previous:
+            raise ValueError("WO11_PUBLICATION_NOTICE_INVALID")
+        if current.identity in self._deferred_notices:
+            reference = self._deferred_notices[current.identity]
+            if reference[0] != (None if previous is None else previous.identity):
+                raise ValueError("WO11_PUBLICATION_NOTICE_INVALID")
+            _, book, notification, journal = self._deferred_notices.pop(current.identity)
+            for attribute, listener, failure in (
+                ("book_failure", book, "INTRADAY_BOOK_SOURCE_UNAVAILABLE"),
+                ("notification_failure", notification, "NOTIFICATION_PROJECTION_UNAVAILABLE"),
+                ("journal_failure", journal, "JOURNAL_PROJECTION_UNAVAILABLE"),
+            ):
+                if listener is not None:
+                    try:
+                        listener("TRACK", current.identity)
+                    except Exception:
+                        setattr(self, attribute, failure)
+            return
+        from kronos.application.notifications import notify_persisted, notify_book_persisted
+        notify_book_persisted(self, "TRACK", current.identity)
+        keys = ("state", "entry", "exit", "monitoring")
+        if previous is None or any(previous.data[k] != current.data[k] for k in keys):
+            notify_persisted(self, "TRACK", current.identity)

@@ -5,7 +5,10 @@ from datetime import timedelta
 from typing import Callable
 from kronos.intraday.wo11_lifecycle_contract import record, require, instant, digest, websocket_observation
 from kronos.intraday.wo11_lifecycle import arm, observe, timing, gap, boundary, request_close, research_handoff, terminal_at, TERMINAL
-from kronos.application.intraday_lifecycle_intake import load_intake, instrument_record
+from kronos.application.intraday_lifecycle_intake import load_intake, _load_intake_graph, instrument_record
+from kronos.application.intraday_evidence_currentness import require_boundary
+from kronos.intraday.wo09_persistence import Wo09PublicationConflict
+from kronos.intraday.evidence_currentness import NewWorkNotEligible, EligibilityReason
 from kronos.provider.contracts.monitoring import MonitoringConnectionState
 from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
 
@@ -18,7 +21,7 @@ def _start_thread(operation, name):
 
 class IntradayLifecycleApplication:
     def __init__(self, *, futures, store, clock, session_source, timing_source,
-                 operational_guard, contract_source=None,
+                 operational_guard, contract_source=None, eligibility=None,
                  background_runner: Callable[[Callable[[], None], str], object] = _start_thread):
         if not callable(background_runner):
             raise ValueError("WO11_BACKGROUND_RUNNER_INVALID")
@@ -26,6 +29,7 @@ class IntradayLifecycleApplication:
         self.session_source, self.timing_source = session_source, timing_source
         self.operational_guard = operational_guard
         self.contract_source = contract_source
+        self.eligibility = eligibility
         self._hub = None
         self._capability = lambda: None
         self._registrations = {}
@@ -283,7 +287,8 @@ class IntradayLifecycleApplication:
         h = self.futures.store.load(handoff_identity)
         subject = h.data["selection"]["comparison"]["subject"]
         now = self.clock()
-        intake = load_intake(self.futures, handoff_identity, session=self.session_source(subject,now), now=now)
+        session = self.session_source(subject, now)
+        intake = _load_intake_graph(self.futures, handoff_identity, session=session, now=now)
         if action == "DO_NOTHING":
             with self.store.transaction():
                 retained = self.store.retain(record("WO11_ACTION_V1", action=action,
@@ -291,10 +296,16 @@ class IntradayLifecycleApplication:
             from kronos.application.notifications import notify_journal_persisted
             notify_journal_persisted(self.store, "ACTION", retained.identity)
             return retained
+        boundary_owner = require_boundary(self.eligibility)
+        expected = boundary_owner.capture_lifecycle(handoff_identity=handoff_identity)
         truth = "PAPER_POSITION" if action == "ACTIVATE_PAPER" else "PAPER_OBSERVATION"
         transition = arm(intake, truth_class=truth, action_identity=action_identity, action_at=now)
         claim = next(r.data["claim"] for r in transition.evidence if r.schema=="WO11_AUTHORIZATION_V1")
-        with self._lock, self.store.transaction():
+        with boundary_owner.final_lifecycle(expected), self._lock, self.store.transaction():
+            self._guard()
+            checked = _load_intake_graph(self.futures, handoff_identity, session=session, now=now)
+            if checked != intake:
+                raise ValueError("WO11_HANDOFF_GRAPH_MISMATCH")
             current = self.store.current(claim)
             if current is not None:
                 a = self.store.load(current.data["authorization_identity"])
@@ -302,18 +313,20 @@ class IntradayLifecycleApplication:
                 if old.data["action_identity"] == action_identity and a.data["truth_class"] == truth:
                     return current
                 raise ValueError("WO11_OPPORTUNITY_EXPRESSION_ALREADY_CLAIMED")
-            result = self.store.publish(transition, claim=claim, previous=None)
+            transition = arm(checked, truth_class=truth, action_identity=action_identity, action_at=now)
+            result = self.store.publish(transition, claim=claim, previous=None, emit_notifications=False)
+        self.store.notify_publication(None, result)
         self._prepare_current(result)
         self._attach(result, restored=False)
         return result
 
-    def _commit(self, old, transition):
+    def _commit(self, old, transition, *, emit_notifications=True):
         if transition.current == old:
             for item in transition.evidence:
                 self.store.retain(item)
             return old
         auth = self.store.load(old.data["authorization_identity"])
-        result = self.store.publish(transition, claim=auth.data["claim"], previous=old.identity)
+        result = self.store.publish(transition, claim=auth.data["claim"], previous=old.identity, emit_notifications=emit_notifications)
         if result.data["state"] in TERMINAL:
             metric = self.store.load(result.data["metrics"]) if result.data["metrics"] else None
             self.store.retain(research_handoff(result, retained_metrics=metric))
@@ -388,16 +401,31 @@ class IntradayLifecycleApplication:
         registration.disconnect()
         return True
 
-    def _authority_failure(self, current, error, now):
-        code = str(error) if isinstance(error, ValueError) and str(error).startswith("WO11_") else "WO11_SOURCE_UNAVAILABLE"
-        superseded = code in {"WO11_HANDOFF_SUPERSEDED", "WO11_UPSTREAM_SUPERSEDED"}
+    def _authority_failure(self, current, error, now, *, emit_notifications=True):
+        code = (error.failure_reason if isinstance(error, Wo09PublicationConflict) else
+                str(error) if isinstance(error, ValueError) and str(error).startswith("WO11_") else "WO11_SOURCE_UNAVAILABLE")
+        superseded = (code in {"WO11_HANDOFF_SUPERSEDED", "WO11_UPSTREAM_SUPERSEDED"}
+            or isinstance(error, NewWorkNotEligible) and error.reason is EligibilityReason.SOURCE_SUPERSEDED)
         check = record("WO11_AUTHORITY_CHECK_V1", authorization_identity=current.data["authorization_identity"],
             handoff_identity=current.data["intake"]["handoff_identity"], at=now, reason=code,
             result="SUPERSEDED" if superseded else "UNAVAILABLE")
         with self.store.transaction():
             self.store.retain(check)
             transition = request_close(current,at=now,reason="UPSTREAM_SUPERSEDED",source_identity=check.identity) if superseded and current.data["entry"] is None else gap(current,at=now,reason=code)
-            return self._commit(current, transition)
+            return self._commit(current, transition, emit_notifications=emit_notifications)
+
+    def _pre_entry_failure(self, snapshot, error, now):
+        # Ordered publication scopes have already unwound. A concurrently
+        # entered/advanced track must never be replaced by this older failure.
+        with self._lock:
+            current = self._current_for(snapshot)
+            if current != snapshot or current.data["entry"] is not None or current.data["state"] in TERMINAL:
+                self.last_failure = str(error)
+                return
+            result = self._authority_failure(current, error, now, emit_notifications=False)
+        if result != current:
+            self.store.notify_publication(current, result)
+        self.last_failure = str(error)
 
     def _contract_terminal(self, current, now):
         if now >= terminal_at(current):
@@ -415,6 +443,105 @@ class IntradayLifecycleApplication:
         return None
 
     def pulse(self):
+        """Short snapshots precede ordered authority scopes; entered safety is independent."""
+        self._pulse_entered()
+        with self._lock:
+            snapshots = tuple(c for c in self.store.restore()
+                              if c.data["entry"] is None and c.data["state"] not in TERMINAL)
+        for current in snapshots:
+            now = self.clock()
+            try:
+                self._guard()
+                terminal = self._contract_terminal(current, now)
+                if terminal is not None:
+                    with self._lock, self.store.transaction():
+                        latest = self._current_for(current)
+                        if latest == current:
+                            self._commit(current, terminal)
+                    continue
+                owner = require_boundary(self.eligibility)
+                expected = owner.capture_lifecycle(handoff_identity=current.data["intake"]["handoff_identity"])
+                # Monitoring attachment and timing acquisition happen before,
+                # and outside, the final source/WO09/Futures/claim guards.
+                self._attach(current, restored=True)
+                with self._lock:
+                    current = self._current_for(current)
+                if current.data["entry"] is not None or current.data["state"] in TERMINAL:
+                    continue
+                key = int(now.timestamp()) // 300
+                qualified = None
+                if (current.data["state"] == "AWAITING_TIMING"
+                        and current.data["track_identity"] in self._registrations
+                        and self._timing_boundaries.get(current.data["track_identity"]) != key):
+                    self._timing_boundaries[current.data["track_identity"]] = key
+                    qualified = self.timing_source(current)
+                session = self.session_source(current.data["intake"]["subject"], now)
+                result = current
+                with owner.final_lifecycle(expected), self._lock, self.store.transaction():
+                    latest = self._current_for(current)
+                    if latest != current or latest.data["entry"] is not None or latest.data["state"] in TERMINAL:
+                        continue
+                    _load_intake_graph(self.futures, current.data["intake"]["handoff_identity"],
+                                       session=session, now=now, arming=False)
+                    if qualified is not None:
+                        result = self._commit(current, timing(current, qualified), emit_notifications=False)
+                if result != current:
+                    self.store.notify_publication(current, result)
+            except (Wo09PublicationConflict, NewWorkNotEligible) as error:
+                self._pre_entry_failure(current, error, now)
+            except (ValueError, OSError, KeyError, TypeError, RuntimeError) as error:
+                self._pre_entry_failure(current, error, now)
+
+    def _tick(self, track_identity, tick):
+        with self._lock:
+            auth = self.store.load(track_identity)
+            current = self.store.current(auth.data["claim"])
+        if current.data["entry"] is not None or current.data["state"] in TERMINAL:
+            return self._tick_entered(track_identity, tick)
+        now = self.clock()
+        try:
+            self._guard()
+            attached = self._registrations.get(track_identity)
+            if attached is None or not getattr(attached[1], "active", False) or self._capability() is not attached[1]:
+                raise ValueError("WO11_MONITORING_CAPABILITY_UNAVAILABLE")
+            terminal = self._contract_terminal(current, now)
+            if terminal is not None:
+                with self._lock, self.store.transaction():
+                    if self._current_for(current) == current:
+                        self._commit(current, terminal)
+                return
+            owner = require_boundary(self.eligibility)
+            expected = owner.capture_lifecycle(handoff_identity=current.data["intake"]["handoff_identity"])
+            session = self.session_source(current.data["intake"]["subject"], tick.observed_at)
+            intake_session = self.session_source(current.data["intake"]["subject"], now)
+            observed = websocket_observation(tick, authorization_identity=track_identity,
+                instrument=instrument_record(current.data["intake"]["future"]),
+                session_identity=session.schedule.session_id if session.schedule else None,
+                expected_session_identity=current.data["intake"]["session_identity"],
+                causal_at=current.data["armed_at"], decision_at=now)
+            notices = []
+            with owner.final_lifecycle(expected), self._lock, self.store.transaction():
+                latest = self._current_for(current)
+                if latest != current or latest.data["entry"] is not None or latest.data["state"] in TERMINAL:
+                    return  # Never replay this earlier tick against a newer predecessor.
+                self._guard()
+                _load_intake_graph(self.futures, current.data["intake"]["handoff_identity"],
+                                   session=intake_session, now=now, arming=False)
+                next_state = self._commit(current, observe(current, observed), emit_notifications=False)
+                if next_state != current:
+                    notices.append((current, next_state))
+                if observed.data["reason"] in {"WEBSOCKET_CONTINUITY_NOT_ESTABLISHED", "WEBSOCKET_OBSERVATION_STALE", "WEBSOCKET_RECOVERED_OBSERVATION"} and next_state.data["state"] not in TERMINAL:
+                    result = self._commit(next_state, gap(next_state, at=now, reason=observed.data["reason"]), emit_notifications=False)
+                    if result != next_state:
+                        notices.append((next_state, result))
+            for previous, result in notices:
+                self.store.notify_publication(previous, result)
+        except (Wo09PublicationConflict, NewWorkNotEligible) as error:
+            self._pre_entry_failure(current, error, now)
+        except (ValueError, OSError, KeyError, TypeError, RuntimeError) as error:
+            self._pre_entry_failure(current, error, now)
+
+    def _pulse_entered(self):
         """Called by the runtime service loop, never by a GET projection."""
         with self._lock:
             try:
@@ -422,6 +549,8 @@ class IntradayLifecycleApplication:
             except (ValueError,RuntimeError):
                 return
             for current in self.store.restore():
+                if current.data["entry"] is None:
+                    continue
                 now = self.clock(); i = current.data["intake"]
                 attached = self._registrations.get(current.data["track_identity"])
                 if attached is not None and (now >= terminal_at(current) or not getattr(attached[1], "active", False) or self._capability() is not attached[1]):
@@ -441,10 +570,6 @@ class IntradayLifecycleApplication:
                         with self.store.transaction():
                             self._commit(current, terminal)
                         continue
-                    # Currentness cancels unentered eligibility only. The original
-                    # WO10 thesis is not a post-entry reassessment/exit authority.
-                    if current.data["entry"] is None:
-                        load_intake(self.futures,i["handoff_identity"],session=self.session_source(i["subject"],now),now=now,arming=False)
                 except (ValueError,OSError,KeyError,TypeError) as error:
                     self._authority_failure(current,error,now)
                     continue
@@ -452,19 +577,12 @@ class IntradayLifecycleApplication:
                     self._attach(current,restored=True)
                     if current.data["track_identity"] not in self._registrations:
                         continue
-                    # One read per new possible 5M boundary; never a historical search.
-                    key=int(now.timestamp())//300
-                    if current.data["state"]=="AWAITING_TIMING" and self._timing_boundaries.get(current.data["track_identity"])!=key:
-                        self._timing_boundaries[current.data["track_identity"]]=key
-                        qualified=self.timing_source(current)
-                        with self.store.transaction():
-                            self._commit(self._current_for(current),timing(self._current_for(current),qualified))
                 except (ValueError,OSError,KeyError,TypeError,RuntimeError) as error:
                     self.last_failure = str(error) if isinstance(error,ValueError) else "WO11_SOURCE_UNAVAILABLE"
             # Preserve registration for closed timestamp-conflict evidence until shutdown;
             # terminal tracks never resume price/model consequences.
 
-    def _tick(self, track_identity, tick):
+    def _tick_entered(self, track_identity, tick):
         with self._lock:
             try:
                 self._guard()
@@ -483,12 +601,6 @@ class IntradayLifecycleApplication:
                     if terminal is not None:
                         with self.store.transaction():
                             self._commit(current, terminal)
-                        return
-                if current.data["entry"] is None and current.data["state"] not in TERMINAL:
-                    try:
-                        load_intake(self.futures,i["handoff_identity"],session=self.session_source(i["subject"],now),now=now,arming=False)
-                    except (ValueError,OSError,KeyError,TypeError) as error:
-                        self._authority_failure(current,error,now)
                         return
                 session=self.session_source(i["subject"],tick.observed_at)
                 observed=websocket_observation(tick,authorization_identity=track_identity,

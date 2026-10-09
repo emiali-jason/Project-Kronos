@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from kronos.intraday.evidence_currentness import NewWorkNotEligible
 from datetime import datetime, timezone
 from hashlib import sha256
 import json
@@ -250,6 +251,15 @@ class IntradayReviewV2OperationalControl:
                 result.retained,
                 "ALREADY_CURRENT" if result.retained else "CURRENTIZED",
             )
+        except NewWorkNotEligible as error:
+            # Transient denial only; no accepted evidence or attempted-payload audit.
+            record = self._record(request=request, received_at=received,
+                started_at=started, completed_at=self._clock(),
+                outcome=ReviewV2OperationOutcome.REJECTED,
+                failure_stage="NEW_WORK_ELIGIBILITY", failure_reason=error.reason.value)
+            document = _record_document(record, False, "NOT_CURRENTIZED")
+            document["provenance_identity"] = None
+            return document
         except ReviewError as error:
             stage = {
                 "INTRADAY_REVIEW_NOT_CURRENT": "PROBABLES_CURRENTNESS",

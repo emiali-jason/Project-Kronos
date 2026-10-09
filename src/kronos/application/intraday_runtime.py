@@ -381,12 +381,21 @@ def create_intraday_runtime(
     )
     review_v2.bind_page_reconciliation(visual_reconciliation_v2_store)
     wo09_store = Wo09Store(Path(evidence_root) / "wo09-promotion-readiness-v1")
-    wo09_application = IntradayWo09Application(wo09_store)
     from kronos.intraday.native_structural_selection import NativeStructuralLoader, NativeStructuralStore
     # Exact lookup only; startup/page reads never classify or backfill a cycle.
     structural_loader = NativeStructuralLoader(native_store)
     futures_application = IntradayFuturesApplication(FuturesStore(Path(evidence_root) / "prospective-v2-wo10-futures"),
         wo09_store, clock=clock, structural_loader=structural_loader)
+    from kronos.application.intraday_evidence_currentness import IntradayPublicationBoundary
+    from kronos.application import intraday_review_ordered_batch
+    publication_boundary = IntradayPublicationBoundary(
+        review=review_v2_store, probables=probables_v2_store,
+        paired=mcx_paired_review_store, bindings=active_binding_store,
+        reconciliation=visual_reconciliation_v2_store,
+        ordered_batch=intraday_review_ordered_batch, wo09=wo09_store,
+        futures=futures_application.store, calendar=calendar, clock=clock)
+    futures_application.eligibility = publication_boundary
+    wo09_application = IntradayWo09Application(wo09_store, eligibility=publication_boundary)
     wo10_store = Wo10Store(Path(evidence_root) / "wo10-reconciliation-v2")
     wo10_registry = RuntimeWo10PolicyRegistry()
     wo10_loader = RetainedWo10EvidenceLoader(
@@ -554,7 +563,7 @@ def create_intraday_runtime(
     lifecycle_application = IntradayLifecycleApplication(futures=futures_application,
         store=lifecycle_store, clock=clock,
         session_source=lifecycle_session, timing_source=lifecycle_timing,
-        operational_guard=lifecycle_guard,
+        operational_guard=lifecycle_guard, eligibility=publication_boundary,
         contract_source=lambda subject: None if operation_v2.last_active_derivative_resolutions is None else operation_v2.last_active_derivative_resolutions.for_subject(subject).binding)
     research_application = IntradayResearchApplication(
         probables=probables_v2_store,

@@ -14,6 +14,7 @@ from kronos.intraday.wo10_futures_contract import Record, encoded, digest, recor
 class FuturesStore:
     def __init__(self, root: Path):
         self.root = Path(root)  # No I/O on composition or historical restoration.
+        self._deferred_notices = {}
 
     @contextmanager
     def transaction(self, *, construction=False):
@@ -81,7 +82,7 @@ class FuturesStore:
             raise ValueError("WO10_CURRENT_COMPARISON_MISMATCH")
         return comparison
 
-    def publish(self, comparison, *, previous):
+    def publish(self, comparison, *, previous, emit_notifications=True):
         c = require(comparison, "WO10_SPONSOR_COMPARISON_V1")
         current = self.current(c["subject"])
         if (None if current is None else current.identity) != previous:
@@ -102,9 +103,33 @@ class FuturesStore:
         finally:
             if os.path.exists(temp):
                 os.unlink(temp)
-        from kronos.application.notifications import notify_persisted
-        notify_persisted(self, "COMPARISON", comparison.identity)
+        if emit_notifications:
+            self.notify_publication(comparison.identity)
+        else:
+            # Capture the actual listener references at this committed effect.
+            self._deferred_notices[comparison.identity] = (
+                getattr(self, "notification_listener", None),
+                getattr(self, "journal_listener", None),
+            )
         return pointer
+
+    def notify_publication(self, comparison_identity):
+        comparison = self.load(comparison_identity)
+        require(comparison, "WO10_SPONSOR_COMPARISON_V1")
+        if comparison.identity not in self._deferred_notices:
+            from kronos.application.notifications import notify_persisted
+            notify_persisted(self, "COMPARISON", comparison.identity)
+            return
+        notification, journal = self._deferred_notices.pop(comparison.identity)
+        for attribute, listener, failure in (
+            ("notification_failure", notification, "NOTIFICATION_PROJECTION_UNAVAILABLE"),
+            ("journal_failure", journal, "JOURNAL_PROJECTION_UNAVAILABLE"),
+        ):
+            if listener is not None:
+                try:
+                    listener("COMPARISON", comparison.identity)
+                except Exception:
+                    setattr(self, attribute, failure)
 
 
 def _sync_directory(path):

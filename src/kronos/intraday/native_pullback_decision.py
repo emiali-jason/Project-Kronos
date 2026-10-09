@@ -202,10 +202,21 @@ def validate_decision(d):
     if set(d)!=required or d["contract_version"]!=CONTRACT or tuple(d[k] for k in ("policy_identity","policy_version","policy_checksum"))!=APPROVED_POLICY:
         raise ValueError("STRUCTURAL_CONTRACT_AUTHORITY_INVALID")
     if (d["programme_identity"]!=PROGRAMME or d["result"] not in {"PULLBACK","NOT_ESTABLISHED"}
-            or d["direction"] not in {"LONG","SHORT","NON_DIRECTIONAL","UNAVAILABLE"} or d["setup_family"] not in {None,"PULLBACK"}
+            or d["direction"] not in {"LONG","SHORT","NON_DIRECTIONAL","UNAVAILABLE","CONFLICTING"} or d["setup_family"] not in {None,"PULLBACK"}
             or type(d["reasons"]) is not list or any(x not in set(Reason) for x in d["reasons"])
             or len(set(d["reasons"]))!=len(d["reasons"])
             or (d["result"]=="NOT_ESTABLISHED")!=bool(d["reasons"])):
+        raise ValueError("STRUCTURAL_CONTRACT_AUTHORITY_INVALID")
+    # Conflicts and unavailable-source fallbacks grant no structural authority.
+    conflict_reasons = {Reason.DIRECTION.value, Reason.INTEGRITY.value}
+    if d["subject"].startswith("MCX-"):
+        conflict_reasons.add(Reason.MCX.value)
+    if d["direction"] == "CONFLICTING" and (
+            d["result"] != "NOT_ESTABLISHED" or len(d["reasons"]) != 1
+            or d["reasons"][0] not in conflict_reasons
+            or any(d[k] is not None for k in ("setup_family", "setup_identity", "cycle",
+                                             "target_manifest", "target_population_identity"))
+            or d["roles"] != {} or d["target_completeness"] != "INCOMPLETE"):
         raise ValueError("STRUCTURAL_CONTRACT_AUTHORITY_INVALID")
     for k in ("subject","analysis_cycle","session","machine_identity","machine_integrity","instrument_identity","native_source_identity","source_integrity","probable_result_identity","completed_evidence_identity"):
         if type(d[k]) is not str or not d[k]:raise ValueError("STRUCTURAL_CONTRACT_VALUE_INVALID:"+k)
@@ -252,8 +263,12 @@ def load_decision_source(store, decision, handoff):
     if any(d[k]!=v for k,v in expected.items()):raise ValueError(Reason.BOUNDARY.value)
     if binding and (d["exact_contract"]!=binding.active_binding.derivative_contract_id or d["roll_lineage"]!=binding.binding_identity):raise ValueError(Reason.MCX.value)
     if f is None:
-        if d["result"]!="NOT_ESTABLISHED" or d["reasons"]!=[source["failure"]]:raise ValueError(Reason.INTEGRITY.value)
+        if (d["result"]!="NOT_ESTABLISHED" or d["reasons"]!=[source["failure"]]
+                or d["exact_contract"] is not None or d["roll_lineage"] is not None
+                or d["instrument_identity"]!=d["subject"]):raise ValueError(Reason.INTEGRITY.value)
         return source
+    if d["direction"] == "CONFLICTING" and d["reasons"] != [Reason.DIRECTION.value]:
+        raise ValueError(Reason.INTEGRITY.value)
     cs={c.candle_identity:c for c in (*f.current_fifteen_minute,*f.previous_daily)}
     for ref in d["roles"].values():
         candle=cs.get(ref["candle_identity"])
@@ -317,5 +332,11 @@ def unavailable_source(mapping,result,run_identity,reason):
     from kronos.intraday.probables_v2 import DiscoveryProbablesEvidenceV2,ProbableMemberResultV2
     if type(mapping) is not DiscoveryProbablesEvidenceV2 or type(result) is not ProbableMemberResultV2 or reason not in set(Reason):raise ValueError(Reason.INTEGRITY.value)
     mapping.__post_init__();result.__post_init__()
+    if result.direction is not None and result.direction.value == "CONFLICTING":
+        allowed = {Reason.INTEGRITY.value}
+        if result.canonical_subject_identity.startswith("MCX-"):
+            allowed.add(Reason.MCX.value)
+        if reason not in allowed:
+            raise ValueError(Reason.INTEGRITY.value)
     if mapping.mapping_identity!=result.source_mapping_identity or mapping.semantic_evidence.evidence_identity!=result.semantic_evidence_identity:raise ValueError(Reason.BOUNDARY.value)
     return dict(mapping=_to_wire(mapping),result=_to_wire(result),run_identity=run_identity,failure=reason)

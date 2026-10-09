@@ -52,6 +52,73 @@ from tests.unit.application.test_intraday_discovery_operation import (
 IST = ZoneInfo("Asia/Kolkata")
 
 
+def _refresh_native_fixture(application, fixture):
+    _, facts, mapping, run = fixture
+    return application.refresh_analysis(
+        source_discovery_run_identity=run.source_discovery_run_identity,
+        universe_identity=run.universe_identity, universe_version=run.universe_version,
+        reconciliation_identity=run.reconciliation_identity,
+        reconciliation_version=run.reconciliation_version,
+        market_session_identity=run.market_session_identity, analysis_boundary=run.analysis_boundary,
+        member_evidence=(mapping,), unavailable_members=(), provenance=('ISOLATED',), native_facts=(facts,))
+
+
+def test_conflicting_member_completes_native_companion_before_probables_publication(tmp_path):
+    import json
+    from kronos.application.intraday_probables_v2 import IntradayProbablesV2Application
+    from kronos.application.intraday_native_selection import NativePullbackPublication
+    from kronos.intraday.native_structural_selection import NativeStructuralStore
+    from tests.unit.intraday.test_native_pullback_decision import source_fixture, BOUNDARY
+    fixture = source_fixture('CONFLICTING')
+    native = NativeStructuralStore(tmp_path / 'native')
+    store = ProbablesV2Store((tmp_path / 'probables').resolve())
+    publisher = NativePullbackPublication(native, clock=lambda: BOUNDARY, commissioned_at=BOUNDARY)
+    run = _refresh_native_fixture(IntradayProbablesV2Application(store=store, native_selection=publisher), fixture)
+    assert store.load_current_run() == run
+    assert len(run.results) == 1
+    result, = run.results
+    assert (result.direction.value, result.state.value) == ('CONFLICTING', 'NOT_ADMITTED')
+    assert [r.value for r in result.reasons] == ['DIRECTION_CONFLICTING']
+    manifest = json.loads((native.root / 'runs' / (run.run_identity + '.json')).read_bytes())
+    assert manifest['result_identities'] == [result.result_identity]
+    decision = native.load(manifest['selections'][0])
+    assert (decision.data['direction'], decision.data['result'], decision.data['reasons']) == (
+        'CONFLICTING', 'NOT_ESTABLISHED', ['SOURCE_DIRECTION_MISMATCH'])
+
+
+@pytest.mark.parametrize('failure', ['integrity', 'persistence'])
+def test_native_errors_preserve_previous_complete_probables_publication(tmp_path, monkeypatch, failure):
+    from kronos.application.intraday_probables_v2 import IntradayProbablesV2Application
+    from kronos.application.intraday_native_selection import NativePullbackPublication
+    import kronos.application.intraday_native_selection as publication
+    from kronos.intraday.native_structural_selection import NativeStructuralStore
+    from tests.unit.intraday.test_native_pullback_decision import source_fixture, BOUNDARY
+    native = NativeStructuralStore(tmp_path / 'native')
+    store = ProbablesV2Store((tmp_path / 'probables').resolve())
+    publisher = NativePullbackPublication(native, clock=lambda: BOUNDARY, commissioned_at=BOUNDARY)
+    app = IntradayProbablesV2Application(store=store, native_selection=publisher)
+    previous = _refresh_native_fixture(app, source_fixture())
+    before = {p: p.read_bytes() for p in store.root.rglob('*') if p.is_file()}
+    original = publication.retain_decision
+
+    def damaged(store, source, **kwargs):
+        return original(store, {**source, 'unexpected': True}, **kwargs)
+
+    def unwritable(*args, **kwargs):
+        raise OSError('ISOLATED_NATIVE_PERSISTENCE_FAILURE')
+
+    if failure == 'integrity':
+        monkeypatch.setattr(publication, 'retain_decision', damaged)
+    else:
+        monkeypatch.setattr(native, 'retain', unwritable)
+    with pytest.raises(RuntimeError, match='PROBABLES_V2_REFRESH_FAILED') as error:
+        _refresh_native_fixture(app, source_fixture('CONFLICTING'))
+    assert isinstance(error.value.__cause__, ValueError if failure == 'integrity' else OSError)
+    assert store.load_current_run() == previous
+    assert before == {p: p.read_bytes() for p in store.root.rglob('*') if p.is_file()}
+    assert len(tuple((native.root / 'runs').glob('*.json'))) == 1
+
+
 def _payload(
     identity: str = "V2-CONTROL-ONE",
     *,
@@ -333,3 +400,81 @@ def test_current_hour_empty_set_is_v2_only_and_missing_completed_hour_fails_clos
             allow_domain008_empty=True,
         )
     assert missing_error.value.reason is DiscoveryReason.MACHINE_FACT_BUNDLE_INCOMPLETE
+
+
+@pytest.mark.parametrize('case', ['missing_binding', 'missing_facts'])
+def test_conflicting_fallback_completes_native_and_probables_publication(tmp_path, case):
+    import json
+    from kronos.application.intraday_probables_v2 import IntradayProbablesV2Application
+    from kronos.application.intraday_native_selection import NativePullbackPublication
+    from kronos.intraday.native_structural_selection import NativeStructuralStore
+    from kronos.intraday.native_pullback_decision import load_decision_source
+    from tests.unit.intraday.test_native_pullback_decision import conflicting_fallback_fixture, BOUNDARY
+    fixture, facts, bundles, reason = conflicting_fallback_fixture(case)
+    _, _, mapping, original = fixture
+    native = NativeStructuralStore(tmp_path / 'native')
+    store = ProbablesV2Store((tmp_path / 'probables').resolve())
+    publisher = NativePullbackPublication(native, clock=lambda: BOUNDARY, commissioned_at=BOUNDARY)
+    app = IntradayProbablesV2Application(store=store, native_selection=publisher)
+    run = app.refresh_analysis(
+        source_discovery_run_identity=original.source_discovery_run_identity,
+        universe_identity=original.universe_identity, universe_version=original.universe_version,
+        reconciliation_identity=original.reconciliation_identity,
+        reconciliation_version=original.reconciliation_version,
+        market_session_identity=original.market_session_identity, analysis_boundary=original.analysis_boundary,
+        member_evidence=(mapping,), unavailable_members=(), provenance=('ISOLATED',),
+        native_facts=facts, native_bundles=bundles)
+    assert run.results == original.results and store.load_current_run() == run
+    result, = run.results
+    assert (result.direction.value, result.state.value) == ('CONFLICTING', 'NOT_ADMITTED')
+    manifest = json.loads((native.root / 'runs' / (run.run_identity + '.json')).read_bytes())
+    assert manifest['result_identities'] == [result.result_identity]
+    assert len(manifest['selections']) == 1
+    decision = NativeStructuralStore(native.root).load(manifest['selections'][0])
+    assert (decision.data['direction'], decision.data['result'], decision.data['reasons']) == (
+        'CONFLICTING', 'NOT_ESTABLISHED', [reason])
+    assert load_decision_source(native, decision, None)['failure'] == reason
+    before = {p: p.read_bytes() for p in native.root.rglob('*') if p.is_file()}
+    assert publisher.publish(run, (mapping,), facts=facts, bundles=bundles,
+                             newly_published=True) == (decision,)
+    assert before == {p: p.read_bytes() for p in native.root.rglob('*') if p.is_file()}
+
+
+@pytest.mark.parametrize('case', ['missing_binding', 'missing_facts'])
+@pytest.mark.parametrize('failure', ['integrity', 'persistence'])
+def test_conflicting_fallback_does_not_suppress_integrity_or_storage_errors(tmp_path, monkeypatch, case, failure):
+    from kronos.application.intraday_probables_v2 import IntradayProbablesV2Application
+    from kronos.application.intraday_native_selection import NativePullbackPublication
+    import kronos.application.intraday_native_selection as publication
+    from kronos.intraday.native_structural_selection import NativeStructuralStore
+    from tests.unit.intraday.test_native_pullback_decision import source_fixture, conflicting_fallback_fixture, BOUNDARY
+    native = NativeStructuralStore(tmp_path / 'native')
+    store = ProbablesV2Store((tmp_path / 'probables').resolve())
+    publisher = NativePullbackPublication(native, clock=lambda: BOUNDARY, commissioned_at=BOUNDARY)
+    app = IntradayProbablesV2Application(store=store, native_selection=publisher)
+    previous = _refresh_native_fixture(app, source_fixture())
+    before = {p: p.read_bytes() for p in store.root.rglob('*') if p.is_file()}
+    fixture, facts, bundles, _ = conflicting_fallback_fixture(case)
+    _, _, mapping, original = fixture
+    retain = publication.retain_decision
+    def damaged(store, source, **kwargs):
+        return retain(store, {**source, 'unexpected': True}, **kwargs)
+    def unwritable(*args, **kwargs):
+        raise OSError('ISOLATED_FALLBACK_PERSISTENCE_FAILURE')
+    if failure == 'integrity':
+        monkeypatch.setattr(publication, 'retain_decision', damaged)
+    else:
+        monkeypatch.setattr(native, 'retain', unwritable)
+    with pytest.raises(RuntimeError, match='PROBABLES_V2_REFRESH_FAILED') as error:
+        app.refresh_analysis(
+            source_discovery_run_identity=original.source_discovery_run_identity,
+            universe_identity=original.universe_identity, universe_version=original.universe_version,
+            reconciliation_identity=original.reconciliation_identity,
+            reconciliation_version=original.reconciliation_version,
+            market_session_identity=original.market_session_identity, analysis_boundary=original.analysis_boundary,
+            member_evidence=(mapping,), unavailable_members=(), provenance=('ISOLATED',),
+            native_facts=facts, native_bundles=bundles)
+    assert isinstance(error.value.__cause__, ValueError if failure == 'integrity' else OSError)
+    assert store.load_current_run() == previous
+    assert before == {p: p.read_bytes() for p in store.root.rglob('*') if p.is_file()}
+    assert len(tuple((native.root / 'runs').glob('*.json'))) == 1

@@ -120,7 +120,7 @@ def test_pre_entry_supersession_only(tmp_path,monkeypatch,entered):
         clock[0]+=timedelta(seconds=1);s=emit(app,cap,clock,s,s.data["intake"]["entry"])
         assert s.data["entry"] is not None
     def unavailable(*a,**k):raise ValueError("WO11_UPSTREAM_SUPERSEDED")
-    monkeypatch.setattr("kronos.application.intraday_lifecycle.load_intake",unavailable)
+    monkeypatch.setattr("kronos.application.intraday_lifecycle._load_intake_graph",unavailable)
     clock[0]+=timedelta(seconds=1);app.pulse();s=app.store.restore()[0]
     if entered:
         assert s.data["state"]=="ACTIVE" and s.data["close_request"] is None
@@ -136,7 +136,7 @@ def test_supersession_between_pulse_and_entry_tick(tmp_path,monkeypatch):
     s=app.action(handoff_identity=h.identity,action="OBSERVE",action_identity="arm")
     clock[0]+=timedelta(minutes=5);app.pulse();s=app.store.restore()[0]
     def unavailable(*a,**k):raise ValueError("WO11_HANDOFF_SUPERSEDED")
-    monkeypatch.setattr("kronos.application.intraday_lifecycle.load_intake",unavailable)
+    monkeypatch.setattr("kronos.application.intraday_lifecycle._load_intake_graph",unavailable)
     clock[0]+=timedelta(seconds=1);s=emit(app,cap,clock,s,s.data["intake"]["entry"])
     assert s.data["entry"] is None and s.data["state"]=="INVALIDATED_BEFORE_ENTRY"
 
@@ -373,9 +373,24 @@ def test_actual_runtime_application_accepts_exact_handoff_with_governed_guard(tm
     shared,backend,calls=_shared();runtime=create_intraday_runtime(shared,evidence_root=tmp_path/"runtime",clock=lambda:clock[0])
     # Retained stores and lawful isolated source adapters replace external I/O.
     # The production-composed lifecycle owner and operational guard are retained.
-    runtime.futures_application.__dict__.update(isolated.futures.__dict__)
     app=runtime.lifecycle_application
+    from kronos.application.intraday_evidence_currentness import IntradayPublicationBoundary
+    boundary=app.eligibility
+    assert type(boundary) is IntradayPublicationBoundary
+    assert boundary is runtime.futures_application.eligibility
+    assert boundary is runtime.wo09_application.eligibility
+    assert boundary.review is runtime.review_v2_store
+    assert boundary.probables is runtime.probables_v2_store
+    assert boundary.paired is runtime.mcx_paired_review_store
+    assert boundary.bindings is runtime.probables_v2_application.native_selection.binding_store
+    assert boundary.reconciliation is runtime.visual_reconciliation_v2_store
+    assert boundary.wo09 is runtime.wo09_store
+    assert boundary.futures is runtime.futures_application.store
+    runtime.futures_application.__dict__.update(isolated.futures.__dict__)
     app.session_source=isolated.session_source;app.timing_source=isolated.timing_source
+    # Substitute the disposable graph only after proving canonical composition.
+    # This fixed coordinator does not establish historical first-five authority.
+    app.eligibility=isolated.eligibility
     app.bind_monitoring(SharedSwingMonitoringHub(),lambda:cap)
     s=app.action(handoff_identity=h.identity,action="OBSERVE",action_identity="runtime-arm")
     clock[0]+=timedelta(minutes=5);app.pulse();s=app.store.restore()[0]
@@ -392,7 +407,7 @@ def test_missing_or_corrupt_currentness_is_not_proven_supersession(tmp_path,monk
     s=app.action(handoff_identity=h.identity,action="ACTIVATE_PAPER",action_identity="arm")
     clock[0]+=timedelta(minutes=5);app.pulse();s=app.store.restore()[0]
     def unavailable(*a,**k):raise error
-    monkeypatch.setattr("kronos.application.intraday_lifecycle.load_intake",unavailable)
+    monkeypatch.setattr("kronos.application.intraday_lifecycle._load_intake_graph",unavailable)
     clock[0]+=timedelta(seconds=1)
     if via_tick:s=emit(app,cap,clock,s,s.data["intake"]["entry"])
     else:app.pulse();s=app.store.restore()[0]

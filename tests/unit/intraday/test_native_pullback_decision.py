@@ -116,15 +116,13 @@ def test_real_selector_through_wo09_geometry_future_risk_selection(tmp_path,monk
     from kronos.application.intraday_native_selection import NativePullbackPublication
     d,=NativePullbackPublication(native,clock=lambda:BOUNDARY,commissioned_at=BOUNDARY).publish(run,(m,),facts=(f,),newly_published=True)
     assert d.data['result']=='PULLBACK',d.data
-    request=VisualReconciliationInput(SUBJECT,direction,'run','result','cycle','pack','chart','answer','a'*64,'visual','correspondence',
-        (m.semantic_evidence.evidence_identity,),tuple(observation(k,v) for k,v in POSITIVE.items()),q10_classification=Q10Classification.NOT_APPLICABLE)
-    visual=create_reconciliation_record(request,created_at=BOUNDARY)
-    readiness,watch=evaluate_readiness(visual,evidence(subject=SUBJECT,direction=direction,analysis_boundary=BOUNDARY,
-        machine_evidence_identity=m.semantic_evidence.evidence_identity,machine_evidence_integrity=m.semantic_evidence.integrity_identity),created_at=BOUNDARY)
-    wo09=Wo09Store(tmp_path/'wo09');wo09.retain(readiness,watch)
-    h=IntradayWo09Application(wo09).create_handoff(readiness,created_at=BOUNDARY,first_five_of_five_at=BOUNDARY)
-    app=IntradayFuturesApplication(FuturesStore(tmp_path/'futures'),wo09,clock=lambda:BOUNDARY,
-        structural_loader=NativeStructuralLoader(native),operational_guard=lambda:True)
+    from tests.unit.intraday.recovery_r2b_fixtures import governed_graph,historical_handoff
+    graph=governed_graph(tmp_path,m,run,f,clock=lambda:BOUNDARY)
+    wo09=graph.wo09;readiness=graph.readiness
+    wo09.retain(readiness,graph.requirements,expected=wo09.expectation(readiness.canonical_subject_identity))
+    h=historical_handoff(wo09,readiness,created_at=BOUNDARY,first_five_of_five_at=BOUNDARY)
+    app=IntradayFuturesApplication(graph.futures,wo09,clock=lambda:BOUNDARY,
+        structural_loader=NativeStructuralLoader(native),operational_guard=lambda:True,eligibility=graph.boundary)
     master,underlying=futures.master(SUBJECT)
     provider=futures.Provider(now=BOUNDARY)
     authority=dict(master=master,underlying=underlying,active_mcx=None,economics=None,configuration=futures.config())
@@ -194,3 +192,230 @@ def test_optional_typed_class_cannot_claim_complete_with_missing_authority(group
     ref=candle_reference(f.current_fifteen_minute[3],'HIGH',cycle.identity,'ISOLATED');ref['kind']=kind
     manifest=target_manifest(f,cycle=cycle,direction='LONG',source_id='ISOLATED',additional_levels=[dict(source_class=group,reference=ref,role=role,class_complete=False)])
     assert manifest['completeness']=='INCOMPLETE'
+
+
+def test_conflicting_negative_retains_restores_and_loads_exact_source(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    from kronos.intraday.native_pullback_decision import load_decision_source
+    from kronos.intraday.native_structural_selection import NativeStructuralLoader
+    from kronos.intraday.wo10_native_adapter import adapt_native
+
+    # SHORT hourly facts and LONG 15M facts establish a real semantic conflict.
+    source, facts, mapping, run = source_fixture('CONFLICTING')
+    result, = run.results
+    assert (result.direction.value, result.state.value) == ('CONFLICTING', 'NOT_ADMITTED')
+    store = NativeStructuralStore(tmp_path / 'native')
+    decision = retain_decision(store, source, created_at=BOUNDARY)
+    d = decision.data
+    assert (d['direction'], d['result'], d['reasons']) == (
+        'CONFLICTING', 'NOT_ESTABLISHED', ['SOURCE_DIRECTION_MISMATCH'])
+    assert all(d[k] is None for k in ('setup_family', 'setup_identity', 'cycle',
+                                      'target_manifest', 'target_population_identity'))
+    assert d['roles'] == {} and d['target_completeness'] == 'INCOMPLETE'
+    before = {p: p.read_bytes() for p in store.root.rglob('*') if p.is_file()}
+    assert retain_decision(store, source, created_at=BOUNDARY) == decision
+    assert before == {p: p.read_bytes() for p in store.root.rglob('*') if p.is_file()}
+    restored = NativeStructuralStore(store.root)
+    assert restored.load(decision.identity) == decision
+    assert restored.bound_identity(mapping.semantic_evidence.evidence_identity) == decision.identity
+    # A loader-only lineage probe is not a commissioned WO09 handoff.
+    handoff = SimpleNamespace(__post_init__=lambda: None,
+        machine_evidence_identities=(d['machine_identity'],), canonical_subject_identity=d['subject'],
+        direction=d['direction'], session_identity=d['session'], analysis_boundary=BOUNDARY,
+        exact_mcx_contract_identity=None, exact_mcx_roll_lineage=None,
+        machine_evidence_integrity=d['machine_integrity'], created_at=BOUNDARY)
+    monkeypatch.setattr('kronos.intraday.native_pullback_decision.select_cycle',
+                        lambda *a, **k: pytest.fail('negative loading must not reselect'))
+    assert NativeStructuralLoader(restored).load(handoff, now=BOUNDARY) == decision
+    assert load_decision_source(restored, decision, handoff) == source
+    with pytest.raises(ValueError, match='TARGET_POPULATION_INCOMPLETE'):
+        adapt_native(decision, handoff, None, None, now=BOUNDARY)
+
+
+@pytest.mark.parametrize('field,value', [
+    ('result', 'PULLBACK'), ('result', 'BREAKOUT'),
+    ('reasons', []), ('reasons', ['NO_CONFIRMED_STRUCTURAL_CYCLE']),
+    ('reasons', ['SOURCE_DIRECTION_MISMATCH', 'SOURCE_INTEGRITY_INVALID']),
+    ('setup_family', 'PULLBACK'), ('setup_identity', 'forged-setup'),
+    ('cycle', {'identity': 'forged-cycle'}), ('roles', {'ORIGIN_LOW': {}}),
+    ('target_manifest', {}), ('target_population_identity', 'forged-target'),
+    ('target_completeness', 'COMPLETE_WITH_TARGETS'),
+    ('target_completeness', 'COMPLETE_NO_APPLICABLE_FORWARD_CONSTRAINTS'),
+])
+def test_conflicting_contract_rejects_promotion_and_attached_authority(field, value):
+    from kronos.intraday.native_structural_selection import create_native_selection
+    source, *_ = source_fixture('CONFLICTING')
+    values = build_decision(source, created_at=BOUNDARY).data
+    values[field] = value
+    # Recompute the seal: rejection must come from the contract, not an old hash.
+    with pytest.raises(ValueError, match='STRUCTURAL_CONTRACT_AUTHORITY_INVALID'):
+        create_native_selection(**values)
+
+
+@pytest.mark.parametrize('original_direction', ['LONG', 'SHORT'])
+def test_complete_positive_payload_cannot_be_relabelled_conflicting(original_direction):
+    from kronos.intraday.native_structural_selection import create_native_selection
+    source, *_ = source_fixture(original_direction)
+    values = build_decision(source, created_at=BOUNDARY).data
+    assert values['result'] == 'PULLBACK' and values['cycle'] and values['roles']
+    values['direction'] = 'CONFLICTING'
+    with pytest.raises(ValueError, match='STRUCTURAL_CONTRACT_AUTHORITY_INVALID'):
+        create_native_selection(**values)
+
+
+@pytest.mark.parametrize('family', ['CRUDE', 'COPPER', 'GOLDM', 'SILVERM', 'NATGAS'])
+def test_mcx_conflict_and_commissioning_hold_preserve_exact_binding(tmp_path, family):
+    from tests.unit.intraday.test_native_pullback_mcx import mcx_source
+    from kronos.intraday.native_pullback_decision import load_decision_source
+    _, _, _, _, binding, bundle = mcx_source(family)
+    source, _, _, run = source_fixture('CONFLICTING', subject=binding.canonical_subject_id,
+        session=binding.domain008_session_identity, binding=binding, bundle=bundle)
+    result, = run.results
+    if family == 'NATGAS':
+        # Its independent commissioning hold precedes directional admission.
+        assert result.direction is None and result.state.value == 'UNAVAILABLE'
+        assert result.execution_eligibility != 'ELIGIBLE'
+    else:
+        assert (result.direction.value, result.state.value) == ('CONFLICTING', 'NOT_ADMITTED')
+    store = NativeStructuralStore(tmp_path / 'native')
+    decision = retain_decision(store, source, created_at=BOUNDARY)
+    assert decision.data['direction'] == ('UNAVAILABLE' if family == 'NATGAS' else 'CONFLICTING')
+    assert decision.data['result'] == 'NOT_ESTABLISHED'
+    assert decision.data['reasons'] == ['SOURCE_DIRECTION_MISMATCH']
+    assert decision.data['exact_contract'] == binding.active_binding.derivative_contract_id
+    assert decision.data['roll_lineage'] == binding.binding_identity
+    assert store.load(decision.identity) == decision
+    assert load_decision_source(store, decision, None) == source
+
+
+@pytest.mark.parametrize('direction', ['INVALID_DIRECTION', 'conflicting', '', None])
+def test_native_contract_still_rejects_invalid_directions(direction):
+    from kronos.intraday.native_structural_selection import create_native_selection
+    source, *_ = source_fixture('CONFLICTING')
+    values = build_decision(source, created_at=BOUNDARY).data
+    values['direction'] = direction
+    with pytest.raises(ValueError, match='STRUCTURAL_CONTRACT_AUTHORITY_INVALID'):
+        create_native_selection(**values)
+
+
+@pytest.mark.parametrize('corruption', ['decision', 'source'])
+def test_conflicting_negative_does_not_bypass_integrity(tmp_path, corruption):
+    from dataclasses import replace
+    from kronos.intraday.native_pullback_decision import load_decision_source
+    source, *_ = source_fixture('CONFLICTING')
+    store = NativeStructuralStore(tmp_path / 'native')
+    decision = retain_decision(store, source, created_at=BOUNDARY)
+    with pytest.raises(ValueError, match='INTEGRITY_INVALID'):
+        if corruption == 'decision':
+            replace(decision, integrity='0' * 64)
+        else:
+            path = store.root / 'sources' / (decision.data['native_source_identity'] + '.json')
+            path.write_text('{}')
+            load_decision_source(store, decision, None)
+
+
+@pytest.mark.parametrize('claimed_direction', ['LONG', 'SHORT'])
+def test_conflicting_machine_facts_cannot_authorize_positive_readiness(claimed_direction):
+    from kronos.intraday.wo09_readiness import evaluate_readiness, HardGate, create_next_wo_handoff
+    from tests.unit.intraday.test_wo09_readiness import source as visual_source, evidence
+    _, _, mapping, _ = source_fixture('CONFLICTING')
+    semantic = mapping.semantic_evidence
+    record, _ = evaluate_readiness(visual_source(direction=claimed_direction),
+        evidence(direction=claimed_direction,
+                 one_hour=semantic.fact('1H_REGIME').direction.value,
+                 fifteen=semantic.fact('15M_STRUCTURE').direction.value), created_at=BOUNDARY)
+    assert record.hard_gate is HardGate.AUTHORITATIVE_GOVERNED_DIRECTIONAL_CONFLICT
+    assert record.satisfied_count is None
+    with pytest.raises(ValueError, match='WO09_HANDOFF_INVALID'):
+        create_next_wo_handoff(record, created_at=BOUNDARY,
+            current_readiness_identity=record.readiness_identity, current_pointer_integrity='exact-pointer',
+            currentness=record.currentness, superseded_readiness_identity=None,
+            first_five_of_five_at=BOUNDARY)
+
+
+def conflicting_fallback_fixture(case):
+    if case == 'missing_binding':
+        from tests.unit.intraday.test_native_pullback_mcx import mcx_source
+        _, _, _, _, binding, bundle = mcx_source('CRUDE')
+        fixture = source_fixture('CONFLICTING', subject=binding.canonical_subject_id,
+            session=binding.domain008_session_identity, binding=binding, bundle=bundle)
+        return fixture, (fixture[1],), (bundle,), 'MCX_CONTRACT_BINDING_INVALID'
+    assert case == 'missing_facts'
+    fixture = source_fixture('CONFLICTING')
+    return fixture, (), (), 'SOURCE_INTEGRITY_INVALID'
+
+
+@pytest.mark.parametrize('case', ['missing_binding', 'missing_facts'])
+def test_conflicting_fallback_retains_exact_negative_source_and_rejects_promotion(tmp_path, case):
+    from types import SimpleNamespace
+    from kronos.intraday.native_pullback_decision import unavailable_source, load_decision_source
+    from kronos.intraday.native_structural_selection import NativeStructuralLoader, create_native_selection
+    from kronos.intraday.wo10_native_adapter import adapt_native
+    fixture, _, _, reason = conflicting_fallback_fixture(case)
+    _, _, mapping, run = fixture
+    result, = run.results
+    source = unavailable_source(mapping, result, run.run_identity, reason)
+    store = NativeStructuralStore(tmp_path / 'native')
+    decision = retain_decision(store, source, created_at=BOUNDARY)
+    d = decision.data
+    assert (d['direction'], d['result'], d['reasons']) == ('CONFLICTING', 'NOT_ESTABLISHED', [reason])
+    assert d['analysis_cycle'] == run.run_identity
+    assert d['machine_identity'] == result.semantic_evidence_identity
+    assert d['machine_integrity'] == mapping.semantic_evidence.integrity_identity
+    assert d['probable_result_identity'] == result.result_identity
+    assert d['completed_evidence_identity'] == result.completed_evidence_selection_identity
+    assert d['instrument_identity'] == d['subject'] and d['exact_contract'] is None and d['roll_lineage'] is None
+    assert all(d[k] is None for k in ('setup_family', 'setup_identity', 'cycle',
+                                      'target_manifest', 'target_population_identity'))
+    assert d['roles'] == {} and d['target_completeness'] == 'INCOMPLETE'
+    restored = NativeStructuralStore(store.root)
+    assert restored.load(decision.identity) == decision
+    assert load_decision_source(restored, decision, None) == source
+    # A lineage probe cannot commission a positive WO09 handoff.
+    handoff = SimpleNamespace(__post_init__=lambda: None,
+        machine_evidence_identities=(d['machine_identity'],), canonical_subject_identity=d['subject'],
+        direction=d['direction'], session_identity=d['session'], analysis_boundary=BOUNDARY,
+        exact_mcx_contract_identity=None, exact_mcx_roll_lineage=None,
+        machine_evidence_integrity=d['machine_integrity'], created_at=BOUNDARY)
+    assert NativeStructuralLoader(restored).load(handoff, now=BOUNDARY) == decision
+    with pytest.raises(ValueError, match='TARGET_POPULATION_INCOMPLETE'):
+        adapt_native(decision, handoff, None, None, now=BOUNDARY)
+    for field, value in [('result', 'PULLBACK'), ('result', 'BREAKOUT'),
+            ('setup_family', 'PULLBACK'), ('setup_identity', 'fabricated'), ('cycle', {}),
+            ('roles', {'ORIGIN_LOW': {}}), ('target_manifest', {}),
+            ('target_population_identity', 'fabricated'), ('target_completeness', 'COMPLETE_WITH_TARGETS'),
+            ('reasons', [reason, 'SOURCE_DIRECTION_MISMATCH']), ('reasons', ['NO_CONFIRMED_STRUCTURAL_CYCLE'])]:
+        with pytest.raises(ValueError, match='STRUCTURAL_CONTRACT_AUTHORITY_INVALID'):
+            create_native_selection(**{**d, field: value})
+    # A different bounded reason still cannot override the exact retained source failure.
+    other = 'SOURCE_INTEGRITY_INVALID' if case == 'missing_binding' else 'SOURCE_DIRECTION_MISMATCH'
+    changed = create_native_selection(**{**d, 'reasons': [other]})
+    with pytest.raises(ValueError, match='SOURCE_INTEGRITY_INVALID'):
+        load_decision_source(restored, changed, None)
+    # No exact binding authority may be attached to a missing-binding source.
+    if case == 'missing_binding':
+        changed = create_native_selection(**{**d, 'exact_contract': 'fabricated-contract',
+            'roll_lineage': 'fabricated-roll', 'instrument_identity': 'fabricated-contract'})
+        with pytest.raises(ValueError, match='SOURCE_INTEGRITY_INVALID'):
+            load_decision_source(restored, changed, None)
+
+
+@pytest.mark.parametrize('reason', [r.value for r in __import__(
+    'kronos.intraday.native_pullback_policy', fromlist=['Reason']).Reason
+    if r.value not in {'SOURCE_INTEGRITY_INVALID'}] + ['ARBITRARY_REASON'])
+def test_conflicting_nse_fallback_rejects_nonproducer_reasons(reason):
+    from kronos.intraday.native_pullback_decision import unavailable_source
+    _, _, mapping, run = source_fixture('CONFLICTING')
+    with pytest.raises(ValueError, match='SOURCE_INTEGRITY_INVALID'):
+        unavailable_source(mapping, run.results[0], run.run_identity, reason)
+
+
+def test_conflicting_full_source_cannot_claim_fallback_reason(tmp_path):
+    from kronos.intraday.native_pullback_decision import load_decision_source
+    from kronos.intraday.native_structural_selection import create_native_selection
+    source, *_ = source_fixture('CONFLICTING')
+    store = NativeStructuralStore(tmp_path / 'native')
+    decision = retain_decision(store, source, created_at=BOUNDARY)
+    changed = create_native_selection(**{**decision.data, 'reasons': ['SOURCE_INTEGRITY_INVALID']})
+    with pytest.raises(ValueError, match='SOURCE_INTEGRITY_INVALID'):
+        load_decision_source(store, changed, None)

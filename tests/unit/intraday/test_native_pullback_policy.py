@@ -73,6 +73,11 @@ def test_q_requires_strict_previous_extreme_cross(direction):
 def test_wrong_authority_fails_closed(name,value,reason):
     assert select(candles(),**{name:value})==(None,(reason.value,))
 
+
+@pytest.mark.parametrize('direction', ['CONFLICTING', 'INVALID_DIRECTION'])
+def test_conflict_and_invalid_direction_cannot_select_a_cycle(direction):
+    assert select(candles(), direction=direction) == (None, (Reason.DIRECTION.value,))
+
 @pytest.mark.parametrize('field,value',[('high',D(999)),('completion_state','FORMING'),('integrity_identity','tampered')])
 def test_tampered_payload_fails_closed(field,value):
     cs=list(candles());c=object.__new__(type(cs[0]))
