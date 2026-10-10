@@ -203,12 +203,17 @@ def _historical_reference_bindings(root, path, payload, packs):
                    v3.VISUAL_V3_LIVE_IMPORT_SCHEMA: v3._import_from_dict}
         record = readers[schema](payload.get("record"))
         if schema == v0.ANSWER_ARTIFACT_RECORD_SCHEMA:
-            expected = ("answer-artifacts", pack_id, record.answer_pdf_sha256 + ".json")
+            expected = {("answer-artifacts", pack_id, record.answer_pdf_sha256 + ".json")}
         else:
             attempt = (record.attempt_identity if schema == v0.ANSWER_IMPORT_RECORD_SCHEMA
                        else f"{record.observed_at.timestamp():.6f}")
-            expected = ("answer-imports", pack_id, record.answer_pdf_sha256, attempt + ".json")
-        if parts != expected or record.review_pack_id != pack_id:
+            expected = {("answer-imports", pack_id, record.answer_pdf_sha256, attempt + ".json")}
+            if schema == v0.ANSWER_IMPORT_RECORD_SCHEMA:
+                # The V0 owner's recursive load_answer_imports contract retains
+                # flat digest records alongside newer per-attempt records.
+                # Both layouts bind the same typed pack and Answer digest.
+                expected.add(("answer-imports", pack_id, record.answer_pdf_sha256 + ".json"))
+        if parts not in expected or record.review_pack_id != pack_id:
             raise ValueError(invalid)
     elif parts == ("pending-publication.json",):
         # Publication intent repeats the immutable typed V3 pack. Its temporary

@@ -136,7 +136,7 @@ def test_historical_pdf_valid_other_run_remains_nonapplicable(
     assert not witnesses(tmp_path)
 
 
-@pytest.mark.parametrize("kind", ["v0-import", "v0-artifact", "v3-import"])
+@pytest.mark.parametrize("kind", ["v0-import", "v0-flat-import", "v0-artifact", "v3-import"])
 @pytest.mark.parametrize("binding", ["mismatched-path", "unresolved-path", "valid-other-run"])
 def test_historical_answer_namespace_is_part_of_pack_binding(
         tmp_path, governed_historical_pdf_payloads, kind, binding):
@@ -160,9 +160,13 @@ def test_historical_answer_namespace_is_part_of_pack_binding(
     common = (pack_id, "REVIEW_ANSWERS.pdf", str(tmp_path / "REVIEW_ANSWERS.pdf"), "a" * 64, NOW)
     if kind == "v0-artifact":
         path = PdfReviewRecordStore(root).retain_answer_artifact(AnswerArtifactRecord(*common))
-    elif kind == "v0-import":
+    elif kind in {"v0-import", "v0-flat-import"}:
         path = PdfReviewRecordStore(root).retain_answer_import(AnswerImportRecord(
             *common, AnswerImportState.ANSWER_PACK_REJECTED, ("ANSWER_FORMAT_INVALID",), False, None))
+        if kind == "v0-flat-import":
+            flat = path.parent.with_suffix(".json")
+            path.rename(flat)
+            path = flat
     else:
         path = VisualV3PdfRecordStore(root).retain_import(VisualV3AnswerImportRecord(
             *common, VisualV3AnswerImportState.ANSWER_PACK_REJECTED, ("ANSWER_FORMAT_INVALID",), False))
@@ -186,6 +190,128 @@ def test_historical_answer_namespace_is_part_of_pack_binding(
         with pytest.raises(ValueError, match="HISTORICAL_PACK_LINEAGE_UNAVAILABLE"):
             owner.restore(run, facts)
         assert owner.restoration_result.status is Status.FAILED
+    assert {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()} == before
+
+
+def _flat_v0_answer_fixture(root, payload):
+    """Use the owned typed record in its retained digest-file representation."""
+    from kronos.swing.v1.pdf_visual_review import (
+        PdfReviewRecordStore, AnswerImportRecord, AnswerImportState,
+    )
+    pack_id = payload["record"]["review_pack_id"]
+    pack_path = root / "review-packs" / (pack_id + ".json")
+    pack_path.parent.mkdir(parents=True)
+    pack_path.write_text(json.dumps(payload))
+    store = PdfReviewRecordStore(root)
+    record = AnswerImportRecord(pack_id, "REVIEW_ANSWERS.pdf",
+        str(root / "REVIEW_ANSWERS.pdf"), "a" * 64, NOW,
+        AnswerImportState.ANSWER_PACK_REJECTED, ("ANSWER_FORMAT_INVALID",), False, None)
+    nested = store.retain_answer_import(record)
+    flat = nested.parent.with_suffix(".json")
+    nested.rename(flat)
+    return store, record, flat, pack_path
+
+
+def test_mixed_flat_and_nested_v0_imports_keep_owner_read_contract(
+        tmp_path, governed_historical_pdf_payloads):
+    from datetime import timedelta
+    from kronos.swing.v1.native_review_applicability import _historical_pdf_lineage
+    root = tmp_path / "pdf-transport-v0"
+    payload = governed_historical_pdf_payloads["v0"]
+    store, first, _, _ = _flat_v0_answer_fixture(root, payload)
+    second = replace(first, discovered_at=NOW + timedelta(seconds=1))
+    store.retain_answer_import(second)
+    before = {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+    assert store.load_answer_imports(first.review_pack_id) == (first, second)
+    assert _historical_pdf_lineage({root}, payload["record"]["native_run_identity"])
+    assert not _historical_pdf_lineage({root}, "SWING-RUN-" + "F" * 32)
+    assert {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()} == before
+
+
+@pytest.mark.parametrize("damage", ["missing-pack", "wrong-digest", "attempt-as-filename",
+                                    "extra-depth", "corrupt-json", "wrong-schema",
+                                    "invalid-record", "misbound-record"])
+def test_flat_v0_import_validation_precedes_other_run_filter(
+        tmp_path, governed_historical_pdf_payloads, damage):
+    payload = json.loads(json.dumps(governed_historical_pdf_payloads["v0"]))
+    payload["record"]["native_run_identity"] = "SWING-RUN-" + "F" * 32
+    root = tmp_path / "pdf-transport-v0"
+    _, record, path, pack_path = _flat_v0_answer_fixture(root, payload)
+    if damage == "missing-pack":
+        pack_path.unlink()
+    elif damage in {"wrong-digest", "attempt-as-filename"}:
+        filename = "b" * 64 if damage == "wrong-digest" else record.attempt_identity
+        path.rename(path.with_name(filename + ".json"))
+    elif damage == "extra-depth":
+        moved = path.parent / "extra" / path.name
+        moved.parent.mkdir()
+        path.rename(moved)
+    elif damage == "corrupt-json":
+        path.write_text("broken")
+    else:
+        body = json.loads(path.read_text())
+        if damage == "wrong-schema":
+            body["schema"] = "UNRECOGNIZED"
+        elif damage == "invalid-record":
+            body["record"]["answer_pdf_sha256"] = "invalid"
+        else:
+            body["record"]["review_pack_id"] += "-MISSING"
+        path.write_text(json.dumps(body))
+    before = {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+    facts, run, _ = _evidence_run()
+    owner = workflow(tmp_path)
+    with pytest.raises(ValueError):
+        owner.restore(run, facts)
+    assert owner.restoration_result.status is Status.FAILED
+    assert workflow(tmp_path).assess_without_analysis().status is Status.FAILED
+    assert not witnesses(tmp_path)
+    assert {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()} == before
+
+
+def test_flat_v3_import_is_not_an_allowed_historical_layout(
+        tmp_path, governed_historical_pdf_payloads):
+    from kronos.swing.v1.pdf_visual_review_v3_live import (
+        VisualV3PdfRecordStore, VisualV3AnswerImportRecord, VisualV3AnswerImportState,
+    )
+    payload = governed_historical_pdf_payloads["v3"]
+    pack_id = payload["record"]["review_pack_id"]
+    root = tmp_path / "pdf-transport-v3"
+    pack_path = root / "review-packs" / (pack_id + ".json")
+    pack_path.parent.mkdir(parents=True)
+    pack_path.write_text(json.dumps(payload))
+    path = VisualV3PdfRecordStore(root).retain_import(VisualV3AnswerImportRecord(
+        pack_id, "REVIEW_ANSWERS.pdf", str(tmp_path / "REVIEW_ANSWERS.pdf"), "a" * 64,
+        NOW, VisualV3AnswerImportState.ANSWER_PACK_REJECTED, ("ANSWER_FORMAT_INVALID",), False))
+    path.rename(path.parent.with_suffix(".json"))
+    before = {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+    facts, run, _ = _evidence_run()
+    owner = workflow(tmp_path)
+    with pytest.raises(ValueError, match="HISTORICAL_PACK_LINEAGE_UNAVAILABLE"):
+        owner.restore(run, facts)
+    assert owner.restoration_result.status is Status.FAILED
+    assert {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()} == before
+
+
+@pytest.mark.parametrize("requirements_retained", [False, True])
+def test_flat_rejected_import_never_promotes_preparation_or_backfills_witness(
+        tmp_path, governed_historical_pdf_payloads, requirements_retained):
+    _flat_v0_answer_fixture(tmp_path / "pdf-transport-v0",
+                           governed_historical_pdf_payloads["v0"])
+    facts, run, _ = _evidence_run()
+    if requirements_retained:
+        NativeReviewEvidenceStore(tmp_path).retain(build_native_review_requirements(run, facts))
+    before = {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()}
+    owner = workflow(tmp_path)
+    if requirements_retained:
+        owner.restore(run, facts)
+        assert owner.restoration_result.status is Status.RESTORED
+        assert owner.restoration_result.evidence == ("LEGACY_REQUIREMENTS",)
+    else:
+        with pytest.raises(ValueError, match="REQUIRED_EVIDENCE_LOST"):
+            owner.restore(run, facts)
+        assert owner.restoration_result.status is Status.FAILED
+    assert not witnesses(tmp_path)
+    assert not (tmp_path / "preparation-intents").exists()
     assert {p: p.read_bytes() for p in tmp_path.rglob("*") if p.is_file()} == before
 
 

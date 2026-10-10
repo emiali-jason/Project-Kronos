@@ -513,12 +513,32 @@ class KronosBrowserServer(ThreadingHTTPServer):
                     layer1_run,
                     swing_analysis_run_identity=parent_run,
                 )
-                self.application.restore_v1_review_projection(
+                restored_review = self.application.restore_v1_review_projection(
                     layer1_run,
                     provenance,
                 )
+                # A retained V1 Review may belong to an older Analysis than the
+                # already recovered WO-05 publication. Preserve that Review view
+                # without reinstalling its analytical components into current.
+                legacy_analysis_applicable = (
+                    restored_review.swing_analysis_run_identity == parent_run
+                )
+                if not legacy_analysis_applicable:
+                    try:
+                        current_native, current_control = (
+                            self.application.current_run_control_authority()
+                        )
+                        if (current_control is None
+                                or current_native.run_identity !=
+                                restored_review.swing_analysis_run_identity):
+                            raise ValueError("SWING_PUBLICATION_CURRENT_UNAVAILABLE")
+                    except (ValueError, OSError):
+                        # An unverified different header is not authority to
+                        # waive restoration. Required failures still block READY.
+                        startup_outcomes["LEGACY_MTF"] = "FAILED"
+                        startup_outcomes["LEGACY_NATIVE"] = "FAILED"
                 mtf_store = self.application.mtf_fact_evidence_store()
-                if mtf_store is not None:
+                if legacy_analysis_applicable and mtf_store is not None:
                     try:
                         self.application.restore_mtf_fact_snapshot(
                             mtf_store.load(parent_run)
@@ -528,7 +548,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
                     else:
                         startup_outcomes["LEGACY_MTF"] = "SUCCESS"
                 native_store = self.application.native_discovery_evidence_store()
-                if native_store is not None:
+                if legacy_analysis_applicable and native_store is not None:
                     try:
                         self.application.restore_native_discovery_run(
                             native_store.load(parent_run)
