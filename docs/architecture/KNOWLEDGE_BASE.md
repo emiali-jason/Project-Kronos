@@ -342,3 +342,7 @@ validation reuse and single-population presentation. It preserves current-pointe
 lineage, Swing observation and startup authority. It supersedes only the earlier
 “PERF/LAG-01 is not started” progress statement. No deployment is authorized by
 this documentation; qualification and release gates remain separate.
+
+## WO-06H explicit successor-runtime compatibility
+
+[ADR-0060](adr/ADR-0060-WO06H-SUCCESSOR-RUNTIME-COMPATIBILITY.md) adds the separately versioned, exact, directional and non-transitive successor relation while preserving legacy validation and original windows. CA-approved bounded engineering direction; exact-byte/shared-runtime owner review and production recovery remain separate gates.

@@ -159,3 +159,7 @@ boundaries are preserved. Publication/runtime/production remain separately gated
 PERF/LAG-01 is not started.
 
 - [ADR-0055 — PERF/LAG-01 validated read reuse](ADR-0055-PERF-LAG-01-VALIDATED-READ-REUSE.md) — Sponsor/EA authorized engineering; release separately gated.
+
+## WO-06H explicit successor-runtime compatibility
+
+[ADR-0060](ADR-0060-WO06H-SUCCESSOR-RUNTIME-COMPATIBILITY.md) adds the separately versioned, exact, directional and non-transitive successor relation while preserving legacy validation and original windows. CA-approved bounded engineering direction; exact-byte/shared-runtime owner review and production recovery remain separate gates.

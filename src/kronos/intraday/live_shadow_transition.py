@@ -120,3 +120,91 @@ def validate_equivalence(record, epoch, current, diagnosis):
             or len(evidence) != len(set(evidence))):
         raise ShadowError('SHADOW_EPOCH_COMPATIBILITY_EVIDENCE_INVALID')
     return True
+
+
+SUCCESSOR_ADR = {'identity': 'ADR-0060-WO06H-SUCCESSOR-RUNTIME-COMPATIBILITY', 'version': '1.0.0'}
+SUCCESSOR_OWNERS = ('EA-INTRADAY-WO06H', 'CHIEF-ARCHITECT', 'EA-SWING-SHARED-RUNTIME', 'SPONSOR')
+CHANGE_EVIDENCE_FIELDS = {'identity', 'predecessor', 'successor', 'source_delta_sha256',
+    'digest_change_reason', 'semantic_impact', 'owning_tests_sha256', 'protected_tests_sha256',
+    'failure_behavior'}
+
+
+def _validate_successor_body(body):
+    """Validate explicit evidence grammar; hashes prove integrity, not human approval."""
+    from kronos.intraday.live_shadow_epochs import SUCCESSOR_SCHEMA, SUCCESSOR_FIELDS
+    if type(body) is not dict or set(body) != SUCCESSOR_FIELDS:
+        raise ShadowError('SHADOW_SUCCESSOR_COMPATIBILITY_INCOMPLETE')
+    if body['schema'] != SUCCESSOR_SCHEMA:
+        raise ShadowError('SHADOW_SUCCESSOR_COMPATIBILITY_VERSION_INVALID')
+    if body['direction'] != 'SOURCE_TO_TARGET' or body['non_transitive'] is not True:
+        raise ShadowError('SHADOW_SUCCESSOR_COMPATIBILITY_DIRECTION_INVALID')
+    def digest(value):
+        return type(value) is str and re.fullmatch(r'[a-f0-9]{64}', value) is not None
+    def text(value):
+        return type(value) is str and bool(value.strip()) and '*' not in value
+    for field, prefix in [('epoch', 'EPOCH'), ('acceptance', 'ACCEPTANCE'), ('window', 'WINDOW'),
+                          ('source_aggregate', 'CAPABILITY'), ('target_aggregate', 'CAPABILITY')]:
+        if type(body[field]) is not str or re.fullmatch('WO06H-' + prefix + r'-[a-f0-9]{64}', body[field]) is None:
+            raise ShadowError('SHADOW_SUCCESSOR_COMPATIBILITY_BINDING_INVALID')
+    if body['adr'] != SUCCESSOR_ADR:
+        raise ShadowError('SHADOW_SUCCESSOR_COMPATIBILITY_ADR_INVALID')
+    for field in ('semantic_assessment', 'evidence_package'):
+        row = body[field]
+        if type(row) is not dict or set(row) != {'identity', 'sha256'} or not text(row['identity']) or not digest(row['sha256']):
+            raise ShadowError('SHADOW_SUCCESSOR_COMPATIBILITY_EVIDENCE_INVALID')
+    rows = body['reviewed_changes']
+    if type(rows) is not list or not rows:
+        raise ShadowError('SHADOW_SUCCESSOR_COMPATIBILITY_DELTA_INVALID')
+    for row in rows:
+        if (type(row) is not dict or set(row) != CHANGE_EVIDENCE_FIELDS
+                or not all(digest(row[key]) for key in ('source_delta_sha256', 'owning_tests_sha256', 'protected_tests_sha256'))
+                or not all(text(row[key]) for key in ('digest_change_reason', 'semantic_impact', 'failure_behavior'))):
+            raise ShadowError('SHADOW_SUCCESSOR_COMPATIBILITY_EVIDENCE_INVALID')
+    owners = body['owner_approvals']
+    if (type(owners) is not list or len(owners) != len(SUCCESSOR_OWNERS)
+            or any(type(row) is not dict or set(row) != {'owner', 'disposition', 'identity', 'sha256'}
+                   or row['disposition'] not in ('APPROVED', 'PENDING')
+                   or not text(row['identity']) or not digest(row['sha256']) for row in owners)
+            or [row['owner'] for row in owners] != list(SUCCESSOR_OWNERS)):
+        raise ShadowError('SHADOW_SUCCESSOR_COMPATIBILITY_APPROVAL_INVALID')
+
+
+def validate_successor_relation(record, epoch, current, now, *, require_approval=True):
+    """Bind original retained authority to exact successor; no inferred equivalence.
+
+    require_approval=False is an offline draft check only. Every restoration
+    caller uses the default and accepts only pre-enrolled approved authority.
+    """
+    from kronos.intraday.live_shadow import instant
+    from kronos.intraday.live_shadow_epochs import validate
+    validate(record); validate(epoch)
+    if record['kind'] != 'successor_compatibility' or epoch['kind'] != 'epoch':
+        raise ShadowError('SHADOW_SUCCESSOR_COMPATIBILITY_KIND_INVALID')
+    b, e = record['body'], epoch['body']
+    _validate_successor_body(b)
+    if (e['methodology'] != METHOD or e['narrow_cpr'] != CPR
+            or (b['epoch'], b['acceptance'], b['window'], b['start'], b['end']) != (
+                epoch['identity'], e['acceptance'], e['window'], e['start'], e['end'])):
+        raise ShadowError('SHADOW_SUCCESSOR_COMPATIBILITY_BINDING_INVALID')
+    old, new = capabilities(e['proof']), capabilities(current)
+    if (b['configuration'] != e['proof']['configuration'] or b['configuration'] != current['configuration']
+            or b['source_capabilities'] != [asdict(old[name]) for name in sorted(old)]
+            or b['target_capabilities'] != [asdict(new[name]) for name in sorted(new)]
+            or b['source_aggregate'] != capability_identity(e['proof'])
+            or b['target_aggregate'] != capability_identity(current)):
+        raise ShadowError('SHADOW_SUCCESSOR_COMPATIBILITY_MAP_INVALID')
+    changed, _ = capability_delta(e['proof'], current)
+    if not changed or any(row['predecessor'] is None or row['successor'] is None for row in changed):
+        raise ShadowError('SHADOW_SUCCESSOR_COMPATIBILITY_DELTA_INVALID')
+    reviewed = [{key: row[key] for key in ('identity', 'predecessor', 'successor')}
+                for row in b['reviewed_changes']]
+    if reviewed != changed:
+        raise ShadowError('SHADOW_SUCCESSOR_COMPATIBILITY_DELTA_INVALID')
+    # Reviewed composition/digest evolution cannot authorize changed research arithmetic.
+    if old['WO_06H_LIVE_SHADOW'] != new['WO_06H_LIVE_SHADOW']:
+        raise ShadowError('SHADOW_FROZEN_IMPLEMENTATION_CHANGED')
+    if not instant(e['start']) <= now < instant(e['end']):
+        raise ShadowError('SHADOW_RESTORATION_WINDOW_NOT_ACTIVE')
+    if require_approval and any(row['disposition'] != 'APPROVED' for row in b['owner_approvals']):
+        raise ShadowError('SHADOW_SUCCESSOR_COMPATIBILITY_NOT_APPROVED')
+    return True

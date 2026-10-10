@@ -36,7 +36,8 @@ def restore_epoch(service):
     capabilities(current)
     if current['pid'] != os.getpid() or current['source_state'] != 'CLEAN_COMMIT':
         raise ShadowError('SHADOW_RESTORATION_RUNTIME_INVALID')
-    if not compatible(epoch['body']['proof'], current) and not service._epochs.equivalence(epoch, current):
+    if not compatible(epoch['body']['proof'], current) and not (service._epochs.equivalence(epoch, current)
+            or service._epochs.successor_equivalence(epoch, current, service.clock())):
         raise ShadowError('SHADOW_RESTORATION_RUNTIME_INCOMPATIBLE')
     now = service.clock()
     if instant(current['startup']) > now or not instant(window.body['start']) <= now < instant(window.body['end']):
@@ -57,12 +58,19 @@ def epoch_status(service):
             projection.store = EpochView(service._epochs.raw, service._epochs, b['window'])
             projection._window = service._epochs.bound(epoch)[0]
             projection._reconcile()
+            try:
+                operationally_compatible = bool(service._manifest and service._epochs.restoration_compatible(
+                    epoch, service._runtime_proof(), service.clock()))
+            except ShadowError as error:
+                # Window expiry removes operational authority, not readable retained history.
+                if str(error) != 'SHADOW_RESTORATION_WINDOW_NOT_ACTIVE':
+                    raise
+                operationally_compatible = False
             rows.append(dict(identity=epoch['identity'], acceptance=b['acceptance'], window=b['window'],
                 start=b['start'], end=b['end'], methodology=b['methodology'], narrow_cpr=b['narrow_cpr'],
                 predecessor=b['predecessor'], successor=None if i == 0 else chain[i-1]['identity'],
                 superseded_at=None if i == 0 else chain[i-1]['body']['start'], current=i == 0,
-                compatibility='COMPATIBLE' if service._manifest and (compatible(b['proof'], service._runtime_proof())
-                    or service._epochs.equivalence(epoch, service._runtime_proof())) else 'INCOMPATIBLE',
+                compatibility='COMPATIBLE' if operationally_compatible else 'INCOMPATIBLE',
                 counts=projection._summary))
         return dict(current_epoch=None if not rows else rows[0]['identity'], epochs=rows,
             all_epoch_counts={k:sum(r['counts'][k] for r in rows) for k in ('cohort_a', 'cohort_b', 'eod_available')},

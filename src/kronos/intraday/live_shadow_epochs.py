@@ -17,8 +17,14 @@ METHOD = 'KRONOS-INTRADAY-PROBABLES-METHODOLOGY-V2/2.2.0'
 CPR = 'INTRADAY-PROBABLES-METHODOLOGY-V2-PUBLICATION-E7F8BD9316571148B39183E47220E97982D9A956E0309469D3AA9D4E8573A0E9'
 MATERIAL = 'ACCEPTANCE_MATERIAL_CHANGE'
 COLLATERAL = 'DIGEST_SCOPE_COLLATERAL'
-ID = re.compile(r'WO06H-(EPOCH|TRANSITION|AUTHORIZATION|DIAGNOSIS|BRIDGE|COMPATIBILITY)-[a-f0-9]{64}\Z')
+ID = re.compile(r'WO06H-(EPOCH|TRANSITION|AUTHORIZATION|DIAGNOSIS|BRIDGE|COMPATIBILITY|SUCCESSOR_COMPATIBILITY)-[a-f0-9]{64}\Z')
+SUCCESSOR_SCHEMA = 'KRONOS-WO06H-SUCCESSOR-RUNTIME-COMPATIBILITY/1.0.0'
+SUCCESSOR_FIELDS = {'schema', 'epoch', 'acceptance', 'window', 'start', 'end',
+    'source_capabilities', 'source_aggregate', 'target_capabilities', 'target_aggregate',
+    'configuration', 'reviewed_changes', 'semantic_assessment', 'adr',
+    'direction', 'non_transitive', 'evidence_package', 'owner_approvals'}
 FIELDS = {
+    'successor_compatibility': SUCCESSOR_FIELDS,
     'epoch': {'acceptance', 'window', 'start', 'end', 'proof', 'methodology', 'narrow_cpr', 'classification', 'created_at', 'predecessor', 'diagnosis', 'request'},
     'transition': {'epoch', 'previous', 'request', 'authorization', 'effective_at'},
     'authorization': {'request', 'predecessor', 'proof', 'diagnosis', 'expires_at', 'sponsor_reference'},
@@ -291,6 +297,40 @@ class EpochStore:
         diagnosis = self.load(matches[0]['body']['diagnosis'])
         validate_equivalence(matches[0], epoch, current, diagnosis)
         return True
+
+
+    def successor_equivalence(self, epoch, current, now):
+        """One exact approved direct relation; never follow a relation chain."""
+        from kronos.intraday.live_shadow_transition import capability_identity, validate_successor_relation
+        source = capability_identity(epoch['body']['proof'])
+        target = capability_identity(current)
+        fd = self._directory()
+        if fd is None:
+            return False
+        try:
+            names = sorted(name for name in os.listdir(fd)
+                if re.fullmatch(r'WO06H-SUCCESSOR_COMPATIBILITY-[a-f0-9]{64}\.json', name))
+        finally:
+            os.close(fd)
+        matches = []
+        for name in names:
+            value = self.load(name[:-5]); body = value['body']
+            if (body['epoch'], body['source_aggregate'], body['target_aggregate']) == (
+                    epoch['identity'], source, target):
+                matches.append(value)
+        if not matches:
+            return False
+        if len(matches) != 1:
+            raise ShadowError('SHADOW_SUCCESSOR_COMPATIBILITY_AMBIGUOUS')
+        self.bound(epoch)
+        validate_successor_relation(matches[0], epoch, current, now)
+        return True
+
+    def restoration_compatible(self, epoch, current, now):
+        """Preserve exact and legacy precedence; add a separately governed path."""
+        return (compatible(epoch['body']['proof'], current)
+            or self.equivalence(epoch, current)
+            or self.successor_equivalence(epoch, current, now))
 
 
 class EpochView:

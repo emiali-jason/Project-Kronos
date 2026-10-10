@@ -43,7 +43,7 @@ def test_capability_is_versioned_canonical_ast_and_repeatable():
     assert len(set(values)) == 1
     assert values[0].identity == CAPABILITY_IDENTITY
     assert values[0].version == CAPABILITY_VERSION == "1.2.0"
-    assert len(PROTECTED_CALLABLES) == 38 and len(set(PROTECTED_CALLABLES)) == 38
+    assert len(PROTECTED_CALLABLES) == 42 and len(set(PROTECTED_CALLABLES)) == 42
 
 
 def test_cross_process_and_cold_warm_imports_are_identical(tmp_path):

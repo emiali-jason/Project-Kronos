@@ -440,6 +440,6 @@ class IntradayLiveShadowService:
             selected = self._epochs.chain()[0]; epoch = selected['body']
             current = None if self._manifest is None else self._runtime_proof()
             return (self._window is not None and self._window.key == epoch['window'] and current is not None
-                and (compatible(epoch['proof'], current) or self._epochs.equivalence(selected, current)))
+                and self._epochs.restoration_compatible(selected, current, self.clock()))
         except (ValueError, OSError, KeyError, TypeError, IndexError):
             return False

@@ -57,6 +57,10 @@ PROTECTED_CALLABLES = (
     ("kronos.intraday.live_shadow_transition", "capability_delta"),
     ("kronos.intraday.live_shadow_transition", "validate_bridge"),
     ("kronos.intraday.live_shadow_transition", "validate_equivalence"),
+    ("kronos.intraday.live_shadow_transition", "_validate_successor_body"),
+    ("kronos.intraday.live_shadow_transition", "validate_successor_relation"),
+    ("kronos.intraday.live_shadow_epochs", "EpochStore.successor_equivalence"),
+    ("kronos.intraday.live_shadow_epochs", "EpochStore.restoration_compatible"),
 )
 
 
@@ -117,6 +121,10 @@ def policy_declarations():
         "fields": {key: sorted(value) for key, value in live_shadow_epochs.FIELDS.items()},
         "collateral_diagnosis_fields": sorted(live_shadow_epochs.COLLATERAL_DIAGNOSIS_FIELDS),
         "transition_invariants": list(live_shadow_transition.INVARIANT_SEMANTICS),
+        "successor_relation": {"schema": live_shadow_epochs.SUCCESSOR_SCHEMA,
+            "adr": live_shadow_transition.SUCCESSOR_ADR,
+            "owners": list(live_shadow_transition.SUCCESSOR_OWNERS),
+            "change_evidence_fields": sorted(live_shadow_transition.CHANGE_EVIDENCE_FIELDS)},
     }
 
 
