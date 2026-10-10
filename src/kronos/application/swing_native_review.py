@@ -33,6 +33,8 @@ from kronos.swing.v1.native_review import (
     NativeLayer2ReviewRecord,
     NativeReviewEvidenceStore,
     NativeReviewRequirement,
+    NativeReviewRestorationResult,
+    NativeReviewRestorationStatus,
     build_native_review_requirements,
     reconcile_native_layer2,
 )
@@ -529,6 +531,7 @@ class NativeReviewWorkflow:
         self._lock = RLock()
         self._research_capture = None
         self.research_capture_failure = None
+        self._restoration_result: NativeReviewRestorationResult | None = None
         self._run_identity: str | None = None
         self._requirements: tuple[NativeReviewRequirement, ...] = ()
         self._layer2: dict[str, NativeLayer2ReviewRecord] = {}
@@ -545,6 +548,55 @@ class NativeReviewWorkflow:
         self._review_pack_scope: str | None = None
         self._review_pack_skipped: tuple[tuple[str, str], ...] = ()
         self._refresh_status: str | None = None
+
+    @property
+    def restoration_result(self) -> NativeReviewRestorationResult | None:
+        """Exact owner outcome; None means restoration has not been assessed."""
+        with self._lock:
+            return self._restoration_result
+
+    def assess_without_analysis(self) -> NativeReviewRestorationResult:
+        """Assess absent upstream context without inventing a run or repairing it."""
+        from kronos.swing.v1.native_review_applicability import retained_preparation_presence
+        with self._lock:
+            try:
+                evidence = retained_preparation_presence(
+                    store=self._store, visual_store=self._visual_v2_store,
+                    readiness_store=self._readiness_store, chart_store=self._chart_store,
+                    plan_store=self._trade_plan_store,
+                    sponsor_store=self._sponsor_decision_store,
+                    lifecycle=self._active_lifecycle.snapshot(),
+                    pdf_store=None if self._pdf_transport is None else self._pdf_transport.record_store,
+                )
+                status = (NativeReviewRestorationStatus.FAILED if evidence
+                          else NativeReviewRestorationStatus.APPLICABILITY_NOT_ESTABLISHED)
+                reasons = (("MISSING_ANALYSIS_FOR_RETAINED_NATIVE_EVIDENCE", *evidence)
+                           if evidence else ())
+            except (OSError, ValueError):
+                status = NativeReviewRestorationStatus.FAILED
+                reasons = ("NATIVE_REVIEW_APPLICABILITY_UNAVAILABLE",)
+            self._restoration_result = NativeReviewRestorationResult(None, status, reasons)
+            return self._restoration_result
+
+    def _legacy_preparation_lineage(self, native_run, facts) -> tuple[str, ...]:
+        """Inspect only artifacts whose producer requires retained Native Review.
+
+        Receipt-based V3 Review builds requirements directly from Analysis. Its
+        Answers, V3 readiness and standalone KR370 plans are not themselves
+        evidence of this historical preparation operation. Native Sponsor
+        admission additionally requires this workflow's prepared requirement;
+        independently admitted MCX decisions use a distinct plan contract.
+        Historical PDF packs and composite charts use this workflow's prepared
+        snapshot. V0 readiness and its exact plans also require that snapshot.
+        """
+        from kronos.swing.v1.native_review_applicability import legacy_preparation_lineage
+        return legacy_preparation_lineage(
+            native_run, facts, store=self._store,
+            visual_store=self._visual_v2_store, readiness_store=self._readiness_store,
+            chart_store=self._chart_store, plan_store=self._trade_plan_store,
+            sponsor_store=self._sponsor_decision_store,
+            pdf_store=None if self._pdf_transport is None else self._pdf_transport.record_store,
+        )
 
     @property
     def evidence_root(self) -> Path:
@@ -567,7 +619,39 @@ class NativeReviewWorkflow:
 
         self._active_lifecycle_monitoring.set_shared_monitoring_hub(hub)
 
-    def prepare(
+    def _prepare_operation(self, native_run, facts, *, refresh):
+        with self._lock:
+            if (not refresh and self._run_identity is not None
+                    and (self._run_identity != native_run.run_identity
+                         or self._requirements != build_native_review_requirements(native_run, facts))):
+                raise ValueError("NATIVE_REVIEW_ACTIVE_RUN_IMMUTABLE")
+            previous = {name: value.copy() if isinstance(value, dict) else value
+                        for name, value in self.__dict__.items()}
+            try:
+                if (not self._store.requirements_present(native_run.run_identity)
+                        and self._store.preparation_authority(native_run, facts) is None
+                        and self._legacy_preparation_lineage(native_run, facts)):
+                    raise ValueError("NATIVE_REVIEW_REQUIRED_EVIDENCE_LOST")
+                with self._store.preparation(native_run, facts, self._now):
+                    snapshot = (self._refresh_unlocked if refresh else self._prepare_unlocked)(native_run, facts)
+                return snapshot
+            except Exception:
+                # A failed durable publication must never make the fast in-memory
+                # repeat path advertise completed preparation.
+                self.__dict__.update(previous)
+                self._restoration_result = NativeReviewRestorationResult(
+                    native_run.run_identity, NativeReviewRestorationStatus.FAILED,
+                    ("NATIVE_PREPARATION_INCOMPLETE",),
+                )
+                raise
+
+    def prepare(self, native_run: NativeDiscoveryRun, facts: SameRunMtfFactSnapshot) -> NativeReviewWorkflowSnapshot:
+        return self._prepare_operation(native_run, facts, refresh=False)
+
+    def refresh(self, native_run: NativeDiscoveryRun, facts: SameRunMtfFactSnapshot) -> NativeReviewWorkflowSnapshot:
+        return self._prepare_operation(native_run, facts, refresh=True)
+
+    def _prepare_unlocked(
         self,
         native_run: NativeDiscoveryRun,
         facts: SameRunMtfFactSnapshot,
@@ -586,7 +670,7 @@ class NativeReviewWorkflow:
             self._refresh_status = "CURRENT REVIEW LOADED"
             return self._snapshot_unlocked()
 
-    def refresh(
+    def _refresh_unlocked(
         self,
         native_run: NativeDiscoveryRun,
         facts: SameRunMtfFactSnapshot,
@@ -651,7 +735,42 @@ class NativeReviewWorkflow:
                 "REFRESH UNAVAILABLE · NO VALID CURRENT OPPORTUNITIES STATE"
             )
 
-    def restore(
+    def restore(self, native_run: NativeDiscoveryRun, facts: SameRunMtfFactSnapshot) -> NativeReviewWorkflowSnapshot:
+        with self._lock:
+            self._restoration_result = None
+            try:
+                authority = self._store.preparation_authority(native_run, facts)
+                if authority == "INCOMPLETE":
+                    raise ValueError("NATIVE_PREPARATION_INCOMPLETE")
+                if not self._store.requirements_present(native_run.run_identity):
+                    lineage = self._legacy_preparation_lineage(native_run, facts)
+                    if lineage:
+                        raise ValueError("NATIVE_REVIEW_REQUIRED_EVIDENCE_LOST")
+                    self._run_identity = None
+                    self._requirements = ()
+                    self._refresh_status = "APPLICABILITY_NOT_ESTABLISHED"
+                    snapshot = self._snapshot_unlocked()
+                    self._restoration_result = NativeReviewRestorationResult(
+                        native_run.run_identity,
+                        NativeReviewRestorationStatus.APPLICABILITY_NOT_ESTABLISHED,
+                    )
+                    return snapshot
+                snapshot = self._restore_applicable(native_run, facts)
+                self._restoration_result = NativeReviewRestorationResult(
+                    native_run.run_identity, NativeReviewRestorationStatus.RESTORED,
+                    (authority or "LEGACY_REQUIREMENTS",),
+                )
+                return snapshot
+            except Exception:
+                self._restoration_result = NativeReviewRestorationResult(
+                    native_run.run_identity, NativeReviewRestorationStatus.FAILED,
+                    ("NATIVE_REVIEW_RESTORATION_FAILED",),
+                )
+                self._run_identity = None
+                self._requirements = ()
+                raise
+
+    def _restore_applicable(
         self,
         native_run: NativeDiscoveryRun,
         facts: SameRunMtfFactSnapshot,

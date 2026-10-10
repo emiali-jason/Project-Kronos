@@ -1,0 +1,199 @@
+{
+  "policy": "KRONOS-WO06H-ACCEPTANCE-EPOCH/1.0.0",
+  "kind": "successor_compatibility",
+  "body": {
+    "schema": "KRONOS-WO06H-SUCCESSOR-RUNTIME-COMPATIBILITY/1.0.0",
+    "epoch": "WO06H-EPOCH-4bc5e40a837f8ba26ea8ed91245148c4e45a6d24178d90ba187822586b16dcc3",
+    "acceptance": "WO06H-ACCEPTANCE-705befed9c2ff4d8d3a53aa94b4b9d8b9c5d67b99f6a0093d22ed4335cd71259",
+    "window": "WO06H-WINDOW-ed7a53dfdc22e1f95440c7778b381a9a2d7ad69d10b892a5857c29576f1e094c",
+    "start": "2026-09-12T07:50:33.006722+05:30",
+    "end": "2026-10-12T07:50:33.006722+05:30",
+    "source_capabilities": [
+      {
+        "identity": "INTRADAY_DISCOVERY_OPERATION",
+        "implementation_digest": "0eac457e199958f88dcc1508493f8b101eeb2b4b58be9cf93e4893f236af7e34",
+        "version": "0.1.0"
+      },
+      {
+        "identity": "INTRADAY_V2_OPERATIONAL_CONTROL",
+        "implementation_digest": "65e0963541c831159f48f271a28d0cfcffdb32bbaa609c967b80464a3d9d3bf6",
+        "version": "1.0.0"
+      },
+      {
+        "identity": "WO_05A_TRUSTED_TIME_ADMISSION",
+        "implementation_digest": "df254b7a96b600eda42aa4136f2e2b239af90a5cee5964900513a3385b6ad5bd",
+        "version": "1.0.0"
+      },
+      {
+        "identity": "WO_05B_OPERATION_ACCOUNTING",
+        "implementation_digest": "bfd58dddf57e79a5902a276d0fb0a2c6cea21c614976934f3f97ed3c0f469f11",
+        "version": "1.0.0"
+      },
+      {
+        "identity": "WO_06H_ACCEPTANCE_EPOCH",
+        "implementation_digest": "b0b806f66d86879770134762b92ab511e8ce719f3868b04ea3165a62931f60e7",
+        "version": "1.1.0"
+      },
+      {
+        "identity": "WO_06H_LIVE_SHADOW",
+        "implementation_digest": "53d5dd60f8f00aa6d8e826b0dce0204461d089ef0108d183d9a45ab85dcc18af",
+        "version": "1.0.0"
+      }
+    ],
+    "target_capabilities": [
+      {
+        "identity": "INTRADAY_DISCOVERY_OPERATION",
+        "version": "0.1.0",
+        "implementation_digest": "ac24e78f968c76c69e16101492aa6e9f43a922e29be4a1564aa40ff6fe837157"
+      },
+      {
+        "identity": "INTRADAY_V2_OPERATIONAL_CONTROL",
+        "version": "1.0.0",
+        "implementation_digest": "65e0963541c831159f48f271a28d0cfcffdb32bbaa609c967b80464a3d9d3bf6"
+      },
+      {
+        "identity": "WO_05A_TRUSTED_TIME_ADMISSION",
+        "version": "1.0.0",
+        "implementation_digest": "db2031e75f63c6b26e115f40e9f4df8f1b1917978ffb3b73de73cde4d8344784"
+      },
+      {
+        "identity": "WO_05B_OPERATION_ACCOUNTING",
+        "version": "1.0.0",
+        "implementation_digest": "c6274e7ecddfc808d159a780c94f4317b0fcab569ef558ea70dffa1d6a952203"
+      },
+      {
+        "identity": "WO_06H_ACCEPTANCE_EPOCH",
+        "version": "1.2.0",
+        "implementation_digest": "52ff64673f2ef7ec1e1db5da97803b41bffca92eada6b3bf88bc2ff38f743b1a"
+      },
+      {
+        "identity": "WO_06H_LIVE_SHADOW",
+        "version": "1.0.0",
+        "implementation_digest": "53d5dd60f8f00aa6d8e826b0dce0204461d089ef0108d183d9a45ab85dcc18af"
+      }
+    ],
+    "source_aggregate": "WO06H-CAPABILITY-acc41737ccf55f4930323e5efd2f00393a9efa856390e22e29faccc1498612db",
+    "target_aggregate": "WO06H-CAPABILITY-9104752f2f4028b169cd5bcc249477024eb67b1ab2351a30415e40e5fa7e6e40",
+    "configuration": "INTRADAY-LAUNCHER-CONFIG-fe5d7990569ccb43559350961ea889f57b9f2e7c33a6ec6a14b85477e2bdf96d",
+    "reviewed_changes": [
+      {
+        "identity": "INTRADAY_DISCOVERY_OPERATION",
+        "predecessor": {
+          "identity": "INTRADAY_DISCOVERY_OPERATION",
+          "version": "0.1.0",
+          "implementation_digest": "0eac457e199958f88dcc1508493f8b101eeb2b4b58be9cf93e4893f236af7e34"
+        },
+        "successor": {
+          "identity": "INTRADAY_DISCOVERY_OPERATION",
+          "version": "0.1.0",
+          "implementation_digest": "ac24e78f968c76c69e16101492aa6e9f43a922e29be4a1564aa40ff6fe837157"
+        },
+        "source_delta_sha256": "a4687ec4b3e0b0991f611f99f6a4b7c95e4cfa910482ab0c9150cc5da99d56ad",
+        "digest_change_reason": "Released02A execute composition and retained code-position metadata change existing marshal inputs",
+        "semantic_impact": "Research-only post-return composition; trusted-time, accounting and calculation semantics preserved",
+        "owning_tests_sha256": "90abbf87c2df512803fa3920b00ec8a150bc5d8529d11ec4119e88e8a89f3023",
+        "protected_tests_sha256": "b714d483a64395839f2b823b000c61acd170b440e28e7c98a475ee6146fa08e3",
+        "failure_behavior": "Different/unreviewed map, configuration, delta or approval fails closed; integrity/storage failures remain failures"
+      },
+      {
+        "identity": "WO_05A_TRUSTED_TIME_ADMISSION",
+        "predecessor": {
+          "identity": "WO_05A_TRUSTED_TIME_ADMISSION",
+          "version": "1.0.0",
+          "implementation_digest": "df254b7a96b600eda42aa4136f2e2b239af90a5cee5964900513a3385b6ad5bd"
+        },
+        "successor": {
+          "identity": "WO_05A_TRUSTED_TIME_ADMISSION",
+          "version": "1.0.0",
+          "implementation_digest": "db2031e75f63c6b26e115f40e9f4df8f1b1917978ffb3b73de73cde4d8344784"
+        },
+        "source_delta_sha256": "a4687ec4b3e0b0991f611f99f6a4b7c95e4cfa910482ab0c9150cc5da99d56ad",
+        "digest_change_reason": "Released02A execute composition and retained code-position metadata change existing marshal inputs",
+        "semantic_impact": "Research-only post-return composition; trusted-time, accounting and calculation semantics preserved",
+        "owning_tests_sha256": "90abbf87c2df512803fa3920b00ec8a150bc5d8529d11ec4119e88e8a89f3023",
+        "protected_tests_sha256": "b714d483a64395839f2b823b000c61acd170b440e28e7c98a475ee6146fa08e3",
+        "failure_behavior": "Different/unreviewed map, configuration, delta or approval fails closed; integrity/storage failures remain failures"
+      },
+      {
+        "identity": "WO_05B_OPERATION_ACCOUNTING",
+        "predecessor": {
+          "identity": "WO_05B_OPERATION_ACCOUNTING",
+          "version": "1.0.0",
+          "implementation_digest": "bfd58dddf57e79a5902a276d0fb0a2c6cea21c614976934f3f97ed3c0f469f11"
+        },
+        "successor": {
+          "identity": "WO_05B_OPERATION_ACCOUNTING",
+          "version": "1.0.0",
+          "implementation_digest": "c6274e7ecddfc808d159a780c94f4317b0fcab569ef558ea70dffa1d6a952203"
+        },
+        "source_delta_sha256": "a4687ec4b3e0b0991f611f99f6a4b7c95e4cfa910482ab0c9150cc5da99d56ad",
+        "digest_change_reason": "Released02A execute composition and retained code-position metadata change existing marshal inputs",
+        "semantic_impact": "Research-only post-return composition; trusted-time, accounting and calculation semantics preserved",
+        "owning_tests_sha256": "90abbf87c2df512803fa3920b00ec8a150bc5d8529d11ec4119e88e8a89f3023",
+        "protected_tests_sha256": "b714d483a64395839f2b823b000c61acd170b440e28e7c98a475ee6146fa08e3",
+        "failure_behavior": "Different/unreviewed map, configuration, delta or approval fails closed; integrity/storage failures remain failures"
+      },
+      {
+        "identity": "WO_06H_ACCEPTANCE_EPOCH",
+        "predecessor": {
+          "identity": "WO_06H_ACCEPTANCE_EPOCH",
+          "version": "1.1.0",
+          "implementation_digest": "b0b806f66d86879770134762b92ab511e8ce719f3868b04ea3165a62931f60e7"
+        },
+        "successor": {
+          "identity": "WO_06H_ACCEPTANCE_EPOCH",
+          "version": "1.2.0",
+          "implementation_digest": "52ff64673f2ef7ec1e1db5da97803b41bffca92eada6b3bf88bc2ff38f743b1a"
+        },
+        "source_delta_sha256": "6d5e6fa6db8351b4ea2365d61d49599c1ea347ce21779832cf4bd23009a0d5d9",
+        "digest_change_reason": "Additive reviewed successor validator/policy changes protected epoch AST inputs; historical1.1-to1.2 difference retained explicitly",
+        "semantic_impact": "Explicit direct compatibility while frozen research arithmetic, original authority and window remain unchanged",
+        "owning_tests_sha256": "90abbf87c2df512803fa3920b00ec8a150bc5d8529d11ec4119e88e8a89f3023",
+        "protected_tests_sha256": "b714d483a64395839f2b823b000c61acd170b440e28e7c98a475ee6146fa08e3",
+        "failure_behavior": "Different/unreviewed map, configuration, delta or approval fails closed; integrity/storage failures remain failures"
+      }
+    ],
+    "semantic_assessment": {
+      "identity": "WO08-02A-WO06H-SEMANTIC-ASSESSMENT-20261010",
+      "sha256": "38ed212563772d1ba5d40db79492369a5c809e2bc67e2df0c4fc3ce9403a5239"
+    },
+    "adr": {
+      "identity": "ADR-0060-WO06H-SUCCESSOR-RUNTIME-COMPATIBILITY",
+      "version": "1.0.0"
+    },
+    "direction": "SOURCE_TO_TARGET",
+    "non_transitive": true,
+    "evidence_package": {
+      "identity": "WO06H-SUCCESSOR-COMPATIBILITY-QUALIFICATION-20261010",
+      "sha256": "b714d483a64395839f2b823b000c61acd170b440e28e7c98a475ee6146fa08e3"
+    },
+    "owner_approvals": [
+      {
+        "owner": "EA-INTRADAY-WO06H",
+        "disposition": "APPROVED",
+        "identity": "WO06H-APPROVAL-EA-INTRADAY-WO06H-ORDER-aa4af55e-20261010",
+        "sha256": "0fbfb1076c54d5bc00069b5228d9f262d991e418c9a2f081ff72f2d6a80d11cf"
+      },
+      {
+        "owner": "CHIEF-ARCHITECT",
+        "disposition": "APPROVED",
+        "identity": "WO06H-APPROVAL-CHIEF-ARCHITECT-ORDER-aa4af55e-20261010",
+        "sha256": "61e53b3b20793bb5319368981f8c12e35ad402f40013c919fe2938e3699400e7"
+      },
+      {
+        "owner": "EA-SWING-SHARED-RUNTIME",
+        "disposition": "APPROVED",
+        "identity": "WO06H-APPROVAL-EA-SWING-SHARED-RUNTIME-ORDER-aa4af55e-20261010",
+        "sha256": "df897f2ec1cf50532c02e7d45a244f8948e2385e322a30c249b8b0273582b5f1"
+      },
+      {
+        "owner": "SPONSOR",
+        "disposition": "APPROVED",
+        "identity": "WO06H-APPROVAL-SPONSOR-ORDER-aa4af55e-20261010",
+        "sha256": "b71761981b28c1094d27dd7ac83e5c1c42a6d2af2887b75e955371e574d2643c"
+      }
+    ]
+  },
+  "identity": "WO06H-SUCCESSOR_COMPATIBILITY-4f6aac6c3a9f59fe2e19b788fb6266fec1a239358e71f2abc9f9c9ac4c0731ef",
+  "integrity": "500d75b4b1093b776886bab486a55ba4c2c9e1824b75564a9cfb0ecaba7b3e03"
+}

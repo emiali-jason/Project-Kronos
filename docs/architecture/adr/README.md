@@ -163,3 +163,9 @@ PERF/LAG-01 is not started.
 ## WO-06H explicit successor-runtime compatibility
 
 [ADR-0060](ADR-0060-WO06H-SUCCESSOR-RUNTIME-COMPATIBILITY.md) adds the separately versioned, exact, directional and non-transitive successor relation while preserving legacy validation and original windows. CA-approved bounded engineering direction; exact-byte/shared-runtime owner review and production recovery remain separate gates.
+# FAILED_ACTIVE recovery successor
+
+[ADR-0061](ADR-0061-FAILED-ACTIVE-RECOVERY-AND-STARTUP-RESTORATION.md) records
+Sponsor-authorized bounded engineering for typed recovery, authoritative startup
+results and prospective Native preparation witnesses. Final candidate reviews and
+release remain pending; historical ADR-0050/0059 authority is preserved.

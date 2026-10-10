@@ -7,7 +7,7 @@ import json
 import time
 import pytest
 
-from kronos.browser.runtime_state import complete_startup, decorate_html, status_document
+from kronos.browser.runtime_state import complete_startup as actual_complete_startup, decorate_html, status_document
 from kronos.browser.server import KronosBrowserServer
 from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
 from kronos.application.shared_monitoring import SharedSwingMonitoringHub
@@ -20,6 +20,15 @@ from tests.unit.browser.test_sph_controls import running, request
 from tests.unit.intraday.test_live_shadow import service
 from tests.unit.intraday.test_live_shadow_epochs import restart, inventory
 from tests.unit.intraday.test_live_shadow_epoch_deterministic_digest import production_case, retain_equivalence, corrected_restart
+
+
+def complete_startup(server, shadow):
+    # Explicit healthy owner results for standalone shared-startup fixtures.
+    return actual_complete_startup(server, shadow,
+        swing_outcomes=tuple((key, "FAILED" if key == "V3_RECORDS" and server.visual_v3_live.restoration_error else "SUCCESS")
+            for key in ("LEGACY_MTF", "LEGACY_NATIVE", "NATIVE_REVIEW", "V3_RECORDS", "V3_RESTORE", "TRADE_WINDOW")),
+        wo11=SimpleNamespace(last_failure=None),
+        wo17=dict(restoration_state="NOT_YET_RUN", failure_stage=None, failure_reason=None, current_positions=[]))
 
 
 def server_for(g):
@@ -744,3 +753,45 @@ def test_socket_startup_failure_closes_installed_research_and_bindings(
                for owner, _callback in failed._research_owner_bindings
                if owner is not failed.application)
     assert failed.maintenance_admission.snapshot()["owners"] == {}
+
+
+@pytest.mark.parametrize("fault", ["wo11", "wo17-corrupt", "wo17-failure", "wo17-missing",
+    "wo11-missing", "swing-missing", "swing-failed", "swing-incomplete", "wo17-empty-inconsistent"])
+def test_r4_required_owner_results_block_before_success_receipt(tmp_path, fault):
+    server = server_for(governance(tmp_path, maintenance=GENERATION))
+    shadow = SimpleNamespace(status=lambda: dict(failure=None, window=None, runtime_accepted=False))
+    swing = tuple((key, "SUCCESS") for key in ("LEGACY_MTF", "LEGACY_NATIVE", "NATIVE_REVIEW",
+        "V3_RECORDS", "V3_RESTORE", "TRADE_WINDOW"))
+    wo11 = SimpleNamespace(last_failure=None, work_status=lambda: dict(state="IDLE", continuity="COMPLETE", failure=None))
+    wo17 = dict(restoration_state="NOT_YET_RUN", failure_stage=None, failure_reason=None, current_positions=[])
+    if fault == "wo11": wo11.last_failure = "WO11_RESTORATION_FAILED"
+    if fault == "wo17-corrupt": wo17["restoration_state"] = "CORRUPT"
+    if fault == "wo17-failure": wo17["failure_reason"] = "WO17_RESTORATION_FAILED"
+    if fault == "wo17-missing": wo17 = None
+    if fault == "wo11-missing": wo11 = None
+    if fault == "swing-missing": swing = None
+    if fault == "swing-incomplete": swing = swing[:-1]
+    if fault == "swing-failed": swing = tuple((key, "FAILED" if key == "V3_RESTORE" else state) for key,state in swing)
+    if fault == "wo17-empty-inconsistent": wo17["current_positions"] = [{}]
+    actual_complete_startup(server, shadow, swing_outcomes=swing, wo11=wo11, wo17=wo17)
+    assert server.connection_governance.startup_state == "BLOCKED"
+    assert server.connection_governance.maintenance_active
+    assert not list((tmp_path/'audit').rglob('*-startup.json'))
+
+
+@pytest.mark.parametrize("owner,expected", [
+    ("NATIVE_REVIEW", "READY"), ("V3_RESTORE", "BLOCKED"),
+    ("LEGACY_NATIVE", "BLOCKED"), ("TRADE_WINDOW", "BLOCKED"),
+])
+def test_native_legacy_ambiguity_is_bounded_to_its_owner(tmp_path, owner, expected):
+    server = server_for(governance(tmp_path, maintenance=GENERATION))
+    outcomes = tuple((key, "APPLICABILITY_NOT_ESTABLISHED" if key == owner else "SUCCESS")
+        for key in ("LEGACY_MTF", "LEGACY_NATIVE", "NATIVE_REVIEW",
+                    "V3_RECORDS", "V3_RESTORE", "TRADE_WINDOW"))
+    actual_complete_startup(server,
+        SimpleNamespace(status=lambda: dict(failure=None, window=None, runtime_accepted=False)),
+        swing_outcomes=outcomes, wo11=SimpleNamespace(last_failure=None),
+        wo17=dict(restoration_state="NOT_YET_RUN", failure_stage=None,
+                  failure_reason=None, current_positions=[]))
+    assert server.connection_governance.startup_state == expected
+    assert server.connection_governance.maintenance_active == (expected == "BLOCKED")

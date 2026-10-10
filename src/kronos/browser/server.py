@@ -467,6 +467,12 @@ class KronosBrowserServer(ThreadingHTTPServer):
         self._native_chart_stage_lock = Lock()
         self._answer_notices = {}
         self._sponsor_restoration_lock = RLock()
+        # ADR-0061: results belong to the existing restoration calls. Never
+        # infer completion from presentation labels or rerun an owner for proof.
+        startup_outcomes = dict.fromkeys(
+            ("LEGACY_MTF", "LEGACY_NATIVE", "NATIVE_REVIEW", "V3_RECORDS",
+             "V3_RESTORE", "TRADE_WINDOW"), "NOT_APPLICABLE")
+        self._startup_restoration_outcomes = ()
         self._shutdown_started = False
         self._active_sponsor_work = 0
         self._next_lifecycle_pulse = 0.0
@@ -518,7 +524,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
                             mtf_store.load(parent_run)
                         )
                     except ValueError:
-                        pass
+                        startup_outcomes["LEGACY_MTF"] = "FAILED"
+                    else:
+                        startup_outcomes["LEGACY_MTF"] = "SUCCESS"
                 native_store = self.application.native_discovery_evidence_store()
                 if native_store is not None:
                     try:
@@ -526,7 +534,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
                             native_store.load(parent_run)
                         )
                     except ValueError:
-                        pass
+                        startup_outcomes["LEGACY_NATIVE"] = "FAILED"
+                    else:
+                        startup_outcomes["LEGACY_NATIVE"] = "SUCCESS"
                 self.step32_workflow.synchronize_review(self.v1_review)
         native_review_store = (
             NativeReviewEvidenceStore()
@@ -601,6 +611,8 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 ),
                 recover_historical=not receipt_intake_enabled,
             )
+        startup_outcomes["V3_RECORDS"] = (
+            "SUCCESS" if self.visual_v3_live.restoration_error is None else "FAILED")
         if (native_intake is not None
                 and (not receipt_intake_enabled
                      or native_intake.application is not self.application
@@ -705,23 +717,59 @@ class KronosBrowserServer(ThreadingHTTPServer):
         if native_run is not None and mtf_facts is not None:
             try:
                 self.native_review.restore(native_run, mtf_facts)
-            except ValueError:
-                pass
+            except (ValueError, OSError):
+                startup_outcomes["NATIVE_REVIEW"] = "FAILED"
+            else:
+                # Native owns legacy applicability. Missing bytes alone are
+                # neither restored evidence nor proof that preparation occurred.
+                result = self.native_review.restoration_result
+                startup_outcomes["NATIVE_REVIEW"] = {
+                    "RESTORED": "SUCCESS",
+                    "APPLICABILITY_NOT_ESTABLISHED": "APPLICABILITY_NOT_ESTABLISHED",
+                }.get(result.status.value, "FAILED") if result is not None else "UNAVAILABLE"
             try:
                 if self.native_intake is not None and self.native_intake.has_control():
                     self.native_intake.restore()
+                    # This owner reports per-market restore failure without raising.
+                    startup_outcomes["V3_RESTORE"] = (
+                        "FAILED" if any(value == "REVIEW_RESTORATION_UNAVAILABLE"
+                                        for value in self.native_intake.errors.values())
+                        else "SUCCESS")
                 else:
                     self.visual_v3_live.restore(
                         self.native_review.snapshot(), mtf_facts, self.native_review.original_chart_bytes)
+                    startup_outcomes["V3_RESTORE"] = "SUCCESS"
             except (ValueError, PdfReviewTransportError, TradingViewEvidenceStoreError):
-                # Versioned V3 restoration is fail-closed. Historical V2 remains
-                # independently restorable and is never converted as recovery.
-                pass
-        self.native_review.bind_restored_v3_readiness(
-            tuple(item.readiness for item in self.visual_v3.completed_snapshot()))
-        self.trade_window.restore(self.visual_v3.completed_snapshot())
-        self.native_review.journal_snapshot()
-        self.trade_window.synchronize_downstream(self.native_review.snapshot())
+                startup_outcomes["V3_RESTORE"] = "FAILED"
+        elif native_run is not None or mtf_facts is not None:
+            startup_outcomes["NATIVE_REVIEW"] = "UNAVAILABLE"
+            startup_outcomes["V3_RESTORE"] = "UNAVAILABLE"
+        else:
+            # No upstream selection does not prove that retained preparation is
+            # absent. The Native owner inspects only its exact dependency stores.
+            result = self.native_review.assess_without_analysis()
+            startup_outcomes["NATIVE_REVIEW"] = (
+                "APPLICABILITY_NOT_ESTABLISHED"
+                if result.status.value == "APPLICABILITY_NOT_ESTABLISHED" else "FAILED")
+        try:
+            self.native_review.bind_restored_v3_readiness(
+                tuple(item.readiness for item in self.visual_v3.completed_snapshot()))
+        except (ValueError, OSError):
+            startup_outcomes["NATIVE_REVIEW"] = "FAILED"
+        try:
+            self.trade_window.restore(self.visual_v3.completed_snapshot())
+        except (ValueError, OSError):
+            startup_outcomes["TRADE_WINDOW"] = "FAILED"
+        else:
+            startup_outcomes["TRADE_WINDOW"] = "SUCCESS"
+        try:
+            self.native_review.journal_snapshot()
+        except (ValueError, OSError):
+            startup_outcomes["NATIVE_REVIEW"] = "FAILED"
+        try:
+            self.trade_window.synchronize_downstream(self.native_review.snapshot())
+        except (ValueError, OSError):
+            startup_outcomes["TRADE_WINDOW"] = "FAILED"
         self._next_swing_journal_reconciliation = 0.0
         self._swing_step33_reconciliation_failure: str | None = None
         self._swing_v2_reconciliation_failure: str | None = None
@@ -819,9 +867,15 @@ class KronosBrowserServer(ThreadingHTTPServer):
         self._swing_notification_lock = RLock()
         self._swing_notification_failure = None
         self.synchronize_swing_notifications()
+        # Freeze only after the constructor's required preparation completed.
+        self._startup_restoration_outcomes = tuple(sorted(startup_outcomes.items()))
         super().__init__(address, _BrowserHandler)
         if self.bulk_import is not None:
             self.bulk_import.start()
+
+    def startup_restoration_outcomes(self):
+        """Immutable in-process constructor results; no I/O or owner execution."""
+        return self._startup_restoration_outcomes
 
     def retain_answer_notice(self, code, market=None, instrument=None, *, confirmed_no_import=True,
                              validation_only=False, validation_passed=False,

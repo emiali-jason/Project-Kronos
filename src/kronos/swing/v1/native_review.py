@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from enum import StrEnum
 from hashlib import sha256
+import fcntl
 import json
 import math
 import os
@@ -53,6 +55,30 @@ DEFAULT_NATIVE_REVIEW_EVIDENCE_ROOT = (
     / "swing-v1"
     / "native-review"
 )
+
+
+NATIVE_PREPARATION_SCHEMA = "KRONOS-NATIVE-REVIEW-PREPARATION-V1"
+
+
+class NativeReviewRestorationStatus(StrEnum):
+    APPLICABILITY_NOT_ESTABLISHED = "APPLICABILITY_NOT_ESTABLISHED"
+    RESTORED = "RESTORED"
+    FAILED = "FAILED"
+
+
+@dataclass(frozen=True, slots=True)
+class NativeReviewRestorationResult:
+    native_run_identity: str | None
+    status: NativeReviewRestorationStatus
+    evidence: tuple[str, ...] = ()
+
+    @property
+    def succeeded(self) -> bool:
+        return self.status is not NativeReviewRestorationStatus.FAILED
+
+    @property
+    def applicable(self) -> bool:
+        return self.status is not NativeReviewRestorationStatus.APPLICABILITY_NOT_ESTABLISHED
 
 
 class NativeLayer2EvidenceState(StrEnum):
@@ -560,6 +586,152 @@ class NativeReviewEvidenceStore:
     def root(self) -> Path:
         return self._root
 
+    def requirement_path(self, run_identity: str) -> Path:
+        if not is_swing_analysis_run_id(run_identity):
+            raise ValueError("NATIVE_REVIEW_RUN_INVALID")
+        return self.root / "complete-runs" / f"{run_identity}.json"
+
+    def requirements_present(self, run_identity: str) -> bool:
+        path = self.requirement_path(run_identity)
+        for boundary in (self.root, path.parent, path):
+            if boundary.is_symlink():
+                raise ValueError("NATIVE_REVIEW_EVIDENCE_SYMLINK_INVALID")
+        if path.exists() and not path.is_file():
+            raise ValueError("NATIVE_REVIEW_EVIDENCE_FILE_INVALID")
+        return path.exists()
+
+    def _preparation_binding(self, native_run, facts):
+        requirements = build_native_review_requirements(native_run, facts)
+        if not requirements:
+            raise ValueError("NATIVE_REVIEW_PROBABLES_UNAVAILABLE")
+        binding = {
+            "schema": NATIVE_PREPARATION_SCHEMA,
+            "run_identity": native_run.run_identity,
+            "requirement_schema": NATIVE_REVIEW_SCHEMA,
+            "native_source_sha256": native_run.result_sha256,
+            "fact_source_identity": facts.provider_source_identity,
+            "requirement_identities": [item.requirement_sha256 for item in requirements],
+            "requirement_payload_sha256": _preparation_digest({
+                "schema": NATIVE_REVIEW_SCHEMA,
+                "run_identity": native_run.run_identity,
+                "requirements": [_primitive(item) for item in requirements],
+            }),
+        }
+        binding["preparation_identity"] = _preparation_digest(binding)
+        return binding
+
+    def preparation_authority(self, native_run, facts) -> str | None:
+        """Read exact authority without creating, repairing or backfilling records."""
+        run_id = native_run.run_identity
+        intent = self.root / "preparation-intents" / f"{run_id}.json"
+        directory = self.root / "preparation-witnesses" / run_id
+        for boundary in (self.root, intent.parent, intent, directory.parent, directory):
+            if boundary.is_symlink():
+                raise ValueError("NATIVE_REVIEW_EVIDENCE_SYMLINK_INVALID")
+        if intent.exists() and not intent.is_file():
+            raise ValueError("NATIVE_REVIEW_EVIDENCE_FILE_INVALID")
+        self.requirements_present(run_id)
+        paths = _native_evidence_paths(directory, "*.json")
+        if not intent.exists() and not paths:
+            return None
+        binding = self._preparation_binding(native_run, facts)
+        if not intent.exists() or _read(intent) != binding:
+            raise ValueError("NATIVE_PREPARATION_INTENT_INVALID")
+        if not paths:
+            return "INCOMPLETE"
+        if len(paths) != 1:
+            raise ValueError("NATIVE_PREPARATION_WITNESS_AMBIGUOUS")
+        witness = _read(paths[0])
+        try:
+            completed_at = datetime.fromisoformat(witness["completed_at"])
+            unsigned = {**binding, "completed_at": witness["completed_at"],
+                        "publication_identity": "NATIVE-PREPARATION-" + binding["preparation_identity"]}
+            expected = {**unsigned, "integrity_sha256": _preparation_digest(unsigned)}
+            if (not _aware(completed_at) or witness != expected
+                    or paths[0].name != expected["publication_identity"] + ".json"):
+                raise ValueError("NATIVE_PREPARATION_WITNESS_INVALID")
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError("NATIVE_PREPARATION_WITNESS_INVALID") from error
+        # Completion authority is inseparable from the exact durable requirement bytes.
+        self.load(native_run, facts)
+        if sha256(self.requirement_path(run_id).read_bytes()).hexdigest() != binding["requirement_payload_sha256"]:
+            raise ValueError("NATIVE_PREPARATION_REQUIREMENTS_INTEGRITY_INVALID")
+        return "WITNESSED"
+
+    @contextmanager
+    def preparation(self, native_run, facts, clock):
+        """Publish prospective completion only after all preparation work succeeds.
+
+        The immutable intent distinguishes an interrupted new preparation from a
+        historical requirement record. Restoration never resumes publication.
+        Existing unmarked requirements remain byte-identical and unwitnessed.
+        """
+        with self._lock:
+            self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
+            _sync_native_directory(self.root.parent)
+            with (self.root / ".preparation.lock").open("a+b") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                authority = self.preparation_authority(native_run, facts)
+                path = self.requirement_path(native_run.run_identity)
+                if authority is None and path.exists():
+                    self.load(native_run, facts)
+                    yield
+                    return
+                binding = self._preparation_binding(native_run, facts)
+                intent = self.root / "preparation-intents" / f"{native_run.run_identity}.json"
+                if authority is None:
+                    _atomic_json(intent, binding)
+                self.retain(build_native_review_requirements(native_run, facts))
+                self.load(native_run, facts)
+                yield
+                if authority == "WITNESSED":
+                    self.preparation_authority(native_run, facts)
+                    return
+                # A prior rename may have succeeded before its directory fsync
+                # failed. Retry must certify the retained intent and requirement
+                # themselves, not merely the subsequently created witness tree.
+                self.load(native_run, facts)
+                for retained_path in (intent, path):
+                    with retained_path.open("rb") as retained:
+                        os.fsync(retained.fileno())
+                    _sync_native_directory(retained_path.parent)
+                _sync_native_directory(self.root)
+                _sync_native_directory(self.root.parent)
+                # Completion time is sampled only after successful durability
+                # certification and snapshot validation, never from Analysis.
+                completed_at = clock()
+                if not _aware(completed_at):
+                    raise ValueError("NATIVE_REVIEW_CLOCK_INVALID")
+                self.load(native_run, facts)
+                unsigned = {**binding, "completed_at": completed_at.isoformat(),
+                            "publication_identity": "NATIVE-PREPARATION-" + binding["preparation_identity"]}
+                witness = {**unsigned, "integrity_sha256": _preparation_digest(unsigned)}
+                target = (self.root / "preparation-witnesses" / native_run.run_identity
+                          / (unsigned["publication_identity"] + ".json"))
+                try:
+                    _atomic_json(target, witness)
+                except OSError:
+                    # A transport error after rename is an uncertain outcome,
+                    # not proof of failure. Exact readback and directory sync
+                    # may establish that the same completion actually committed.
+                    try:
+                        if not target.is_file() or _read(target) != witness:
+                            raise
+                        for directory in (target.parent, target.parent.parent, self.root):
+                            _sync_native_directory(directory)
+                        self.preparation_authority(native_run, facts)
+                    except Exception:
+                        # This invocation has not acknowledged publication. Roll
+                        # back only its exact provisional bytes under the same
+                        # publication lock; never remove an earlier witness.
+                        if target.is_file() and _read(target) == witness:
+                            target.unlink()
+                            try:
+                                _sync_native_directory(target.parent)
+                            except OSError:
+                                pass
+                        raise
+
     def retain(self, requirements: tuple[NativeReviewRequirement, ...]) -> Path:
         if not requirements or any(type(item) is not NativeReviewRequirement for item in requirements):
             raise ValueError("NATIVE_REVIEW_REQUIREMENTS_INVALID")
@@ -833,7 +1005,55 @@ def _reference_result(
         raise ValueError("MCX_REFERENCE_RESULT_INVALID") from error
 
 
+def _native_evidence_paths(root: Path, pattern: str, *, boundary: Path | None = None) -> tuple[Path, ...]:
+    """Enumerate a governed namespace without glob's suppressed I/O errors."""
+    current = root
+    stop = root if boundary is None else boundary
+    if not root.is_relative_to(stop):
+        raise ValueError("NATIVE_REVIEW_EVIDENCE_NAMESPACE_INVALID")
+    while True:
+        if current.is_symlink():
+            raise ValueError("NATIVE_REVIEW_EVIDENCE_SYMLINK_INVALID")
+        if current == stop:
+            break
+        current = current.parent
+    try:
+        root.stat()
+    except FileNotFoundError:
+        return ()
+    values = []
+    def visit(directory):
+        for path in sorted(directory.iterdir()):
+            if path.is_symlink():
+                raise ValueError("NATIVE_REVIEW_EVIDENCE_SYMLINK_INVALID")
+            if path.is_dir():
+                visit(path)
+            elif not path.is_file():
+                raise ValueError("NATIVE_REVIEW_EVIDENCE_FILE_INVALID")
+            elif path.relative_to(root).match(pattern):
+                values.append(path)
+    visit(root)
+    return tuple(values)
+
+
+def _sync_native_directory(path: Path) -> None:
+    descriptor = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def _preparation_digest(value: object) -> str:
+    return sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
 def _atomic_json(path: Path, payload: dict[str, object]) -> None:
+    created = []
+    ancestor = path.parent
+    while not ancestor.exists():
+        created.append(ancestor)
+        ancestor = ancestor.parent
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     temporary = path.with_suffix(".tmp")
     data = json.dumps(payload, sort_keys=True, separators=(",", ":"))
@@ -843,6 +1063,9 @@ def _atomic_json(path: Path, payload: dict[str, object]) -> None:
         stream.flush()
         os.fsync(stream.fileno())
     temporary.replace(path)
+    _sync_native_directory(path.parent)
+    for directory in created:
+        _sync_native_directory(directory.parent)
 
 
 def _aware(value: object) -> bool:
@@ -857,6 +1080,9 @@ __all__ = [
     "DEFAULT_NATIVE_REVIEW_EVIDENCE_ROOT",
     "NATIVE_REVIEW_AUTHORITY",
     "NATIVE_REVIEW_SCHEMA",
+    "NATIVE_PREPARATION_SCHEMA",
+    "NativeReviewRestorationResult",
+    "NativeReviewRestorationStatus",
     "MCX_REFERENCE_AUTHORITY",
     "MCX_REFERENCE_MAPPINGS",
     "McxReferenceEvidenceState",

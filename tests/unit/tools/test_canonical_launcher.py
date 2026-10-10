@@ -844,7 +844,7 @@ def test_replacement_records_the_authorizing_predicate_before_handoff():
     source = SOURCE.read_text()
     main = source.split('int main(void) {', 1)[1]
     predicate = main.index('KRONOS_REPLACEMENT_PREDICATE=OLD_RUNTIME_CF55_STATUS_PAIR')
-    shutdown = main.index('request_graceful_shutdown(backend_pid, token, generation, replacement)')
+    shutdown = main.index('request_graceful_shutdown(backend_pid, token, generation, replacement || recovery)')
     assert predicate < shutdown
     assert 'KRONOS_REPLACEMENT_PREDICATE=CURRENT_RUNTIME_STATUS' in main
 
@@ -890,11 +890,11 @@ def test_revision_replacement_mode_preserves_ordinary_dock_reuse_contract():
     assert 'strcmp(mode, "GOVERNED_REPLACEMENT") == 0' in main
     assert 'KRONOS_REPLACEMENT_REVISION' in main
     assert (
-        'if (!bootstrap && !replacement && backend_is_reusable(control_path)) '
+        'if (!bootstrap && !replacement && !recovery && backend_is_reusable(control_path)) '
         'return open_workspace();'
     ) in main
     readiness = main.index('backend_replacement_readiness(')
-    shutdown = main.index('request_graceful_shutdown(backend_pid, token, generation, replacement)')
+    shutdown = main.index('request_graceful_shutdown(backend_pid, token, generation, replacement || recovery)')
     start = main.index('BackendStartResult start_result = start_backend(')
     assert readiness < shutdown < start
     assert main.count('request_graceful_shutdown(') == 1
@@ -939,7 +939,7 @@ def test_non_200_or_malformed_status_fails_closed(tmp_path, status, include_leng
 def test_shutdown_rejection_and_start_results_route_without_retry_or_kill():
     source = SOURCE.read_text()
     main = source.split('int main(void) {', 1)[1]
-    shutdown_call = main.index('request_graceful_shutdown(backend_pid, token, generation, replacement)')
+    shutdown_call = main.index('request_graceful_shutdown(backend_pid, token, generation, replacement || recovery)')
     stop_wait = main.index('wait_for_backend_stop(backend_pid)')
     start_call = main.index('BackendStartResult start_result = start_backend(')
     assert shutdown_call < stop_wait < start_call
@@ -951,7 +951,7 @@ def test_shutdown_rejection_and_start_results_route_without_retry_or_kill():
     assert main.count('open_workspace()') == 3
     assert main.index('case BACKEND_START_READY:') < main.rindex('open_workspace()')
     monitor = source.split('static BackendStartResult monitor_backend_start(', 1)[1]
-    monitor = monitor.split('static BackendStartResult start_backend(', 1)[0]
+    monitor = monitor.split('/* ADR-0061:', 1)[0]
     assert 'kill(' not in monitor
     assert 'fork(' not in monitor
     stop = source.split('static int wait_for_backend_stop(', 1)[1]
@@ -1059,7 +1059,7 @@ def test_v2_replacement_keeps_legacy_branch_separate_and_deadline_unchanged():
     source = SOURCE.read_text()
     main = source.split('int main(void) {', 1)[1]
     assert main.index('readiness == REPLACEMENT_REQUIRED_OLD_CF55') < main.index(
-        'request_graceful_shutdown(backend_pid, token, generation, replacement)')
+        'request_graceful_shutdown(backend_pid, token, generation, replacement || recovery)')
     assert main.index('wait_for_backend_stop(backend_pid)') < main.index(
         'verify_v2_handoff(repository, python, python_path,') < main.index(
         'BackendStartResult start_result = start_backend(')
@@ -1189,14 +1189,14 @@ def test_ready_runtime_is_reused_before_any_transition_or_start() -> None:
     qualification = main.index('qualify_source(repository, python)')
     lock = main.index('acquire_launcher_lock(repository)')
     reuse = main.index(
-        'if (!bootstrap && !replacement && backend_is_reusable(control_path)) '
+        'if (!bootstrap && !replacement && !recovery && backend_is_reusable(control_path)) '
         'return open_workspace();'
     )
     listener = main.index('int socket_connected = connect_backend();')
     start = main.index('BackendStartResult start_result = start_backend(')
     assert qualification < lock < reuse < listener < start
     assert (
-        'if (!bootstrap && !replacement) return show_existing_backend_unhealthy();'
+        'if (!bootstrap && !replacement && !recovery) return show_existing_backend_unhealthy();'
         in main
     )
     assert main.count('start_backend(') == 1
@@ -1283,3 +1283,625 @@ def test_historical_inode_acl_denies_execution_without_byte_or_mode_change(tmp_p
     assert exe.read_bytes() == original and exe.stat().st_mode == mode
     subprocess.run(['/bin/chmod', '-a#', '0', str(exe)], check=True)
     assert result(exe) == 0 and exe.read_bytes() == original
+
+
+# FAILED_ACTIVE recovery: source-proven owner-scope stop. These probes invoke
+# neither launcher main nor the live Browser, Provider, stores or runtime.
+def _failed_active_scope_probe_server(swing_failure):
+    from types import SimpleNamespace
+    maintenance = {"protocol": "KRONOS_MAINTENANCE_HANDOFF_V1", "state": "FAILED_ACTIVE", "active": True, "startup": "BLOCKED",
+                   "failure": "ACCEPTANCE_RESTORATION_NOT_ESTABLISHED",
+                   "generation": "a" * 64}
+    completed = []
+    governance = SimpleNamespace(
+        process=SimpleNamespace(pid=12985, loaded_revision="cbe496e31d466eb28b7b710ffe9231b4324b1137",
+                                source_state="CLEAN_COMMIT"),
+        maintenance_status=lambda: dict(maintenance),
+        complete_startup=completed.append)
+    server = SimpleNamespace(
+        connection_governance=governance,
+        trade_window=SimpleNamespace(paper_observation_projections=lambda: ()),
+        visual_v3_live=SimpleNamespace(restoration_error=swing_failure),
+        provider_runtime=SimpleNamespace(read_only_status=lambda: {
+            "capability_state": "ABSENT", "cleanup_state": "COMPLETE",
+            "owned_work_count": 0, "retained_lease_count": 0, "unresolved_cleanup_count": 0}),
+        swing_monitoring_hub=SimpleNamespace(active_session_count=0, status_document=lambda: {
+            "session_count": 0, "active_session_count": 0, "owner_count": 0,
+            "subscription_count": 0, "transport_cleanup": {"state": "COMPLETE"}}),
+        application=SimpleNamespace(snapshot=lambda: SimpleNamespace(
+            provider_state=SimpleNamespace(value="DISCONNECTED")),
+            connection_attempt_status=lambda: None),
+        request_capacity_status=lambda: {"active": 1})
+    shadow = SimpleNamespace(status=lambda: {
+        "failure": "SHADOW_RESTORATION_RUNTIME_INCOMPATIBLE",
+        "window": {"retained": True}, "runtime_accepted": False})
+    return server, shadow, completed
+
+
+def test_failed_active_scope_startup_masks_additional_swing_failure():
+    from kronos.browser.runtime_state import complete_startup
+    without, shadow, clean_results = _failed_active_scope_probe_server(None)
+    with_failure, shadow2, failed_results = _failed_active_scope_probe_server(
+        "VISUAL_V3_RESTORATION_UNAVAILABLE")
+    complete_startup(without, shadow)
+    complete_startup(with_failure, shadow2)
+    assert clean_results == failed_results == ["ACCEPTANCE_RESTORATION_NOT_ESTABLISHED"]
+    assert with_failure.visual_v3_live.restoration_error == "VISUAL_V3_RESTORATION_UNAVAILABLE"
+
+
+def test_failed_active_scope_runtime_projection_cannot_distinguish_swing_failure():
+    from kronos.browser.runtime_state import complete_startup, status_document
+    without, shadow, _ = _failed_active_scope_probe_server(None)
+    with_failure, shadow2, _ = _failed_active_scope_probe_server(
+        "VISUAL_V3_RESTORATION_UNAVAILABLE")
+    complete_startup(without, shadow)
+    complete_startup(with_failure, shadow2)
+    assert status_document(without) == status_document(with_failure)
+    assert "VISUAL_V3_RESTORATION_UNAVAILABLE" not in json.dumps(status_document(with_failure))
+
+
+def _failed_active_scope_documents():
+    server, shadow, _ = _failed_active_scope_probe_server(None)
+    from kronos.browser.runtime_state import complete_startup, status_document
+    complete_startup(server, shadow)
+    runtime = status_document(server)
+    runtime.update(
+        maintenance_claim="DRAINABLE",
+        maintenance_drain={"state": "OPEN", "generation": None, "failure": None,
+                           "owners": {"SERVER_PULSE": 1}},
+        intraday_wo11_work={"state": "IDLE", "continuity": "COMPLETE", "failure": None,
+                           "owned_workers": 0, "queued_items": 0},
+        intraday_wo17_work={"state": "IDLE", "continuity": "COMPLETE", "failure": None,
+                           "owned_workers": 0, "queued_items": 0},
+        analysis_work={"state": "IDLE", "owned_work_count": 0, "queued_jobs": 0},
+        analysis_execution={"state": "IDLE", "owned_workers": 0, "queued_jobs": 0,
+                            "cleanup_state": "COMPLETE", "failure": None, "pid": None},
+        housekeeping={"lifecycle_state": "IDLE", "last_failure": None,
+                      "shutdown_requested": False, "pass_active": False, "owned_workers": 0},
+        swing_bulk_import={"state": "IDLE", "batch_active": False})
+    return runtime, {"service": "KRONOS_BROWSER_V1", "runtime_ready": False, "provider": "DISCONNECTED", "maintenance": dict(runtime["maintenance"])}, {
+        "active_operation_identity": None, "current_failure": None, "live_shadow": {
+            "failure": "SHADOW_RESTORATION_RUNTIME_INCOMPATIBLE", "runtime_accepted": False,
+            "epoch_failure": None, "publication_hook_failure": None}}
+
+
+def test_failed_active_scope_c_admission_does_not_require_predecessor_health(tmp_path):
+    # R2 CA supersession: masked predecessor health is not admission authority.
+    # This probe proves only that fact; durable continuity is separately required.
+    runtime, status, intraday = _failed_active_scope_documents()
+    documents = [json.dumps(item) for item in (runtime, status, intraday)]
+    literals = [json.dumps(item) for item in documents]
+    source = SOURCE.read_text().replace('int main(void) {', 'int unused_application_main(void) {')
+    source += "\nint main(void) { RecoveryAuthorization a={0}; a.pid=12985; "
+    source += 'strcpy(a.predecessor,RECOVERY_PREDECESSOR); memset(a.maintenance,\'a\',64); '
+    source += f'int admitted=recovery_runtime_matches(&a,{literals[0]},{literals[1]},{literals[2]}); '
+    source += 'printf("%d\\n",admitted); return 0; }\n'
+    executable = tmp_path / 'recovery-scope-probe'
+    compile_source(source, executable)
+    result = subprocess.run([str(executable)], check=True, text=True, capture_output=True)
+    assert result.stdout.strip() == "1"
+
+
+@pytest.mark.parametrize("domain", ["WO11", "WO17"])
+def test_failed_active_r4_successor_startup_rejects_required_domain_failure(tmp_path, monkeypatch, domain):
+    """Scope blocker: real domain owner reports failure, shared startup misses it.
+
+    Disposable stores and fake server only. This is not a production restoration
+    or a complete canonical-server acceptance test.
+    """
+    from types import SimpleNamespace
+    from kronos.browser.runtime_state import complete_startup, status_document
+    from kronos.common.connection_governance import ConnectionProcess, ConnectionAuditStore, ConnectionGovernance
+    from kronos.application.intraday_lifecycle import IntradayLifecycleApplication
+    from kronos.intraday.wo11_lifecycle_store import LifecycleStore
+    from kronos.intraday.wo17_persistence import Wo17Store
+    from kronos.application.intraday_wo17 import IntradayWo17RestorationService
+
+    healthy, shadow, healthy_results = _failed_active_scope_probe_server(None)
+    failed, _, failed_results = _failed_active_scope_probe_server(None)
+    # Simulate an accepted/restored successor WO06H; no record is retained.
+    shadow.status = lambda: {"failure": None, "window": None, "runtime_accepted": True}
+    def read_failed():
+        raise OSError("isolated restoration read failure")
+    if domain == "WO11":
+        store = LifecycleStore(tmp_path / "wo11")
+        monkeypatch.setattr(store, "restore", read_failed)
+        owner = IntradayLifecycleApplication(futures=None, store=store, clock=lambda: None,
+            session_source=None, timing_source=None, operational_guard=lambda: None)
+        assert owner.last_failure == "WO11_RESTORATION_FAILED"
+        assert owner.work_status()["failure"] is None
+        assert owner.work_status()["continuity"] == "COMPLETE"
+        failed.intraday_lifecycle = owner
+    else:
+        store = Wo17Store(tmp_path / "wo17")
+        monkeypatch.setattr(store, "restore_all", read_failed)
+        restored = IntradayWo17RestorationService(store=store).restore()
+        assert restored.state.value == "CORRUPT"
+        assert restored.failure_reason == "WO17_RESTORATION_FAILED"
+        failed.intraday_runtime = SimpleNamespace(wo17_restored=restored)
+    process = ConnectionProcess(pid=4242, startup_at="2026-10-10T12:00:00+05:30",
+        runtime_identity="b" * 64, loaded_revision="f927747e9a8f9b656026fbab7a179fbac5eef8bf",
+        source_state="CLEAN_COMMIT")
+    for name, server in (("healthy", healthy), ("failed", failed)):
+        server.connection_governance = ConnectionGovernance(process,
+            ConnectionAuditStore(tmp_path / name), maintenance_identity="a" * 64,
+            clock=lambda: datetime(2026, 10, 10, tzinfo=UTC))
+        wo11 = getattr(server, "intraday_lifecycle", SimpleNamespace(last_failure=None))
+        wo17 = dict(restoration_state="NOT_YET_RUN", failure_stage=None, failure_reason=None, current_positions=[])
+        if name == "failed" and domain == "WO17":
+            wo17.update(restoration_state=restored.state.value, failure_stage=restored.failure_stage,
+                        failure_reason=restored.failure_reason)
+        complete_startup(server, shadow, wo11=wo11, wo17=wo17,
+            swing_outcomes=tuple((key, "SUCCESS") for key in
+                ("LEGACY_MTF", "LEGACY_NATIVE", "NATIVE_REVIEW", "V3_RECORDS", "V3_RESTORE", "TRADE_WINDOW")))
+        assert server.connection_governance.startup_state == ("READY" if name == "healthy" else "BLOCKED")
+        assert server.connection_governance.maintenance_active == (name == "failed")
+        assert len(list((tmp_path / name / "maintenance").glob("*-startup.json"))) == (1 if name == "healthy" else 0)
+
+
+@pytest.mark.parametrize('raw,expected', [
+    ('p12985\nf7\nn127.0.0.1:8947\n', 1),
+    ('p12985\nf17\nn127.0.0.1:8947\n', 1),
+    ('p12985\nn127.0.0.1:8947\n', 0),
+    ('p12985\nf\nn127.0.0.1:8947\n', 0),
+    ('p12986\nf7\nn127.0.0.1:8947\n', 0),
+    ('p12985\nf7\nn*:8947\n', 0),
+    ('p12985\nf7\nn127.0.0.1:8947\np42\nf8\nn127.0.0.1:8947\n', 0),
+    ('p12985\nf7\nn127.0.0.1:8947\nf8\nn127.0.0.1:8947\n', 0),
+])
+def test_r4_listener_requires_one_exact_process_file_address(tmp_path, raw, expected):
+    source = SOURCE.read_text().replace('int main(void) {', 'int unused_application_main(void) {')
+    source += '\nint main(void) { printf("%d\\n", recovery_listener_record(' + json.dumps(raw) + ',12985)); return 0; }\n'
+    executable = tmp_path/'listener-probe'
+    compile_source(source, executable)
+    assert subprocess.check_output([str(executable)], text=True).strip() == str(expected)
+
+
+def test_r4_authorization_reservation_is_durable_readback_and_one_use(tmp_path):
+    root = tmp_path.resolve()/'authorization'
+    root.mkdir(mode=0o700)
+    auth = root/'authorization.json'
+    auth.write_text('{}')
+    auth.chmod(0o600)
+    source = SOURCE.read_text().replace('int main(void) {', 'int unused_application_main(void) {')
+    source += '\nint main(void) { RecoveryAuthorization a={0};'
+    source += f'strcpy(a.root,{json.dumps(str(root))});strcpy(a.file,{json.dumps(str(auth))});'
+    source += '''memset(a.attempt,'a',64); a.pid=12985; a.valid_from=RECOVERY_START_US;
+    a.valid_until=RECOVERY_END_US; char generation[65]={0};memset(generation,'b',64);
+    if(!recovery_file_digest(a.file,a.digest,1))return 2;
+    int first=recovery_reserve(&a,generation,RECOVERY_START_US+1);
+    int replay=recovery_reserve(&a,generation,RECOVERY_START_US+2);
+    printf("%d %d\\n",first,replay);return 0;}'''
+    executable=tmp_path/'reservation-probe'
+    compile_source(source,executable)
+    assert subprocess.check_output([str(executable)],text=True).strip() == '1 0'
+    retained = root/('a'*64+'.attempt.json')
+    value=json.loads(retained.read_text())
+    assert value['generation']=='b'*64 and value['predecessor_pid']==12985
+    assert retained.stat().st_mode & 0o777 == 0o600
+
+
+def test_r4_rollback_is_separate_canonical_resolved_bundle(tmp_path):
+    installed=tmp_path.resolve()/'installed.app'; installed.mkdir()
+    rollback=tmp_path.resolve()/'rollback.app'; rollback.mkdir()
+    alias=tmp_path.resolve()/'alias.app'; alias.symlink_to(installed,target_is_directory=True)
+    source=SOURCE.read_text().replace('int main(void) {','int unused_application_main(void) {')
+    source+='\nint main(void) {'
+    for path in (rollback,installed,alias):
+        source+='printf("%d ",recovery_separate_bundle('+json.dumps(str(path))+','+json.dumps(str(installed))+'));'
+    source+='return 0;}'
+    executable=tmp_path/'rollback-probe';compile_source(source,executable)
+    assert subprocess.check_output([str(executable)],text=True).strip()=='1 0 0'
+
+
+@pytest.fixture(scope="module")
+def recovery_documents_probe(tmp_path_factory):
+    root = tmp_path_factory.mktemp("recovery-documents")
+    source = SOURCE.read_text().replace('int main(void) {', 'int unused_application_main(void) {')
+    source += r'''
+int main(int argc,char **argv) {
+    if(argc!=4)return 2;
+    char runtime[BACKEND_STATUS_RESPONSE_BYTES],status[BACKEND_STATUS_RESPONSE_BYTES],intraday[BACKEND_STATUS_RESPONSE_BYTES];
+    if(!recovery_read_file(argv[1],runtime,sizeof(runtime),0) ||
+       !recovery_read_file(argv[2],status,sizeof(status),0) ||
+       !recovery_read_file(argv[3],intraday,sizeof(intraday),0))return 3;
+    RecoveryAuthorization a={0};a.pid=12985;strcpy(a.predecessor,RECOVERY_PREDECESSOR);memset(a.maintenance,'a',64);
+    printf("%d\n",recovery_runtime_matches(&a,runtime,status,intraday));return 0;
+}
+'''
+    executable = root / "probe"
+    compile_source(source, executable)
+    return executable
+
+
+@pytest.mark.parametrize("fault", [None, "status_generation", "status_failure", "missing_status_maintenance",
+    "status_service", "runtime_pid", "runtime_revision", "wrong_incident", "claimed", "fenced",
+    "unknown_owner", "provider_connected", "provider_lease", "broker_operation", "wo11_incomplete",
+    "analysis_running", "monitoring", "housekeeping", "bulk", "shadow_failure"])
+def test_recovery_cross_documents_and_actual_owners(recovery_documents_probe, tmp_path, fault):
+    runtime, status, intraday = _failed_active_scope_documents()
+    if fault == "status_generation": status["maintenance"]["generation"] = "b" * 64
+    elif fault == "status_failure": status["maintenance"]["failure"] = "OTHER"
+    elif fault == "missing_status_maintenance": del status["maintenance"]
+    elif fault == "status_service": status["service"] = "OTHER"
+    elif fault == "runtime_pid": runtime["process"]["pid"] += 1
+    elif fault == "runtime_revision": runtime["process"]["revision"] = "b" * 40
+    elif fault == "wrong_incident": runtime["maintenance"]["failure"] = "OTHER"
+    elif fault == "claimed": runtime["maintenance_drain"]["generation"] = "b" * 64
+    elif fault == "fenced": runtime["maintenance_drain"]["state"] = "FENCED"
+    elif fault == "unknown_owner": runtime["maintenance_drain"]["owners"]["UNKNOWN"] = 1
+    elif fault == "provider_connected": status["provider"] = "CONNECTED"
+    elif fault == "provider_lease": runtime["provider_runtime"]["retained_lease_count"] = 1
+    elif fault == "broker_operation": intraday["active_operation_identity"] = "ACTIVE"
+    elif fault == "wo11_incomplete": runtime["intraday_wo11_work"]["continuity"] = "INCOMPLETE"
+    elif fault == "analysis_running": runtime["analysis_execution"]["owned_workers"] = 1
+    elif fault == "monitoring": runtime["monitoring"]["session_count"] = 1
+    elif fault == "housekeeping": runtime["housekeeping"]["pass_active"] = True
+    elif fault == "bulk": runtime["swing_bulk_import"]["batch_active"] = True
+    elif fault == "shadow_failure": intraday["live_shadow"]["failure"] = "OTHER"
+    paths = []
+    for index, document in enumerate((runtime, status, intraday)):
+        path = tmp_path.resolve() / str(index)
+        path.write_text(json.dumps(document))
+        paths.append(str(path))
+    assert subprocess.check_output([str(recovery_documents_probe), *paths], text=True).strip() == ("1" if fault is None else "0")
+
+
+@pytest.mark.parametrize("owner", ["WO11", "WO17", "HOUSEKEEPING"])
+@pytest.mark.parametrize("fault", [None, "unaccounted", "undercounted", "failure", "generation_missing"])
+def test_recovery_admits_known_counted_workers_until_final_drain(recovery_documents_probe, tmp_path, owner, fault):
+    runtime, status, intraday = _failed_active_scope_documents()
+    runtime["maintenance_drain"]["owners"][owner] = 1
+    if owner == "HOUSEKEEPING":
+        work = runtime["housekeeping"]
+        work.update(lifecycle_state="RUNNING", owned_workers=1, worker_generation=4, pass_active=True)
+        generation, failure = "worker_generation", "last_failure"
+    else:
+        work = runtime["intraday_" + owner.lower() + "_work"]
+        work.update(state="RUNNING", owned_workers=1, queued_items=3, generation=4)
+        generation, failure = "generation", "failure"
+    if fault == "unaccounted": del runtime["maintenance_drain"]["owners"][owner]
+    elif fault == "undercounted": work["owned_workers"] = 2
+    elif fault == "failure": work[failure] = "FAILED"
+    elif fault == "generation_missing": del work[generation]
+    paths = []
+    for index, document in enumerate((runtime, status, intraday)):
+        path = tmp_path.resolve() / str(index); path.write_text(json.dumps(document)); paths.append(str(path))
+    assert subprocess.check_output([str(recovery_documents_probe), *paths], text=True).strip() == ("1" if fault is None else "0")
+
+
+@pytest.fixture(scope="module")
+def recovery_authorization_probe(tmp_path_factory):
+    import hashlib
+    root = tmp_path_factory.mktemp("authorization-binding").resolve()
+    installed = root / "installed.app"; installed.mkdir()
+    constants = {}
+    for name in ("relation", "diagnosis", "sponsor"):
+        path = root / name
+        path.write_text(name)
+        constants[name] = (str(path), hashlib.sha256(path.read_bytes()).hexdigest())
+    source = SOURCE.read_text().replace('int main(void) {', 'int unused_application_main(void) {')
+    source = source.replace('static const char *canonical_bundle = "/Applications/KRONOS.app";',
+        'static const char *canonical_bundle = ' + json.dumps(str(installed)) + ';')
+    for name in ("relation", "diagnosis"):
+        import re
+        source = re.sub(r'#define RECOVERY_' + name.upper() + r' "[^"]+"',
+            '#define RECOVERY_' + name.upper() + ' "' + constants[name][1] + '"', source)
+    source += r'''
+int main(int argc,char **argv) {
+    if(argc!=5)return 2;
+    RecoveryAuthorization a={0};
+    printf("%d\n",recovery_load_authorization(argv[1],argv[2],argv[3],12985,argv[4],RECOVERY_START_US+1,&a));return 0;
+}
+'''
+    executable = root / "probe"; compile_source(source, executable)
+    return executable, installed, constants
+
+
+@pytest.mark.parametrize("fault", [None, "missing", "state", "class", "attempt", "pid", "predecessor",
+    "successor", "control", "capability", "relation", "diagnosis", "sponsor", "window", "expiry",
+    "future", "same_rollback", "schema", "unknown", "duplicate"])
+def test_recovery_authorization_exact_bindings(recovery_authorization_probe, tmp_path, fault):
+    import hashlib
+    executable, installed, constants = recovery_authorization_probe
+    root = tmp_path.resolve(); root.chmod(0o700)
+    control = root / "control"; control.write_text("KRONOS_BROWSER_BACKEND_CONTROL_V1\n12985\n" + "d" * 64 + "\n"); control.chmod(0o600)
+    rollback = root / "rollback.app"; rollback.mkdir()
+    document = dict(schema="KRONOS-FAILED-ACTIVE-RECOVERY-AUTHORIZATION/1.0.0",
+        recovery_class="FAILED_ACTIVE_RECOVERY_REPLACEMENT", state="SPONSOR_APPROVED", attempt_identity="a" * 64,
+        sponsor_authorization_reference="EXACT-DISPOSABLE-TEST", sponsor_authorization_path=constants["sponsor"][0],
+        sponsor_authorization_sha256=constants["sponsor"][1], predecessor_pid=12985,
+        predecessor_revision="cbe496e31d466eb28b7b710ffe9231b4324b1137", successor_revision="b" * 40,
+        expected_successor_capability="WO06H-CAPABILITY-9104752f2f4028b169cd5bcc249477024eb67b1ab2351a30415e40e5fa7e6e40",
+        compatibility_relation_sha256=constants["relation"][1], diagnosis_sha256=constants["diagnosis"][1],
+        window_start="2026-09-12T07:50:33.006722+05:30", window_end="2026-10-12T07:50:33.006722+05:30",
+        predecessor_maintenance_identity="a" * 64, private_control_sha256=hashlib.sha256(control.read_bytes()).hexdigest(),
+        installed_package_identity="b" * 64, rollback_bundle=str(rollback), rollback_package_identity="c" * 64,
+        relation_path=constants["relation"][0], diagnosis_path=constants["diagnosis"][0],
+        valid_from_us=1789179633006722, valid_until_us=1791771633006722)
+    changes = {"state": ("state", "PENDING"), "class": ("recovery_class", "OTHER"), "attempt": ("attempt_identity", "b" * 64),
+        "pid": ("predecessor_pid", 12986), "predecessor": ("predecessor_revision", "0" * 40), "successor": ("successor_revision", "0" * 40),
+        "control": ("private_control_sha256", "0" * 64), "capability": ("expected_successor_capability", "WRONG"),
+        "relation": ("compatibility_relation_sha256", "0" * 64), "diagnosis": ("diagnosis_sha256", "0" * 64),
+        "sponsor": ("sponsor_authorization_sha256", "0" * 64), "window": ("window_end", "2027-10-12T07:50:33.006722+05:30"),
+        "expiry": ("valid_until_us", 1789179633006723), "future": ("valid_from_us", 1789179633006724),
+        "same_rollback": ("rollback_bundle", str(installed)), "schema": ("schema", "WRONG"), "unknown": ("unknown", True)}
+    if fault in changes: document[changes[fault][0]] = changes[fault][1]
+    path = root / ("a" * 64 + ".authorization.json")
+    if fault != "missing":
+        raw = json.dumps(document)
+        if fault == "duplicate": raw = raw[:-1] + ',"state":"SPONSOR_APPROVED"}'
+        path.write_text(raw); path.chmod(0o600)
+    result = subprocess.check_output([str(executable), str(root), "a" * 64, str(control), "b" * 40], text=True)
+    assert result.strip() == ("1" if fault is None else "0")
+
+
+def test_recovery_helper_timeout_and_explicit_import_path(tmp_path):
+    source = SOURCE.read_text().replace('int main(void) {', 'int unused_application_main(void) {')
+    source += r'''
+int main(int argc,char **argv) {
+    if(argc!=3)return 2;
+    char output[PATH_MAX*2+2];
+    char *path_args[]={argv[2],"-c","import os; print(os.environ['PYTHONPATH'])",NULL};
+    if(!recovery_run_helper(argv[1],argv[2],path_args,NULL,output,sizeof(output),0))return 3;
+    printf("%s",output);
+    struct timespec before,deadline,after;clock_gettime(CLOCK_MONOTONIC,&before);deadline=before;
+    deadline.tv_nsec+=150000000;if(deadline.tv_nsec>=1000000000){deadline.tv_sec++;deadline.tv_nsec-=1000000000;}
+    recovery_io_deadline=&deadline;
+    char *stall_args[]={argv[2],"-c","import time; time.sleep(1); print('TOO LATE')",NULL};
+    int accepted=recovery_run_helper(argv[1],argv[2],stall_args,NULL,output,sizeof(output),0);
+    clock_gettime(CLOCK_MONOTONIC,&after);recovery_io_deadline=NULL;
+    double elapsed=(after.tv_sec-before.tv_sec)+(after.tv_nsec-before.tv_nsec)/1000000000.0;
+    printf("%d %.3f\n",accepted,elapsed);
+    /* Reap this read-only fixture helper after measuring timeout behavior. */
+    while(waitpid(-1,NULL,0)<0&&errno==EINTR){}return 0;
+}
+'''
+    binary = tmp_path / "helper-timeout"; compile_source(source, binary)
+    result = subprocess.run([str(binary), str(tmp_path), sys.executable], check=True, capture_output=True, text=True, timeout=5)
+    path, measurement = result.stdout.splitlines()
+    assert path == f"{tmp_path}/src:{tmp_path}"
+    accepted, elapsed = measurement.split()
+    assert accepted == "0" and float(elapsed) < .75
+
+
+def test_recovery_http_stall_cannot_extend_deadline(tmp_path):
+    source = SOURCE.read_text().replace('int main(void) {', 'int unused_application_main(void) {')
+    source += r'''
+int main(void) {
+    int sockets[2];if(socketpair(AF_UNIX,SOCK_STREAM,0,sockets)!=0)return 2;
+    struct timespec before,deadline,after;clock_gettime(CLOCK_MONOTONIC,&before);deadline=before;
+    deadline.tv_nsec+=150000000;if(deadline.tv_nsec>=1000000000){deadline.tv_sec++;deadline.tv_nsec-=1000000000;}
+    recovery_io_deadline=&deadline;
+    char response[1024];int accepted=read_response(sockets[0],response,sizeof(response));
+    clock_gettime(CLOCK_MONOTONIC,&after);recovery_io_deadline=NULL;
+    close(sockets[0]);close(sockets[1]);
+    printf("%d %.3f\n",accepted,(after.tv_sec-before.tv_sec)+(after.tv_nsec-before.tv_nsec)/1000000000.0);return 0;
+}
+'''
+    binary = tmp_path / "http-timeout"; compile_source(source, binary)
+    result = subprocess.run([str(binary)], check=True, capture_output=True, text=True, timeout=3)
+    accepted, elapsed = result.stdout.split()
+    assert accepted == "-1" and float(elapsed) < .75
+
+
+@pytest.mark.parametrize("fault", ["generation", "pid", "authorization", "successor", "time", "removed", "corrupt"])
+def test_reservation_recheck_detects_changed_or_ambiguous_attempt(tmp_path, fault):
+    root = tmp_path.resolve() / "authorization"; root.mkdir(mode=0o700)
+    auth = root / "authorization.json"; auth.write_text("{}"); auth.chmod(0o600)
+    source = SOURCE.read_text().replace('int main(void) {', 'int unused_application_main(void) {')
+    source += '\nint main(void) { RecoveryAuthorization a={0};'
+    source += f'strcpy(a.root,{json.dumps(str(root))});strcpy(a.file,{json.dumps(str(auth))});'
+    source += r'''
+    memset(a.attempt,'a',64);a.pid=12985;a.valid_from=RECOVERY_START_US;a.valid_until=RECOVERY_END_US;
+    char generation[65]={0};memset(generation,'b',64);
+    if(!recovery_file_digest(a.file,a.digest,1) || !recovery_reserve(&a,generation,RECOVERY_START_US+1))return 2;
+    if(!recovery_attempt_matches(&a,generation))return 3;
+    '''
+    changes = {"generation": "generation[0]='c';", "pid": "a.pid++;", "authorization": "a.digest[0]=a.digest[0]=='a'?'b':'a';",
+        "successor": "strcpy(a.successor,\"changed\");", "time": "a.reserved_at++;"}
+    if fault in changes: source += changes[fault]
+    else:
+        path = root / ("a" * 64 + ".attempt.json")
+        if fault == "removed": source += 'unlink(' + json.dumps(str(path)) + ');'
+        else: source += 'FILE *f=fopen(' + json.dumps(str(path)) + ',"w");if(!f)return 4;fputs("{}",f);fclose(f);'
+    source += 'printf("%d\\n",recovery_attempt_matches(&a,generation));return 0;}'
+    binary = tmp_path / "reservation-recheck"; compile_source(source, binary)
+    assert subprocess.check_output([str(binary)], text=True).strip() == "0"
+
+
+@pytest.fixture(scope="module")
+def recovery_orchestration_probe(tmp_path_factory):
+    root = tmp_path_factory.mktemp("recovery-orchestration")
+    original = SOURCE.read_text()
+    source = original.replace('int main(void) {', 'int unused_application_main(void) {')
+    source += r'''
+static const char *fault;
+static int calls_assess=0,calls_continuity=0,calls_binding=0,calls_verify=0,calls_package=0;
+static int shutdowns=0,starts=0,reservations=0;
+static int step(const char *name,int result) {printf("%s\n",name);return fault&&strcmp(fault,name)==0?0:result;}
+static int fake_control(pid_t *pid,char *token) {*pid=12985;memset(token,'d',64);token[64]=0;return step("control",1);}
+static int fake_authority(RecoveryAuthorization *a) {
+    memset(a,0,sizeof(*a));a->pid=12985;strcpy(a->predecessor,RECOVERY_PREDECESSOR);
+    memset(a->package,'b',64);memset(a->rollback_identity,'c',64);strcpy(a->rollback,"/disposable/rollback.app");
+    snprintf(a->relation,sizeof(a->relation),"%s/Library/Application Support/KRONOS/evidence/intraday-v1/live-shadow-v1/epochs-v1/WO06H-SUCCESSOR_COMPATIBILITY-4f6aac6c3a9f59fe2e19b788fb6266fec1a239358e71f2abc9f9c9ac4c0731ef.json",getenv("HOME"));
+    a->valid_from=RECOVERY_START_US;a->valid_until=RECOVERY_END_US;
+    return step("authorization",1);
+}
+static int fake_package(char *out) {calls_package++;memset(out,calls_package==1?'b':'c',64);out[64]=0;return step(calls_package==1?"installed":"rollback",1);}
+static int fake_assess(void) {return step(++calls_assess==1?"assess_initial":"assess_final",1);}
+static int fake_continuity(void) {return step(++calls_continuity==1?"continuity_before":"continuity_after",1);}
+static int fake_binding(void) {return step(++calls_binding==1?"bindings_before":"bindings_after",1);}
+static int fake_verify(void) {return step(++calls_verify==1?"handoff_initial":"handoff_final",1);}
+static int fake_reserve(void) {reservations++;return step("reserve",1);}
+static int fake_shutdown(void) {shutdowns++;return step("shutdown",1);}
+static int fake_kill(void) {errno=ESRCH;return -1;}
+static BackendStartResult fake_start(void) {
+    starts++;step("start",1);
+    if(!strcmp(fault,"child_exit"))return BACKEND_START_CHILD_EXITED;
+    if(!strcmp(fault,"timeout"))return BACKEND_START_READY_TIMEOUT;
+    if(!strcmp(fault,"internal"))return BACKEND_START_INTERNAL_FAILURE;
+    return BACKEND_START_READY;
+}
+#define canonical_operational_image() step("canonical",1)
+#define discover_repository(home,repository) (strcpy((repository),(home)),1)
+#define access(path,mode) 0
+#define qualify_source(repository,python) step("source",1)
+#define repository_revision_matches(repository,revision) step("target",1)
+#define acquire_launcher_lock(repository) 1
+#define recovery_control_record(path,pid,token) fake_control(pid,token)
+#define recovery_load_authorization(root,attempt,control,pid,target,now,a) fake_authority(a)
+#define recovery_package_identity(repository,python,bundle,out) fake_package(out)
+#define recovery_assess(a) fake_assess()
+#define connect_backend() open("/dev/null",O_RDONLY)
+#define recovery_continuity(repository,python,home,generation) fake_continuity()
+#define recovery_bindings_match(a,repository,python,proof) fake_binding()
+#define recovery_reserve(a,generation,now) fake_reserve()
+#define request_graceful_shutdown(pid,token,generation,v2) fake_shutdown()
+#define wait_for_backend_stop(pid) step("exit",1)
+#define verify_v2_handoff(repository,python,path,control,generation,pid,revision,proof) fake_verify()
+#define recovery_attempt_matches(a,generation) step("attempt_readback",1)
+#define kill(pid,signal) fake_kill()
+#define recovery_listener_scan(pid,absent) step("listener_absent",1)
+#define recovery_now_us() (RECOVERY_START_US+1)
+#define start_backend(repository,python,entry,path,pid,token,generation,revision) fake_start()
+#define open_workspace() (step("open",1),0)
+#define show_restart_blocked() (step("blocked",1),1)
+#define show_alert(title,message) 1
+#define show_replacement_child_exited() 1
+#define show_replacement_ready_timeout() 1
+#define show_replacement_internal_failure() 1
+'''
+    # Run the actual main control flow with only external effects replaced. The
+    # unmodified compiled main above keeps all actual production helpers checked.
+    source += original.split('int main(void) {', 1)[1].join(['int exercise_main(void) {', ''])
+    source += r'''
+int main(int argc,char **argv) {
+    if(argc!=2)return 2;fault=argv[1];
+    setenv("KRONOS_LAUNCH_MODE",RECOVERY_CLASS,1);
+    setenv("KRONOS_RECOVERY_ATTEMPT","aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",1);
+    setenv("KRONOS_REPLACEMENT_REVISION","bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",1);
+    int result=exercise_main();printf("COUNTS %d %d %d %d\n",result,reservations,shutdowns,starts);return 0;
+}
+'''
+    executable = root / "probe"; compile_source(source, executable)
+    return executable
+
+
+@pytest.mark.parametrize("fault", ["none", "authorization", "installed", "rollback", "assess_initial", "continuity_before",
+    "assess_final", "bindings_before", "reserve", "shutdown", "exit", "handoff_initial", "continuity_after",
+    "bindings_after", "attempt_readback", "handoff_final", "listener_absent", "child_exit", "timeout", "internal"])
+def test_actual_recovery_main_orders_one_use_drain_and_one_successor(recovery_orchestration_probe, fault):
+    lines = subprocess.check_output([str(recovery_orchestration_probe), fault], text=True).splitlines()
+    result, reservations, shutdowns, starts = map(int, lines[-1].split()[1:])
+    assert starts <= 1 and shutdowns <= 1 and reservations <= 1
+    if fault == "none":
+        assert (result, reservations, shutdowns, starts) == (0, 1, 1, 1)
+        assert lines.index("continuity_before") < lines.index("reserve") < lines.index("shutdown") < lines.index("exit")
+        assert lines.index("exit") < lines.index("handoff_initial") < lines.index("continuity_after") < lines.index("attempt_readback")
+        assert lines.index("handoff_final") < lines.index("listener_absent") < lines.index("start") < lines.index("open")
+    else:
+        assert result == 1 and "open" not in lines
+        assert starts == (1 if fault in ("child_exit", "timeout", "internal") else 0)
+        if fault in ("authorization", "installed", "rollback", "assess_initial", "continuity_before", "assess_final", "bindings_before", "reserve"):
+            assert shutdowns == 0
+
+
+@pytest.fixture(scope="module")
+def recovery_canonical_relation_probe(tmp_path_factory):
+    """Exercise the production relation constant without a launcher invocation."""
+    import hashlib
+    import re
+    root = tmp_path_factory.mktemp("canonical-relation-binding").resolve()
+    installed = root / "installed.app"
+    installed.mkdir()
+    diagnosis = root / "diagnosis"
+    diagnosis.write_text("disposable diagnosis")
+    diagnosis_hash = hashlib.sha256(diagnosis.read_bytes()).hexdigest()
+    source = SOURCE.read_text().replace('int main(void) {', 'int unused_application_main(void) {')
+    source = source.replace('static const char *canonical_bundle = "/Applications/KRONOS.app";',
+        'static const char *canonical_bundle = ' + json.dumps(str(installed)) + ';')
+    source = re.sub(r'#define RECOVERY_DIAGNOSIS "[^"]+"',
+        '#define RECOVERY_DIAGNOSIS "' + diagnosis_hash + '"', source)
+    # RECOVERY_RELATION is deliberately not substituted: this tests the actual
+    # production persisted-byte binding, not a fixture-selected hash.
+    source += r'''
+int main(int argc,char **argv) {
+    if(argc!=5)return 2;
+    RecoveryAuthorization a={0};
+    printf("%d\n",recovery_load_authorization(argv[1],argv[2],argv[3],12985,argv[4],RECOVERY_START_US+1,&a));return 0;
+}
+'''
+    executable = root / "probe"
+    compile_source(source, executable)
+    return executable, diagnosis, diagnosis_hash
+
+
+@pytest.mark.parametrize("representation,claimed_hash,accepted", [
+    ("canonical", "canonical", True),
+    ("review", "review", False),
+    ("review", "canonical", False),
+    ("canonical", "review", False),
+    ("other", "other", False),
+    ("other", "canonical", False),
+    ("mutated", "canonical", False),
+])
+def test_recovery_requires_exact_canonical_relation_bytes(
+        recovery_canonical_relation_probe, tmp_path, representation, claimed_hash, accepted):
+    import hashlib
+    from kronos.intraday.population_measurement import canonical
+    executable, diagnosis, diagnosis_hash = recovery_canonical_relation_probe
+    review_hash = "e5d63954815ffa526390e1d5d0e668a8c490371ead305c85a14b43d6c300c58e"
+    persisted_hash = "707ca654076df91af1935d082a569d8d8c0335f52a08d63a8047ea1a94e4e48b"
+    review = (ROOT / "tests/fixtures/intraday/wo06h_r5_relation_binding/FINAL-DIRECT-SUCCESSOR-RELATION.json").read_bytes()
+    value = json.loads(review)
+    persisted = canonical(value)
+    assert hashlib.sha256(review).hexdigest() == review_hash
+    assert hashlib.sha256(persisted).hexdigest() == persisted_hash
+    if representation == "mutated":
+        value["body"]["direction"] = "TARGET_TO_SOURCE"
+    raw = {"canonical": persisted, "review": review, "other": b"other relation", "mutated": canonical(value)}[representation]
+    root = tmp_path.resolve()
+    root.chmod(0o700)
+    relation = root / "relation.json"
+    relation.write_bytes(raw)
+    sponsor = root / "sponsor"
+    sponsor.write_text("disposable Sponsor authorization")
+    control = root / "control"
+    control.write_text("KRONOS_BROWSER_BACKEND_CONTROL_V1\n12985\n" + "d" * 64 + "\n")
+    control.chmod(0o600)
+    rollback = root / "rollback.app"
+    rollback.mkdir()
+    hashes = dict(canonical=persisted_hash, review=review_hash, other=hashlib.sha256(raw).hexdigest())
+    document = dict(schema="KRONOS-FAILED-ACTIVE-RECOVERY-AUTHORIZATION/1.0.0",
+        recovery_class="FAILED_ACTIVE_RECOVERY_REPLACEMENT", state="SPONSOR_APPROVED", attempt_identity="a" * 64,
+        sponsor_authorization_reference="EXACT-DISPOSABLE-CANONICAL-BINDING-TEST", sponsor_authorization_path=str(sponsor),
+        sponsor_authorization_sha256=hashlib.sha256(sponsor.read_bytes()).hexdigest(), predecessor_pid=12985,
+        predecessor_revision="cbe496e31d466eb28b7b710ffe9231b4324b1137", successor_revision="b" * 40,
+        expected_successor_capability="WO06H-CAPABILITY-9104752f2f4028b169cd5bcc249477024eb67b1ab2351a30415e40e5fa7e6e40",
+        compatibility_relation_sha256=hashes[claimed_hash], diagnosis_sha256=diagnosis_hash,
+        window_start="2026-09-12T07:50:33.006722+05:30", window_end="2026-10-12T07:50:33.006722+05:30",
+        predecessor_maintenance_identity="a" * 64, private_control_sha256=hashlib.sha256(control.read_bytes()).hexdigest(),
+        installed_package_identity="b" * 64, rollback_bundle=str(rollback), rollback_package_identity="c" * 64,
+        relation_path=str(relation), diagnosis_path=str(diagnosis),
+        valid_from_us=1789179633006722, valid_until_us=1791771633006722)
+    assert len(document) == 24  # Existing closed authorization schema is preserved.
+    path = root / ("a" * 64 + ".authorization.json")
+    path.write_text(json.dumps(document))
+    path.chmod(0o600)
+    result = subprocess.check_output([str(executable), str(root), "a" * 64, str(control), "b" * 40], text=True)
+    assert result.strip() == ("1" if accepted else "0")
+
+
+def test_recovery_review_provenance_is_separate_from_production_binding():
+    import re
+    source = SOURCE.read_text()
+    reviewed = re.search(r'#define RECOVERY_REVIEW_ARTIFACT_SHA256 "([0-9a-f]{64})"', source).group(1)
+    persisted = re.search(r'#define RECOVERY_RELATION "([0-9a-f]{64})"', source).group(1)
+    assert reviewed == "e5d63954815ffa526390e1d5d0e668a8c490371ead305c85a14b43d6c300c58e"
+    assert persisted == "707ca654076df91af1935d082a569d8d8c0335f52a08d63a8047ea1a94e4e48b"
+    assert reviewed != persisted
+    # Provenance is explicit, but never an alternate byte authorization.
+    assert source.count("RECOVERY_REVIEW_ARTIFACT_SHA256") == 1
+    assert 'recovery_field(&j,0,"compatibility_relation_sha256",RECOVERY_RELATION)' in source
+    assert 'strcmp(actual,RECOVERY_RELATION)' in source

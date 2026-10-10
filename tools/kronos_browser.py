@@ -378,7 +378,12 @@ def main(argv: Sequence[str] | None = None) -> int:
             application.authenticated_read_only_capability
         )
         from kronos.browser.runtime_state import complete_startup
-        complete_startup(server, intraday_runtime.discovery_v2_operation.live_shadow)
+        complete_startup(
+            server, intraday_runtime.discovery_v2_operation.live_shadow,
+            swing_outcomes=server.startup_restoration_outcomes(),
+            wo11=intraday_runtime.lifecycle_application,
+            wo17=intraday_wo17_control.status_document(),
+        )
         url = f"http://127.0.0.1:{server.server_port}/swing/opportunities"
         if not args.no_browser:
             webbrowser.open_new_tab(url)

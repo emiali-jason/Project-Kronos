@@ -620,6 +620,11 @@ class LocalVisualEvidenceV2Store:
         self._root = root
         self._lock = RLock()
 
+    @property
+    def root(self) -> Path:
+        """Governed evidence root for exact Native restoration applicability."""
+        return self._root
+
     def retain(
         self, request: VisualEvidenceV2Request, response: VisualEvidenceV2Response
     ) -> Path:

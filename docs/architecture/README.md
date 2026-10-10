@@ -1,5 +1,10 @@
 # KRONOS Architecture Repository
 
+The isolated FAILED_ACTIVE recovery and Native preparation authority candidate is
+described by [ADR-0061](adr/ADR-0061-FAILED-ACTIVE-RECOVERY-AND-STARTUP-RESTORATION.md).
+Engineering is Sponsor-authorized; final exact-byte reviews and release remain
+separate gates. This index entry grants no production permission.
+
 The combined Notifications and Journal source integration is described in the
 [WO13 and WO14 engineering record](../engineering/WO-SWING-NEXT-13-14-COMBINED-INTEGRATION.md).
 It preserves deployed MCX V1 and separates source review, combined protected

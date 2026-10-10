@@ -610,6 +610,11 @@ class NativeLayer2ReadinessStore:
         self._root = root
         self._lock = RLock()
 
+    @property
+    def root(self) -> Path:
+        """Governed evidence root for exact Native restoration applicability."""
+        return self._root
+
     def retain(self, record: NativeLayer2ReadinessRecord) -> Path:
         if type(record) is not NativeLayer2ReadinessRecord:
             raise TypeError("NATIVE_LAYER2_READINESS_RECORD_INVALID")

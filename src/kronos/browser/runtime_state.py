@@ -14,7 +14,7 @@ POLICY = {"identity": "KRONOS-RUNTIME-01", "version": "1.0.0",
 POLICY_CHECKSUM = sha256(json.dumps(POLICY, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
 
 
-def complete_startup(server, shadow):
+def complete_startup(server, shadow, *, swing_outcomes=None, wo11=None, wo17=None):
     governance = server.connection_governance
     failure = None
     try:
@@ -31,8 +31,18 @@ def complete_startup(server, shadow):
         status = shadow.status()
         if status["failure"] or (status["window"] is not None and not status["runtime_accepted"]):
             failure = "ACCEPTANCE_RESTORATION_NOT_ESTABLISHED"
-        elif server.visual_v3_live.restoration_error is not None:
+        elif _swing_restoration_failure(swing_outcomes):
             failure = "SWING_RESTORATION_NOT_ESTABLISHED"
+        elif wo11 is None or wo17 is None:
+            failure = "RUNTIME_RESTORATION_PROOF_UNAVAILABLE"
+        elif wo11.last_failure is not None:
+            failure = "WO11_RESTORATION_FAILED"
+        elif (wo17["restoration_state"] not in {"LOADED", "NOT_YET_RUN"}
+              or wo17["failure_stage"] is not None
+              or wo17["failure_reason"] is not None
+              or (wo17["restoration_state"] == "NOT_YET_RUN"
+                  and wo17["current_positions"] != [])):
+            failure = "WO17_RESTORATION_FAILED"
         elif server.provider_runtime.read_only_status()["capability_state"] != "ABSENT":
             failure = "UNEXPECTED_STARTUP_PROVIDER_CAPABILITY"
         elif server.swing_monitoring_hub.active_session_count:
@@ -46,6 +56,21 @@ def complete_startup(server, shadow):
         governance.complete_startup(failure)
     except (ValueError, OSError):
         governance.complete_startup("STARTUP_COMPLETION_RECORD_UNAVAILABLE")
+
+
+def _swing_restoration_failure(outcomes):
+    required = {"LEGACY_MTF", "LEGACY_NATIVE", "NATIVE_REVIEW", "V3_RECORDS",
+                "V3_RESTORE", "TRADE_WINDOW"}
+    if (type(outcomes) is not tuple or len(outcomes) != len(required)
+            or any(type(row) is not tuple or len(row) != 2 for row in outcomes)):
+        return True
+    result = dict(outcomes)
+    return (set(result) != required
+            or any(value not in ({"SUCCESS", "NOT_APPLICABLE", "APPLICABILITY_NOT_ESTABLISHED"}
+                                 if key == "NATIVE_REVIEW" else {"SUCCESS", "NOT_APPLICABLE"})
+                   for key, value in result.items())
+            or result["V3_RECORDS"] != "SUCCESS"
+            or result["TRADE_WINDOW"] != "SUCCESS")
 
 
 def status_document(server):

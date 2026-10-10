@@ -24,7 +24,7 @@ import pytest
 def isolated_composition_authority(monkeypatch):
     # Tests compose fake servers in the kernel-isolated test home; no production bypass.
     monkeypatch.setattr("tools.runtime_source_gate.qualify_startup", lambda *_: "a" * 40)
-    monkeypatch.setattr("kronos.browser.runtime_state.complete_startup", lambda *_: None)
+    monkeypatch.setattr("kronos.browser.runtime_state.complete_startup", lambda *_, **__: None)
     class _IntradayNotifications:
         def __init__(self, **_kwargs):
             pass
@@ -64,10 +64,11 @@ def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch, tm
     )
     monkeypatch.setattr(
         "kronos.browser.runtime_state.complete_startup",
-        lambda *_args: events.append("ready"),
+        lambda *_args, **_kwargs: events.append("ready"),
     )
 
     class _Server:
+        def startup_restoration_outcomes(self): return ()
         server_port = 9123
         swing_monitoring_hub = SharedSwingMonitoringHub()
         notification_centre = object()
@@ -279,6 +280,7 @@ def test_swing_grant_cannot_exceed_authenticated_provider_capability(tmp_path):
 def test_developer_no_browser_mode_does_not_open_browser(monkeypatch) -> None:
     control = object()
     class _Server:
+        def startup_restoration_outcomes(self): return ()
         server_port = 9123
         swing_monitoring_hub = SharedSwingMonitoringHub()
         notification_centre = object()
@@ -344,7 +346,7 @@ def test_canonical_main_installs_real_mcx_owner_before_ready_without_acquisition
     monkeypatch.setattr(kronos_browser, 'SwingOpportunitiesApplication', lambda *_args, **_kwargs: app)
     events = []
 
-    def ready(_root, _revision):
+    def ready(_root, _revision, **_owners):
         assert events == ['owners-installed']
         if _check_wo08 is not None:
             _check_wo08(_root)
@@ -445,7 +447,7 @@ def test_canonical_startup_restores_pre_mcx_continuity_without_rewriting_it(
         return server
 
     def serve(server, **_kwargs):
-        assert server.connection_governance.startup_state == "READY"
+        assert server.connection_governance.startup_state == "READY", (server.connection_governance.maintenance_status(), server.startup_restoration_outcomes())
         assert server.connection_governance.maintenance_active is False
         assert server.provider_runtime.read_only_status()["capability_state"] == "ABSENT"
         assert server.mcx_v1_composition.control is server.mcx_v1_control
@@ -574,7 +576,7 @@ def test_macos_launcher_is_minimal_double_click_app_without_credentials() -> Non
     assert "request_graceful_shutdown" in source
     assert "wait_for_backend_stop" in source
     assert (
-        "if (!bootstrap && !replacement && backend_is_reusable(control_path)) "
+        "if (!bootstrap && !replacement && !recovery && backend_is_reusable(control_path)) "
         "return open_workspace();"
     ) in source
     assert 'strcmp(mode, "GOVERNED_REPLACEMENT") == 0' in source

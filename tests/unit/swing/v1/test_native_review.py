@@ -221,8 +221,9 @@ def test_restart_requires_exact_same_run_and_source_evidence(tmp_path: Path) -> 
         )
 
     missing = NativeReviewEvidenceStore(tmp_path / "orphan")
-    with pytest.raises(ValueError, match="UNAVAILABLE"):
-        NativeReviewWorkflow(missing).restore(run, facts)
+    unprepared = NativeReviewWorkflow(missing)
+    assert unprepared.restore(run, facts).state is NativeReviewRunState.NOT_PREPARED
+    assert unprepared.restoration_result.status.value == "APPLICABILITY_NOT_ESTABLISHED"
 
 
 def test_workflow_rejects_changed_active_run_and_changed_layer2(tmp_path: Path) -> None:

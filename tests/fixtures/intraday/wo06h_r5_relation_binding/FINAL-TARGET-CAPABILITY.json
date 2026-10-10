@@ -1,0 +1,83 @@
+{
+  "FINAL_TARGET_CAPABILITY_IDENTITY": "WO06H-CAPABILITY-9104752f2f4028b169cd5bcc249477024eb67b1ab2351a30415e40e5fa7e6e40",
+  "FINAL_TARGET_CAPABILITY_MAP": [
+    {
+      "identity": "INTRADAY_DISCOVERY_OPERATION",
+      "version": "0.1.0",
+      "implementation_digest": "ac24e78f968c76c69e16101492aa6e9f43a922e29be4a1564aa40ff6fe837157"
+    },
+    {
+      "identity": "WO_05A_TRUSTED_TIME_ADMISSION",
+      "version": "1.0.0",
+      "implementation_digest": "db2031e75f63c6b26e115f40e9f4df8f1b1917978ffb3b73de73cde4d8344784"
+    },
+    {
+      "identity": "WO_05B_OPERATION_ACCOUNTING",
+      "version": "1.0.0",
+      "implementation_digest": "c6274e7ecddfc808d159a780c94f4317b0fcab569ef558ea70dffa1d6a952203"
+    },
+    {
+      "identity": "INTRADAY_V2_OPERATIONAL_CONTROL",
+      "version": "1.0.0",
+      "implementation_digest": "65e0963541c831159f48f271a28d0cfcffdb32bbaa609c967b80464a3d9d3bf6"
+    },
+    {
+      "identity": "WO_06H_LIVE_SHADOW",
+      "version": "1.0.0",
+      "implementation_digest": "53d5dd60f8f00aa6d8e826b0dce0204461d089ef0108d183d9a45ab85dcc18af"
+    },
+    {
+      "identity": "WO_06H_ACCEPTANCE_EPOCH",
+      "version": "1.2.0",
+      "implementation_digest": "52ff64673f2ef7ec1e1db5da97803b41bffca92eada6b3bf88bc2ff38f743b1a"
+    }
+  ],
+  "FINAL_TARGET_CONFIGURATION": "INTRADAY-LAUNCHER-CONFIG-fe5d7990569ccb43559350961ea889f57b9f2e7c33a6ec6a14b85477e2bdf96d",
+  "proof_for_offline_map_validation": {
+    "capabilities": [
+      {
+        "identity": "INTRADAY_DISCOVERY_OPERATION",
+        "version": "0.1.0",
+        "implementation_digest": "ac24e78f968c76c69e16101492aa6e9f43a922e29be4a1564aa40ff6fe837157"
+      },
+      {
+        "identity": "WO_05A_TRUSTED_TIME_ADMISSION",
+        "version": "1.0.0",
+        "implementation_digest": "db2031e75f63c6b26e115f40e9f4df8f1b1917978ffb3b73de73cde4d8344784"
+      },
+      {
+        "identity": "WO_05B_OPERATION_ACCOUNTING",
+        "version": "1.0.0",
+        "implementation_digest": "c6274e7ecddfc808d159a780c94f4317b0fcab569ef558ea70dffa1d6a952203"
+      },
+      {
+        "identity": "INTRADAY_V2_OPERATIONAL_CONTROL",
+        "version": "1.0.0",
+        "implementation_digest": "65e0963541c831159f48f271a28d0cfcffdb32bbaa609c967b80464a3d9d3bf6"
+      },
+      {
+        "identity": "WO_06H_LIVE_SHADOW",
+        "version": "1.0.0",
+        "implementation_digest": "53d5dd60f8f00aa6d8e826b0dce0204461d089ef0108d183d9a45ab85dcc18af"
+      },
+      {
+        "identity": "WO_06H_ACCEPTANCE_EPOCH",
+        "version": "1.2.0",
+        "implementation_digest": "52ff64673f2ef7ec1e1db5da97803b41bffca92eada6b3bf88bc2ff38f743b1a"
+      }
+    ],
+    "configuration": "INTRADAY-LAUNCHER-CONFIG-fe5d7990569ccb43559350961ea889f57b9f2e7c33a6ec6a14b85477e2bdf96d",
+    "manifest": "INTRADAY-RUNTIME-2054719e20124fe2ee5e71e7c951d60200234b4d2a73127c702f78380bd1ee65",
+    "pid": 12985,
+    "revision": "cbe496e31d466eb28b7b710ffe9231b4324b1137",
+    "source_state": "CLEAN_COMMIT",
+    "startup": "2026-10-10T02:30:17.510873+00:00"
+  },
+  "engineering_only": true,
+  "live_runtime_proof": false,
+  "derivation": "Unchanged compose_runtime_manifest; exact candidate sources, canonical compilation filenames; all five non-epoch declarations reproduce loaded baseline",
+  "configuration_fields": {
+    "browser_port": 8947,
+    "open_browser": false
+  }
+}

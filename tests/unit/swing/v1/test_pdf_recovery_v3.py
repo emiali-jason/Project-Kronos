@@ -26,7 +26,7 @@ from tests.unit.browser.test_runtime01 import server_for
 from tests.unit.provider.test_connection_governance import governance, GENERATION
 from tests.unit.intraday.test_live_shadow import service
 from tests.unit.intraday.test_live_shadow_epochs import restart, inventory
-from kronos.browser.runtime_state import complete_startup
+from tests.unit.browser.test_runtime01 import complete_startup
 from tests.unit.swing.v1.pdf_layout_assertions import text_bounds
 
 
