@@ -56,3 +56,18 @@ compact WO-12 ledger. When the source boundary is unchanged, recovery
 reproduces the exact receipted bytes and retains the existing receipt,
 projection and checksum without creating another daily package. A verified
 unchanged workbook returns `ALREADY_UP_TO_DATE` without rewriting bytes.
+
+## WO08 terminal directional validation — workbook 2.2.0
+
+ADR0063 commissions research-only terminal classification under `WO12_V1_TERMINAL_DIRECTIONAL_MATCH / 1.0.0`. Explicit UPDATE RESEARCH retains exact WO09-entrant considerations, journey snapshots and additive endpoint results. The original Assessment Price and prediction never change. A positive signed move is MATCHED; negative or flat is NOT_MATCHED; unavailable authority is NOT_EVALUABLE. Flat has its own reason. No magnitude threshold, partial match, profitability or readiness-correctness claim exists.
+
+Opportunities keeps its dedicated Sponsor `opportunity_id` and machine `opportunity_identity`. Added columns expose consideration identity, original Assessment Price, terminal price/time, signed movement, terminal reason, policy identity/checksum and currentness of the exact retained WO09 pointer. Existing original direction/criterion reasons remain distinct from the latest assessment. Events records consideration, exact journey snapshots and terminal results. Data_Quality exposes unavailable evidence without classifying it as analytical failure. Analysis separates the universe audit from exact considered opportunity/version strata and exposes withheld outcomes, progression states, evaluated coverage and terminal-nonmatch rates at existing 3/5, 4/5 and 5/5 progression levels.
+
+A report reads retained source identities again; it never repairs or advances operational pointers. Missing terminal evidence remains unavailable. Corruption/storage failure and conflicting terminal revisions stop publication and preserve the previous verified receipt/workbook. An unavailable result can later be completed additively; the first valid endpoint is not overwritten by later retrieval. I2-I5 remain NOT_COMMISSIONED, international references remain supporting-only and NATGAS commissioning stays HELD.
+
+No EOD Provider acquisition or scheduling is commissioned here. Do not call Research closure evidence of a new market-data collection capability. Completion consumes only lawful already-retained ordinary acquisition evidence; missing endpoints remain unavailable. Rehearsal data is explicitly synthetic/disposable and creates no production opportunity.
+
+An explicit UPDATE RESEARCH also refreshes the original monthly workbook for
+retained considered opportunities when their later terminal evidence arrives
+across a month boundary. Receipts are atomic per workbook, not across all months.
+Original opportunity IDs, predictions and prices are not restamped.

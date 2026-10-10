@@ -92,7 +92,7 @@ def test_all_population_and_criteria_unavailable_denominators_remain_truthful(tm
     assert metrics['WO08 considered assessment count'][1] == 0
     assert metrics['WO08 considered opportunity count'][1] == 0
     assert metrics['WO08 unavailable criterion rate'][3] is None
-    assert metrics['WO08 false advance rate'][3] == 'NOT_ESTABLISHED'
+    assert 'WO08 false advance rate' not in metrics
     assert metrics['WO08 I2 established rate'][1] == 0
     assert len(app.store.records(SCHEMA)) == 98
     assert projection.opportunities == ()
@@ -158,8 +158,9 @@ def test_frozen_admission_cohort_includes_unavailable_and_missing_readiness(tmp_
     assert row['wo08_original_assessment_identity'] == assessments[0].identity
     assert row['wo08_original_direction'] == 'LONG'
     assert row['wo08_original_probables_reasons'] == 'V2_CONDITIONS_SATISFIED'
-    assert row['wo08_eod_validation_state'] == 'UNAVAILABLE_NO_GOVERNED_EOD_OUTCOME'
-    assert row['wo08_eod_prediction_match'] == 'NOT_ESTABLISHED'
+    assert row['wo08_eod_validation_state'] == 'NOT_EVALUABLE'
+    assert row['wo08_eod_prediction_match'] == 'NOT_EVALUABLE'
+    assert dict(projection.metadata)['wo12_considered_count'] == (1 if readiness else 0)
 
 
 def test_repeated_assessment_preserves_original_prediction_and_single_opportunity(tmp_path):
@@ -210,3 +211,88 @@ def test_legacy_association_bytes_readable_alongside_successor(tmp_path):
     assert app.store.load(old.identity).payload_json == original_bytes
     assert app.store.records(LEGACY_SCHEMA) == (old,)
     assert len(app.store.records(SCHEMA)) == 2
+
+
+@pytest.mark.parametrize('change', ['methodology', 'source', 'prediction', 'companion'])
+def test_readback_rejects_rehashed_changed_original_authority(tmp_path, change):
+    from kronos.application.intraday_wo08_research import associate_assessments
+    from kronos.application.intraday_wo12_eod import verify_originals
+    from kronos.intraday.wo12_research_contract import record
+    import copy
+    app, _, _ = considered_application(tmp_path)
+    app.project(ensure_origins=True)
+    cohort, = app.store.records('WO12_WO08_CONSIDERATION_V1')
+    data = copy.deepcopy(cohort.data)
+    if change == 'methodology':
+        data['methodology']['methodology_checksum'] = 'f' * 64
+    elif change == 'source':
+        data['original_source']['native_decision_integrity'] = 'changed'
+    elif change == 'prediction':
+        data['original_prediction']['criteria'][0]['reason'] = 'changed'
+    else:
+        data['assessment_companion_integrity'] = 'changed'
+    altered = record(cohort.schema, **data)
+    associations = associate_assessments(assessments=app.wo08, shadow=app.wo08_shadow,
+        probables=app.probables, origins=app.store.records('WO12_OPPORTUNITY_ORIGIN_V1'),
+        readiness=app._readiness_history_by_result(), futures=app.futures, lifecycle=app.lifecycle)
+    with pytest.raises(ValueError, match='WO12_ORIGINAL_AUTHORITY'):
+        verify_originals((altered,), app.probables, associations)
+
+
+def test_explicit_update_refreshes_original_month_without_restamping_origin(tmp_path):
+    app, _, runs = considered_application(tmp_path)
+    first = app.update(operation_identity='MONTH-FIRST')
+    originals = app.store.records('WO12_WO08_CONSIDERATION_V1')
+    app.clock = lambda: runs[0].analysis_boundary.replace(month=9)
+    result = app.update(operation_identity='MONTH-LATER')
+    assert result.workbook_path.name.endswith('2026_09.xlsx')
+    prior = app.store.current_receipt('2026_08')
+    assert prior is not None and str(app.open_current('2026_08')[0]) == prior.data['workbook_path']
+    assert app.store.records('WO12_WO08_CONSIDERATION_V1') == originals
+    assert app.project(year_month='2026_08').opportunities[0][0] == 'RELIANCE-20260828-101500'
+
+
+def test_later_methodology_readiness_is_not_original_journey(tmp_path, monkeypatch):
+    from kronos.application import intraday_wo08_research as module
+    from kronos.intraday.wo12_research_contract import record
+    import copy
+    app, _, _ = considered_application(tmp_path)
+    app.project(ensure_origins=True)
+    original = module.associate_assessments
+    def add_future_version(**kwargs):
+        values = original(**kwargs)
+        base = next(v for v in values if v.data['opportunity_identity'])
+        d = copy.deepcopy(base.data)
+        d['methodology_version'] = 'FUTURE_TEST_VERSION'
+        d['methodology_checksum'] = 'f' * 64
+        ref = d['readiness_references'][0]
+        ref['identity'] = 'ISOLATED-FUTURE-READINESS'
+        ref['count'] = 3
+        return values + (record(base.schema, **d),)
+    monkeypatch.setattr(module, 'associate_assessments', add_future_version)
+    app.project(ensure_origins=True)
+    journeys = app.store.records('WO12_WO08_JOURNEY_V1')
+    assert all(r['identity'] != 'ISOLATED-FUTURE-READINESS' for j in journeys for r in j.data['readiness_history'])
+
+
+def test_missing_original_cannot_borrow_another_methodology_entry(tmp_path):
+    from kronos.application.intraday_wo08_research import associate_assessments
+    import copy
+    app, assessments, _ = considered_application(tmp_path, later=True)
+    assessments.pop(0)
+    actual = assessments[-1]
+    d = copy.deepcopy(actual.data)
+    d['methodology_version'] = 'FUTURE_TEST_VERSION'
+    d['methodology_checksum'] = 'f' * 64
+    # Consumer-only future-version fixture: this is not a commissioned WO08
+    # producer or a positive assessment and cannot enter production stores.
+    future = SimpleNamespace(data=d, identity='ISOLATED-FUTURE-ASSESSMENT',
+        integrity='ISOLATED-FUTURE-INTEGRITY', __post_init__=lambda:None)
+    assessments.append(future)
+    origins = app._ensure_origins()
+    values = associate_assessments(assessments=app.wo08, shadow=None, probables=app.probables,
+        origins=origins, readiness=app._readiness_history_by_result(), futures=app.futures, lifecycle=app.lifecycle)
+    old = next(a for a in values if a.data['assessment_identity'] == actual.identity)
+    later = next(a for a in values if a.data['assessment_identity'] == future.identity)
+    assert old.data['wo09_entry'] is not None
+    assert later.data['wo09_entry'] is None

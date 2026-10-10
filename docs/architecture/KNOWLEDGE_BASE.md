@@ -346,3 +346,17 @@ this documentation; qualification and release gates remain separate.
 ## WO-06H explicit successor-runtime compatibility
 
 [ADR-0060](adr/ADR-0060-WO06H-SUCCESSOR-RUNTIME-COMPATIBILITY.md) adds the separately versioned, exact, directional and non-transitive successor relation while preserving legacy validation and original windows. CA-approved bounded engineering direction; exact-byte/shared-runtime owner review and production recovery remain separate gates.
+
+## WO12 validation for active WO08
+
+**Status:** Sponsor-approved terminal-directional policy and bounded engineering;
+release requires actual candidate qualification, independent/owner review and
+production technical acceptance.
+[ADR-0063](adr/ADR-0063-WO12-WO08-TERMINAL-DIRECTIONAL-VALIDATION.md) and the
+[validation interface](interfaces/KRONOS-INTRADAY-WO12-WO08-VALIDATION-V1.md)
+add immutable considered-opportunity, journey and terminal endpoint records to
+the existing WO12 local Research publication. MATCHED is signed direction at the
+governed endpoint relative to exact original Assessment Price only. It grants no
+readiness, economic or trading authority. All-98 audit association and admitted
+assessment diagnostics are separate from the actual WO09 entrant denominator.
+WO08 remains closed/active; WO07F retirement and WO13 ownership remain intact.

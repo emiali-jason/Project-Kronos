@@ -106,7 +106,7 @@ def test_production_composition_analysis_wo08_readiness_research_restart(tmp_pat
     before_research=_bytes(runtime.wo08_store.root),_bytes(runtime.wo09_store.root)
     before_calls=requests[0]
     projection=runtime.research_application.project(ensure_origins=True)
-    associations=runtime.research_store.records('WO12_WO08_ASSESSMENT_ASSOCIATION_V2')
+    associations=runtime.research_store.records('WO12_WO08_ASSESSMENT_ASSOCIATION_V3')
     assert len(associations)==98
     metrics={row[0]:row for row in projection.analysis}
     assert metrics['WO08 population audit assessment count'][1]==98
@@ -142,7 +142,7 @@ def test_production_composition_analysis_wo08_readiness_research_restart(tmp_pat
         assessment_dispositions=dict(Counter(r.data['disposition'] for r in assessments)),
         wo09_states=dict(Counter(r.readiness_state.value for _,r in readiness)),
         wo12_association_count=len(associations),wo12_audit_count=98,wo12_considered_assessment_count=0,
-        wo12_considered_opportunity_count=0,wo12_eod_validation='UNAVAILABLE_NO_GOVERNED_EOD_OUTCOME',wo12_t0_states=dict(Counter(r.data['t0_state'] for r in associations)),
+        wo12_considered_opportunity_count=0,wo12_eod_validation='NOT_EVALUABLE_NO_CONSIDERED_OPPORTUNITY',wo12_t0_states=dict(Counter(r.data['t0_state'] for r in associations)),
         wo12_live_control_authority='NONE',fake_historical_requests=requests[0],real_provider_calls=0,
         chart_analyst_required=False,wo07f_new_work_dependency='NONE',new_visual_artifacts=0,
         positive_handoffs=0,positive_wo10_opportunities=0,success_notification_sources=0,

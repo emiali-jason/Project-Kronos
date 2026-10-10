@@ -35,6 +35,9 @@ class ResearchStore:
         if type(item) is not ResearchRecord:
             raise ValueError("WO12_EXACT_RECORD_REQUIRED")
         item.__post_init__()
+        if item.schema == 'WO12_WO08_EOD_VALIDATION_V1':
+            from kronos.intraday.wo12_eod_validation import validate_result
+            validate_result(self.load(item.data['consideration_identity']), item)
         target = self.root / "records" / f"{item.identity}.json"
         payload = encoded(asdict(item)) + b"\n"
         target.parent.mkdir(parents=True, exist_ok=True)
@@ -60,6 +63,9 @@ class ResearchStore:
         item = ResearchRecord(**json.loads((self.root / "records" / f"{identity}.json").read_bytes()))
         if item.identity != identity:
             raise ValueError("WO12_RECORD_PATH_MISMATCH")
+        if item.schema == 'WO12_WO08_EOD_VALIDATION_V1':
+            from kronos.intraday.wo12_eod_validation import validate_result
+            validate_result(self.load(item.data['consideration_identity']), item)
         return item
 
     def records(self, schema: str) -> tuple[ResearchRecord, ...]:

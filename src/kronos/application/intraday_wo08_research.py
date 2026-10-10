@@ -9,7 +9,7 @@ from kronos.intraday.wo12_research_contract import record
 from kronos.intraday.probables import ProbableState
 
 LEGACY_SCHEMA = "WO12_WO08_ASSESSMENT_ASSOCIATION_V1"
-SCHEMA = "WO12_WO08_ASSESSMENT_ASSOCIATION_V2"
+SCHEMA = "WO12_WO08_ASSESSMENT_ASSOCIATION_V3"
 ADMITTED = {ProbableState.LONG_PROBABLE, ProbableState.SHORT_PROBABLE}
 
 
@@ -56,6 +56,7 @@ def associate_assessments(*, assessments, shadow, probables, origins, readiness,
         # Only the exact original admission result can supply the original prediction.
         # A later reassessment is never substituted when that assessment is absent.
         original_prediction = None
+        original_source = original_methodology = original_run_identity = None
         if original is not None:
             original.__post_init__()
             od = original.data
@@ -70,8 +71,26 @@ def associate_assessments(*, assessments, shadow, probables, origins, readiness,
                 criteria=od["criteria"], disposition=od["disposition"], hard_gate=od["hard_gate"],
                 failure_stage=od["failure_stage"], failure_reason=od["failure_reason"],
                 analysis_boundary=od["analysis_boundary"], created_at=od["created_at"])
+            original_run_identity = od['run_identity']
+            original_methodology = {k: od[k] for k in ('methodology_identity', 'methodology_version', 'methodology_checksum')}
+            original_source = {k: od[k] for k in ('generation', 'discovery_identity', 'mapping_identity',
+                'semantic_evidence_identity', 'semantic_evidence_integrity', 'completed_evidence_identity',
+                'completed_evidence_integrity', 'native_decision_identity', 'native_decision_integrity',
+                'exact_mcx_contract_identity', 'exact_mcx_roll_lineage', 'calendar_identity', 'calendar_version', 'trading_date')}
         history = tuple(item for values in readiness.values() for item in values
                         if getattr(item, "wo08_identity", None) == assessment.identity)
+        episode_history = tuple(item for values in readiness.values() for item in values
+            if origin is not None and item.canonical_subject_identity == d['subject']
+            and item.session_identity == d['session_identity']
+            and item.analysis_boundary >= datetime.fromisoformat(origin.data['origin_at'])
+            and not any(o.data['canonical_subject_identity'] == d['subject']
+                and o.data['market_session_identity'] == d['session_identity']
+                and datetime.fromisoformat(origin.data['origin_at']) < datetime.fromisoformat(o.data['origin_at']) <= item.analysis_boundary
+                for o in origins)
+            and getattr(item, 'wo08_identity', None) in {a.identity for a in retained
+                if all(a.data[k] == v for k, v in (original_methodology or {k:d[k] for k in
+                    ('methodology_identity','methodology_version','methodology_checksum')}).items())})
+        entry = min(episode_history, key=lambda r: (r.created_at, r.readiness_identity)) if episode_history else None
         readiness_ids = {item.readiness_identity for item in history}
         downstream = [item for schema in ("WO10_OPPORTUNITY_V1", "WO10_CONSTRUCTION_UNAVAILABLE_V1",
                                           "WO10_SPONSOR_COMPARISON_V1")
@@ -93,8 +112,14 @@ def associate_assessments(*, assessments, shadow, probables, origins, readiness,
             wo09_record_state="RECORDED" if history else "MISSING",
             original_prediction_state="EXACT_ORIGINAL_ADMISSION_ASSESSMENT" if original_prediction else "ORIGINAL_PREDICTION_UNAVAILABLE",
             original_prediction=original_prediction,
-            eod_validation_state="UNAVAILABLE_NO_GOVERNED_EOD_OUTCOME",
-            eod_prediction_match="NOT_ESTABLISHED", eod_match_reason="NO_GOVERNED_EOD_VALIDATION_PRODUCER",
+            opportunity_origin_at=None if origin is None else origin.data['origin_at'],
+            original_run_identity=original_run_identity, original_methodology=original_methodology,
+            original_source=original_source,
+            wo09_entry=None if entry is None else dict(identity=entry.readiness_identity,
+                integrity=entry.integrity_identity, created_at=entry.created_at,
+                currentness=entry.currentness.value, wo08_identity=entry.wo08_identity),
+            eod_validation_state="SEPARATE_ADDITIVE_WO12_OUTCOME",
+            eod_prediction_match="SEPARATE_RESULT_LOOKUP", eod_match_reason="ORIGINAL_ASSOCIATION_IS_NOT_AN_OUTCOME",
             market_family=d["market_family"], direction=d["direction"], session_identity=d["session_identity"],
             analysis_boundary=d["analysis_boundary"], assessment_created_at=d["created_at"],
             assessment_latency_seconds=(datetime.fromisoformat(d["created_at"])-datetime.fromisoformat(d["analysis_boundary"])).total_seconds(),
@@ -117,7 +142,7 @@ def associate_assessments(*, assessments, shadow, probables, origins, readiness,
             downstream_references=[dict(identity=item.identity, integrity=item.integrity, schema=item.schema) for item in downstream],
             lifecycle_references=[dict(identity=item.identity, integrity=item.integrity,
                 truth_class=item.data["truth_class"], state=item.data["state"]) for item in tracks],
-            false_advance_classification="NOT_ESTABLISHED_NO_COMMISSIONED_FALSE_ADVANCE_DEFINITION"))
+            false_advance_classification="SEPARATE_TERMINAL_NONMATCH_BY_WO09_PROGRESSION_LEVEL"))
     return tuple(records)
 
 
@@ -138,13 +163,10 @@ def research_metrics(associations):
         ("WO08 considered assessments missing origin", unbound, count, unbound / count if count else None, "Missing origin remains visible; no retrospective origin is invented"),
         ("WO08 considered assessments missing WO09", sum(d["wo09_record_state"] == "MISSING" for d in values), count,
          sum(d["wo09_record_state"] == "MISSING" for d in values) / count if count else None, "Included in considered assessment denominator despite missing readiness publication"),
-        ("WO08 EOD validation coverage", 0, len(opportunities), 0 if opportunities else None, "No governed EOD outcome producer; prediction match remains NOT_ESTABLISHED"),
         ("WO08 unavailable criterion rate", unavailable, count, unavailable / count if count else None,
          "Among considered assessments including repeats; at least one unavailable/uncommissioned criterion; absence is not negative"),
         ("WO08 outcome coverage", covered, count, covered / count if count else None,
          "Among considered assessments including repeats; exact 02A T0 with retained outcome; partial outcomes remain labelled"),
-        ("WO08 false advance rate", None, None, "NOT_ESTABLISHED",
-         "No commissioned false-advance definition; no live threshold adjustment"),
         ("WO08 average publication latency seconds", sum(d["assessment_latency_seconds"] for d in values), count,
          sum(d["assessment_latency_seconds"] for d in values) / count if count else None,
          "Assessment publication minus exact original Analysis boundary; no acquisition is performed"),

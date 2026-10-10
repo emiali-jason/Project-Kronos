@@ -54,6 +54,9 @@ OPPORTUNITY_COLUMNS = (
     "wo08_original_criteria_reasons", "wo08_original_disposition",
     "wo08_latest_probables_state", "wo08_latest_wo09_record_state",
     "wo08_eod_validation_state", "wo08_eod_prediction_match",
+    "wo12_consideration_identity", "wo12_terminal_reason", "wo12_original_assessment_price",
+    "wo12_terminal_price", "wo12_terminal_at", "wo12_directional_move_pct",
+    "wo12_validation_policy", "wo12_validation_policy_checksum", "wo12_progression_currentness",
 )
 
 TRACK_COLUMNS = (
@@ -245,23 +248,58 @@ class IntradayResearchApplication:
                     values.append((item.analysis_boundary, item.result_identity, run.run_identity, item))
         return tuple(sorted(values, key=lambda item: (item[0], item[1])))
 
-    def project(self, *, generated_at: datetime | None = None, ensure_origins: bool = False) -> ResearchProjection:
+    def project(self, *, generated_at: datetime | None = None, ensure_origins: bool = False, year_month: str | None = None) -> ResearchProjection:
         now = generated_at or self.clock()
         if now.tzinfo is None or now.utcoffset() is None:
             raise ValueError("WO12_AWARE_TIMESTAMP_REQUIRED")
         origins = self._ensure_origins() if ensure_origins else self.store.records("WO12_OPPORTUNITY_ORIGIN_V1")
         local_now = now.astimezone(IST)
-        month = local_now.strftime("%Y_%m")
+        month = year_month or local_now.strftime("%Y_%m")
+        if not re.fullmatch(r"[0-9]{4}_(0[1-9]|1[0-2])", month) or month > local_now.strftime("%Y_%m"):
+            raise ValueError("WO12_RESEARCH_MONTH_INVALID")
         readiness_history = self._readiness_history_by_result()
         from kronos.application.intraday_wo08_research import associate_assessments, research_metrics
         associations = associate_assessments(assessments=self.wo08, shadow=self.wo08_shadow,
             probables=self.probables, origins=origins, readiness=readiness_history,
             futures=self.futures, lifecycle=self.lifecycle)
+        all_associations = associations
         associations = tuple(item for item in associations if
             datetime.fromisoformat(item.data["analysis_boundary"]).astimezone(IST).strftime("%Y_%m") == month)
         if ensure_origins:
             for item in associations:
                 self.store.retain(item)
+        from kronos.application.intraday_wo12_eod import complete, latest_outcomes
+        from kronos.intraday.wo12_eod_validation import metrics, POLICY, CHECKSUM
+        cohorts, eod_results = complete(associations=all_associations, probables=self.probables,
+            store=self.store, now=now, retain=ensure_origins)
+        cohorts = tuple(c for c in cohorts if datetime.fromisoformat(
+            c.data['origin_at']).astimezone(IST).strftime('%Y_%m') == month)
+        cohort_ids = {c.identity for c in cohorts}
+        eod_results = latest_outcomes(tuple(o for o in eod_results if o.data['consideration_identity'] in cohort_ids))
+        outcome_by_cohort = {o.data['consideration_identity']: o for o in eod_results}
+        journeys, journey_records, pointer_currentness = {}, {}, {}
+        for cohort in cohorts:
+            cd = cohort.data
+            # Use the same exact opportunity interval as the association. Never
+            # attribute a successor episode or another WO08 version to T0.
+            refs = {r['identity']: r for a in associations
+                if a.data['opportunity_identity'] == cd['opportunity_identity']
+                and {k:a.data[k] for k in
+                    ('methodology_identity','methodology_version','methodology_checksum')} == cd['methodology']
+                for r in a.data['readiness_references']}
+            journeys[cohort.identity] = tuple(sorted(refs.values(), key=lambda r: (str(r['created_at']), r['identity'])))
+            pointer = self.wo09.load_pointer(cd['subject']) if hasattr(self.wo09, 'load_pointer') else None
+            pointer_doc = None
+            if pointer is not None and pointer.readiness_identity in refs:
+                from kronos.intraday.probables_v2_persistence import _to_wire
+                pointer_doc = _to_wire(pointer)
+            pointer_currentness[cohort.identity] = None if pointer is None or pointer_doc is None else pointer.currentness.value
+            journey_records[cohort.identity] = record('WO12_WO08_JOURNEY_V1', consideration_identity=cohort.identity,
+                    readiness_history=journeys[cohort.identity], current_pointer=pointer_doc,
+                    currentness_coverage='RETAINED_SNAPSHOTS_ONLY_NO_UNOBSERVED_TRANSITIONS_INFERRED',
+                    authority='RESEARCH_ONLY_NO_TRADING_AUTHORITY')
+            if ensure_origins:
+                self.store.retain(journey_records[cohort.identity])
         opportunities = self.futures.records("WO10_OPPORTUNITY_V1")
         comparisons = self.futures.records("WO10_SPONSOR_COMPARISON_V1")
         unavailable = self.futures.records("WO10_CONSTRUCTION_UNAVAILABLE_V1")
@@ -289,6 +327,14 @@ class IntradayResearchApplication:
             associated = [item for item in associations if item.data["opportunity_identity"] == od["opportunity_identity"]]
             latest = max(associated, key=lambda item: (item.data["assessment_created_at"], item.identity)).data if associated else None
             original_prediction = None if latest is None else latest["original_prediction"]
+            matching_cohorts = [c for c in cohorts if c.data['opportunity_identity'] == od['opportunity_identity']]
+            # The worksheet row describes its frozen original methodology. A
+            # future version is reported separately in version-stratified metrics.
+            cohort = next((c for c in matching_cohorts if c.data['original_prediction'] is None and original_prediction is None
+                or c.data['original_prediction'] is not None and original_prediction is not None
+                and c.data['original_prediction']['assessment_identity'] == original_prediction['assessment_identity']), None)
+            outcome = None if cohort is None else outcome_by_cohort.get(cohort.identity)
+            eod = {} if outcome is None else outcome.data
             r = history[-1] if history else None
             wo10 = [item for item in opportunities if r is not None and item.data["readiness_identity"] == r.readiness_identity]
             if len(wo10) > 1:
@@ -426,8 +472,16 @@ class IntradayResearchApplication:
                 "wo08_original_disposition": None if original_prediction is None else original_prediction["disposition"],
                 "wo08_latest_probables_state": None if latest is None else latest["probables_state"],
                 "wo08_latest_wo09_record_state": None if latest is None else latest["wo09_record_state"],
-                "wo08_eod_validation_state": "UNAVAILABLE_NO_GOVERNED_EOD_OUTCOME",
-                "wo08_eod_prediction_match": "NOT_ESTABLISHED",
+                "wo08_eod_validation_state": 'EVALUATED' if eod.get('prediction_match') in {'MATCHED', 'NOT_MATCHED'} else 'NOT_EVALUABLE',
+                "wo08_eod_prediction_match": eod.get('prediction_match', 'NOT_EVALUABLE'),
+                "wo12_consideration_identity": None if cohort is None else cohort.identity,
+                "wo12_terminal_reason": eod.get('reason', 'WO09_CONSIDERATION_OR_ORIGINAL_PREDICTION_NOT_RETAINED'),
+                "wo12_original_assessment_price": _number(eod.get('original_assessment_price')),
+                "wo12_terminal_price": _number(eod.get('terminal_price')),
+                "wo12_terminal_at": eod.get('terminal_at'),
+                "wo12_directional_move_pct": _number(eod.get('directional_move_pct')),
+                "wo12_validation_policy": POLICY, "wo12_validation_policy_checksum": CHECKSUM,
+                "wo12_progression_currentness": None if cohort is None else pointer_currentness.get(cohort.identity),
             }
             row = tuple(row_values.get(column) for column in OPPORTUNITY_COLUMNS)
             rows.append(row)
@@ -456,7 +510,25 @@ class IntradayResearchApplication:
                     "WO08_OBSERVED_OUTCOME", outcome["state"], item.schema, outcome["identity"], "RESEARCH_ONLY",
                     outcome["sample_id"], f"{outcome['horizon']}; quality={outcome['quality']}; return={outcome['directional_return']}; "
                     f"mfe={outcome['mfe']}; mae={outcome['mae']}; reason={outcome['reason']}"))
-        analysis = self._analysis(rows, track_rows) + research_metrics(associations)
+        for c in cohorts:
+            eod = outcome_by_cohort.get(c.identity)
+            journey = journey_records[c.identity]
+            event_rows.append((c.data['opportunity_id'], c.data['opportunity_identity'],
+                c.data['wo09_entry']['created_at'], 'WO12_PROGRESSION_SNAPSHOT',
+                pointer_currentness.get(c.identity) or 'CURRENT_POINTER_NOT_ESTABLISHED',
+                journey.schema, journey.identity, 'RESEARCH_ONLY', c.identity,
+                'Retained readiness history and exact current-pointer snapshot; no unobserved transition inferred'))
+            event_rows.append((c.data['opportunity_id'], c.data['opportunity_identity'], c.data['wo09_entry']['created_at'],
+                'WO12_CONSIDERATION', 'CONSIDERED', c.schema, c.identity, 'RESEARCH_ONLY',
+                None if c.data['original_prediction'] is None else c.data['original_prediction']['assessment_identity'], 'Exact WO09 entrant; no READY/NOW filter'))
+            if eod is not None:
+                event_rows.append((c.data['opportunity_id'], c.data['opportunity_identity'], eod.data['evaluated_boundary'],
+                    'WO12_TERMINAL_VALIDATION', eod.data['prediction_match'], eod.schema, eod.identity,
+                    'RESEARCH_ONLY', eod.data['terminal_identity'], eod.data['reason']))
+                if eod.data['prediction_match'] == 'NOT_EVALUABLE':
+                    quality_rows.append((c.data['opportunity_id'], c.data['opportunity_identity'], eod.data['reason'],
+                        'INFO', 'WO12_EOD', eod.identity, 'Counted in considered cohort; not an analytical failure'))
+        analysis = self._analysis(rows, track_rows) + research_metrics(associations) + metrics(cohorts, eod_results, journeys)
         month_state = "FINALIZED_MONTH" if datetime.strptime(month, "%Y_%m").date().replace(day=28) < local_now.date().replace(day=1) else "OPEN_MONTH"
         material = dict(year_month=month, generated_at=now, opportunities=rows, tracks=track_rows,
                         events=event_rows, analysis=analysis, data_quality=quality_rows)
@@ -470,10 +542,12 @@ class IntradayResearchApplication:
             ("publication_transport", "ATOMIC_LOCAL_FILESYSTEM"),
             ("google_drive", "NOT_COMMISSIONED"),
             ("authority", "RESEARCH_ONLY_NO_TRADING_AUTHORITY"),
-            ("wo08_association_schema", "WO12_WO08_ASSESSMENT_ASSOCIATION_V2"),
+            ("wo08_association_schema", "WO12_WO08_ASSESSMENT_ASSOCIATION_V3"),
             ("wo08_validation_population", "FROZEN_LONG_OR_SHORT_PROBABLE_NO_READINESS_FILTER"),
             ("wo08_audit_population", "ALL_RETAINED_ASSESSMENTS_SEPARATE_FROM_VALIDATION"),
-            ("wo08_eod_validation", "UNAVAILABLE_NO_GOVERNED_EOD_OUTCOME"),
+            ("wo08_eod_validation", POLICY), ("wo12_terminal_policy_checksum", CHECKSUM),
+            ("wo12_prediction_denominator", 'EXACT_WO09_CONSIDERED_OPPORTUNITY_VERSION_NOT_ALL_98_NOT_READY_ONLY'),
+            ("wo12_considered_count", len(cohorts)),
             ("wo08_live_control_authority", "NONE"),
         )
         return ResearchProjection(month, now, projection_identity, tuple(rows), tuple(track_rows),
@@ -484,123 +558,138 @@ class IntradayResearchApplication:
         if not isinstance(operation_identity, str) or not operation_identity.strip() or len(operation_identity) > 160:
             raise ValueError("WO12_OPERATION_IDENTITY_INVALID")
         with self.store.transaction():
-            prior_operation = self.store.operation(operation_identity)
-            if prior_operation is not None:
-                data = prior_operation.data
-                if prior_operation.schema == "WO12_LOCAL_PUBLICATION_FAILURE_V1":
-                    raise ValueError(str(data["reason"]))
-                receipt = (prior_operation if prior_operation.schema == "WO12_LOCAL_PUBLICATION_RECEIPT_V1"
-                           else self.store.load(str(data["receipt_identity"])))
-                return self._result(receipt, idempotent=True, outcome=str(data.get("outcome", "PUBLISHED")))
-            projection = self.project(ensure_origins=True)
-            source_boundary_identity = "WO12-SOURCE-BOUNDARY-" + digest({
-                "workbook_schema": (WORKBOOK_SCHEMA, WORKBOOK_VERSION),
-                "source_events": tuple((row[2], row[4], row[5], row[6], row[8]) for row in projection.events),
-                "track_currents": tuple(row[-1] for row in projection.tracks),
-                "opportunity_origins": tuple((
-                    row[OPPORTUNITY_COLUMNS.index("opportunity_id")],
-                    row[OPPORTUNITY_COLUMNS.index("opportunity_identity")],
-                    row[OPPORTUNITY_COLUMNS.index("probable_result_identity")],
-                    row[OPPORTUNITY_COLUMNS.index("probables_run_identity")],
-                ) for row in projection.opportunities),
-            })
-            current_receipt = self.store.current_receipt(projection.year_month)
-            if (current_receipt is not None
-                    and current_receipt.data.get("source_boundary_identity") == source_boundary_identity):
-                if self._receipt_verified(current_receipt):
-                    update = record("WO12_RESEARCH_UPDATE_V1", operation_identity=operation_identity,
-                        receipt_identity=current_receipt.identity, projection_identity=current_receipt.data["projection_identity"],
-                        source_boundary_identity=source_boundary_identity, completed_at=projection.generated_at,
-                        outcome="ALREADY_UP_TO_DATE")
-                    self.store.retain(update)
-                    return self._result(current_receipt, idempotent=True, outcome="ALREADY_UP_TO_DATE")
-                return self._recover_receipted_workbook(
-                    current_receipt, operation_identity=operation_identity,
-                    completed_at=projection.generated_at,
-                )
-            daily_package = record("WO12_DAILY_PACKAGE_V1",
-                research_boundary=projection.generated_at,
-                research_date=projection.generated_at.astimezone(IST).date().isoformat(),
-                source_boundary_identity=source_boundary_identity,
-                monthly_projection_identity=projection.projection_identity,
-                opportunity_ids=[row[0] for row in projection.opportunities],
-                day_state="PUBLISHED", authority="RESEARCH_ONLY")
-            self.store.retain(daily_package)
-            projection = replace(projection, metadata=projection.metadata + (
-                ("source_boundary_identity", source_boundary_identity),
-                ("daily_package_identity", daily_package.identity),
-            ))
-            from kronos.browser.intraday_research import export_research_workbook, validate_research_workbook
-            payload = export_research_workbook(projection)
-            sha = digest_bytes(payload)
-            target = self.publication_root / f"KRONOS_Intraday_Research_{projection.year_month}.xlsx"
-            previous = target.read_bytes() if target.exists() else None
-            stage_dir = self.store.root / "staging" / digest(operation_identity)
-            stage_dir.mkdir(parents=True, exist_ok=False)
-            staged = stage_dir / target.name
-            try:
-                _durable_write(staged, payload)
-                staged_readback = staged.read_bytes()
-                validate_research_workbook(staged_readback, projection)
-                if staged_readback != payload:
-                    raise ValueError("WO12_STAGED_READBACK_MISMATCH")
-                target.parent.mkdir(parents=True, exist_ok=True)
-                os.replace(staged, target)
-                _sync(target.parent)
-                readback = target.read_bytes()
-                validate_research_workbook(readback, projection)
-                if digest_bytes(readback) != sha or readback != payload:
-                    if previous is not None:
-                        _atomic_replace(target, previous)
-                    else:
-                        target.unlink(missing_ok=True)
-                    raise ValueError("WO12_PUBLISHED_READBACK_MISMATCH")
-                receipt = record("WO12_LOCAL_PUBLICATION_RECEIPT_V1",
-                    operation_identity=operation_identity, year_month=projection.year_month,
-                    research_boundary=projection.generated_at, daily_package_identity=daily_package.identity,
-                    source_boundary_identity=source_boundary_identity,
-                    workbook_path=str(target), workbook_path_identity="WO12-WORKBOOK-PATH-" + digest({"root": str(self.publication_root), "filename": target.name}),
-                    workbook_filename=target.name, workbook_sha256=sha, workbook_bytes=len(payload),
-                    projection_identity=projection.projection_identity, published_at=projection.generated_at,
-                    prior_workbook_sha256=None if previous is None else digest_bytes(previous),
-                    policy_identity=POLICY_IDENTITY, policy_version=POLICY_VERSION,
-                    policy_checksum=POLICY_CHECKSUM, schema_identity=WORKBOOK_SCHEMA,
-                    schema_version=WORKBOOK_VERSION, generator_identity="KRONOS-WO12-LOCAL-XLSX-GENERATOR-V1",
-                    atomic_replace=True, readback_verified=True, status="VERIFIED", authority="RESEARCH_ONLY")
-                try:
-                    self.store.publish_receipt(receipt)
-                except Exception:
-                    if previous is not None:
-                        _atomic_replace(target, previous)
-                    else:
-                        target.unlink(missing_ok=True)
-                    raise
+            # One explicit update completes retained endpoints and refreshes their
+            # original monthly reports. No scheduler, acquisition or new control.
+            projection = None
+            if self.store.operation(operation_identity) is None:
+                projection = self.project(ensure_origins=True)
+                current_month = self.clock().astimezone(IST).strftime('%Y_%m')
+                months = sorted({datetime.fromisoformat(c.data['origin_at']).astimezone(IST).strftime('%Y_%m')
+                    for c in self.store.records('WO12_WO08_CONSIDERATION_V1')})
+                for month in months:
+                    if month < current_month:
+                        self._update_month_locked(operation_identity='WO12-MONTH-' + digest(
+                            dict(operation=operation_identity, month=month)), year_month=month)
+            return self._update_month_locked(operation_identity=operation_identity, _projection=projection)
+
+    def _update_month_locked(self, *, operation_identity: str, year_month: str | None = None, _projection=None) -> PublicationResult:
+        prior_operation = self.store.operation(operation_identity)
+        if prior_operation is not None:
+            data = prior_operation.data
+            if prior_operation.schema == "WO12_LOCAL_PUBLICATION_FAILURE_V1":
+                raise ValueError(str(data["reason"]))
+            receipt = (prior_operation if prior_operation.schema == "WO12_LOCAL_PUBLICATION_RECEIPT_V1"
+                       else self.store.load(str(data["receipt_identity"])))
+            return self._result(receipt, idempotent=True, outcome=str(data.get("outcome", "PUBLISHED")))
+        projection = _projection or self.project(ensure_origins=True, year_month=year_month)
+        source_boundary_identity = "WO12-SOURCE-BOUNDARY-" + digest({
+            "workbook_schema": (WORKBOOK_SCHEMA, WORKBOOK_VERSION),
+            "source_events": tuple((row[2], row[4], row[5], row[6], row[8]) for row in projection.events),
+            "track_currents": tuple(row[-1] for row in projection.tracks),
+            "opportunity_origins": tuple((
+                row[OPPORTUNITY_COLUMNS.index("opportunity_id")],
+                row[OPPORTUNITY_COLUMNS.index("opportunity_identity")],
+                row[OPPORTUNITY_COLUMNS.index("probable_result_identity")],
+                row[OPPORTUNITY_COLUMNS.index("probables_run_identity")],
+            ) for row in projection.opportunities),
+        })
+        current_receipt = self.store.current_receipt(projection.year_month)
+        if (current_receipt is not None
+                and current_receipt.data.get("source_boundary_identity") == source_boundary_identity):
+            if self._receipt_verified(current_receipt):
                 update = record("WO12_RESEARCH_UPDATE_V1", operation_identity=operation_identity,
-                    receipt_identity=receipt.identity, projection_identity=projection.projection_identity,
-                    source_boundary_identity=source_boundary_identity,
-                    completed_at=projection.generated_at, outcome="PUBLISHED")
-                # The verified receipt is the publication authority.  This
-                # companion is useful audit detail and cannot invalidate a
-                # receipt that is already durable and current.
-                try:
-                    self.store.retain(update)
-                except OSError:
-                    pass
-                staged.unlink(missing_ok=True)
-                stage_dir.rmdir()
-                return self._result(receipt, idempotent=False, outcome="PUBLISHED")
-            except Exception as error:
-                self.store.retain(record("WO12_LOCAL_PUBLICATION_FAILURE_V1",
-                    operation_identity=operation_identity, projection_identity=projection.projection_identity,
-                    failed_at=self.clock(), reason=str(error) if isinstance(error, ValueError) else "WO12_LOCAL_PUBLICATION_FAILED"))
+                    receipt_identity=current_receipt.identity, projection_identity=current_receipt.data["projection_identity"],
+                    source_boundary_identity=source_boundary_identity, completed_at=projection.generated_at,
+                    outcome="ALREADY_UP_TO_DATE")
+                self.store.retain(update)
+                return self._result(current_receipt, idempotent=True, outcome="ALREADY_UP_TO_DATE")
+            return self._recover_receipted_workbook(
+                current_receipt, operation_identity=operation_identity,
+                completed_at=projection.generated_at,
+            )
+        daily_package = record("WO12_DAILY_PACKAGE_V1",
+            research_boundary=projection.generated_at,
+            research_date=projection.generated_at.astimezone(IST).date().isoformat(),
+            source_boundary_identity=source_boundary_identity,
+            monthly_projection_identity=projection.projection_identity,
+            opportunity_ids=[row[0] for row in projection.opportunities],
+            day_state="PUBLISHED", authority="RESEARCH_ONLY")
+        self.store.retain(daily_package)
+        projection = replace(projection, metadata=projection.metadata + (
+            ("source_boundary_identity", source_boundary_identity),
+            ("daily_package_identity", daily_package.identity),
+        ))
+        from kronos.browser.intraday_research import export_research_workbook, validate_research_workbook
+        payload = export_research_workbook(projection)
+        sha = digest_bytes(payload)
+        target = self.publication_root / f"KRONOS_Intraday_Research_{projection.year_month}.xlsx"
+        previous = target.read_bytes() if target.exists() else None
+        stage_dir = self.store.root / "staging" / digest(operation_identity)
+        stage_dir.mkdir(parents=True, exist_ok=False)
+        staged = stage_dir / target.name
+        try:
+            _durable_write(staged, payload)
+            staged_readback = staged.read_bytes()
+            validate_research_workbook(staged_readback, projection)
+            if staged_readback != payload:
+                raise ValueError("WO12_STAGED_READBACK_MISMATCH")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(staged, target)
+            _sync(target.parent)
+            readback = target.read_bytes()
+            validate_research_workbook(readback, projection)
+            if digest_bytes(readback) != sha or readback != payload:
+                if previous is not None:
+                    _atomic_replace(target, previous)
+                else:
+                    target.unlink(missing_ok=True)
+                raise ValueError("WO12_PUBLISHED_READBACK_MISMATCH")
+            receipt = record("WO12_LOCAL_PUBLICATION_RECEIPT_V1",
+                operation_identity=operation_identity, year_month=projection.year_month,
+                research_boundary=projection.generated_at, daily_package_identity=daily_package.identity,
+                source_boundary_identity=source_boundary_identity,
+                workbook_path=str(target), workbook_path_identity="WO12-WORKBOOK-PATH-" + digest({"root": str(self.publication_root), "filename": target.name}),
+                workbook_filename=target.name, workbook_sha256=sha, workbook_bytes=len(payload),
+                projection_identity=projection.projection_identity, published_at=projection.generated_at,
+                prior_workbook_sha256=None if previous is None else digest_bytes(previous),
+                policy_identity=POLICY_IDENTITY, policy_version=POLICY_VERSION,
+                policy_checksum=POLICY_CHECKSUM, schema_identity=WORKBOOK_SCHEMA,
+                schema_version=WORKBOOK_VERSION, generator_identity="KRONOS-WO12-LOCAL-XLSX-GENERATOR-V1",
+                atomic_replace=True, readback_verified=True, status="VERIFIED", authority="RESEARCH_ONLY")
+            try:
+                self.store.publish_receipt(receipt)
+            except Exception:
+                if previous is not None:
+                    _atomic_replace(target, previous)
+                else:
+                    target.unlink(missing_ok=True)
                 raise
+            update = record("WO12_RESEARCH_UPDATE_V1", operation_identity=operation_identity,
+                receipt_identity=receipt.identity, projection_identity=projection.projection_identity,
+                source_boundary_identity=source_boundary_identity,
+                completed_at=projection.generated_at, outcome="PUBLISHED")
+            # The verified receipt is the publication authority.  This
+            # companion is useful audit detail and cannot invalidate a
+            # receipt that is already durable and current.
+            try:
+                self.store.retain(update)
+            except OSError:
+                pass
+            staged.unlink(missing_ok=True)
+            stage_dir.rmdir()
+            return self._result(receipt, idempotent=False, outcome="PUBLISHED")
+        except Exception as error:
+            self.store.retain(record("WO12_LOCAL_PUBLICATION_FAILURE_V1",
+                operation_identity=operation_identity, projection_identity=projection.projection_identity,
+                failed_at=self.clock(), reason=str(error) if isinstance(error, ValueError) else "WO12_LOCAL_PUBLICATION_FAILED"))
+            raise
 
     def _recover_receipted_workbook(self, receipt, *, operation_identity: str,
                                     completed_at: datetime) -> PublicationResult:
         """Recreate the exact receipted workbook without creating new authority."""
         data = receipt.data
         boundary = datetime.fromisoformat(str(data["research_boundary"]))
-        projection = self.project(generated_at=boundary, ensure_origins=False)
+        projection = self.project(generated_at=boundary, ensure_origins=False, year_month=data["year_month"])
         if projection.projection_identity != data["projection_identity"]:
             raise ValueError("WO12_RECEIPTED_PROJECTION_NOT_REPRODUCIBLE")
         projection = replace(projection, metadata=projection.metadata + (
