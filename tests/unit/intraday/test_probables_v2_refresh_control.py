@@ -478,3 +478,151 @@ def test_conflicting_fallback_does_not_suppress_integrity_or_storage_errors(tmp_
     assert store.load_current_run() == previous
     assert before == {p: p.read_bytes() for p in store.root.rglob('*') if p.is_file()}
     assert len(tuple((native.root / 'runs').glob('*.json'))) == 1
+
+
+def _refresh_mcx_binding_fixture(app, fixture):
+    _, facts, mapping, original, _, bundle = fixture
+    return app.refresh_analysis(
+        source_discovery_run_identity=original.source_discovery_run_identity,
+        universe_identity=original.universe_identity, universe_version=original.universe_version,
+        reconciliation_identity=original.reconciliation_identity,
+        reconciliation_version=original.reconciliation_version,
+        market_session_identity=original.market_session_identity, analysis_boundary=original.analysis_boundary,
+        member_evidence=(mapping,), unavailable_members=(), provenance=('ISOLATED',),
+        native_facts=(facts,), native_bundles=(bundle,))
+
+
+@pytest.mark.parametrize('family', ['GOLDM', 'SILVERM', 'COPPER', 'CRUDE', 'NATGAS'])
+def test_canonical_mcx_binding_closes_native_companion_and_probables(tmp_path, family):
+    import json
+    from kronos.application.intraday_probables_v2 import IntradayProbablesV2Application
+    from kronos.intraday.native_structural_selection import NativeStructuralStore
+    from kronos.intraday.native_pullback_decision import load_decision_source
+    from tests.unit.intraday.test_native_pullback_mcx import _publication_fixture
+    publisher, native, bindings, *fixture = _publication_fixture(tmp_path, family)
+    store = ProbablesV2Store((tmp_path / 'probables').resolve())
+    app = IntradayProbablesV2Application(store=store, native_selection=publisher)
+    run = _refresh_mcx_binding_fixture(app, fixture)
+    assert store.load_current_run() == run
+    assert run.results == fixture[3].results
+    manifest = json.loads((native.root / 'runs' / (run.run_identity + '.json')).read_bytes())
+    assert manifest['result_identities'] == [r.result_identity for r in run.results]
+    decision = NativeStructuralStore(native.root).load(manifest['selections'][0])
+    assert load_decision_source(native, decision, None) == fixture[0]
+    assert decision.data['exact_contract'] == fixture[4].active_binding.derivative_contract_id
+    assert decision.data['roll_lineage'] == fixture[4].binding_identity
+    if family == 'NATGAS':
+        assert run.results[0].execution_eligibility != 'ELIGIBLE'
+        assert decision.data['result'] == 'NOT_ESTABLISHED'
+
+
+@pytest.mark.parametrize('failure', ['missing', 'corrupt', 'integrity'])
+def test_mcx_binding_store_failure_preserves_previous_complete_probables_pointer(tmp_path, failure):
+    import json
+    from kronos.application.intraday_probables_v2 import IntradayProbablesV2Application
+    from kronos.instrument.active_derivative import ActiveDerivativeSelectionError
+    from tests.unit.intraday.test_native_pullback_decision import source_fixture
+    from tests.unit.intraday.test_native_pullback_mcx import _publication_fixture
+    publisher, native, bindings, *fixture = _publication_fixture(tmp_path)
+    store = ProbablesV2Store((tmp_path / 'probables').resolve())
+    app = IntradayProbablesV2Application(store=store, native_selection=publisher)
+    previous = _refresh_native_fixture(app, source_fixture())
+    before = {p: p.read_bytes() for p in store.root.rglob('*') if p.is_file()}
+    manifests = {p: p.read_bytes() for p in (native.root / 'runs').glob('*.json')}
+    path = bindings.path_for(fixture[4].binding_identity)
+    if failure == 'missing': path.unlink()
+    elif failure == 'corrupt': path.write_bytes(b'{')
+    else:
+        raw = json.loads(path.read_bytes())
+        raw['integrity_identity'] = 'WRONG'
+        path.write_text(json.dumps(raw))
+    with pytest.raises(RuntimeError, match='PROBABLES_V2_REFRESH_FAILED') as error:
+        _refresh_mcx_binding_fixture(app, fixture)
+    assert isinstance(error.value.__cause__, ActiveDerivativeSelectionError)
+    assert str(error.value.__cause__) == ('ACTIVE_DERIVATIVE_BINDING_UNAVAILABLE'
+        if failure == 'missing' else 'ACTIVE_DERIVATIVE_BINDING_INTEGRITY_INVALID')
+    assert app.snapshot().run == previous and store.load_current_run() == previous
+    assert before == {p: p.read_bytes() for p in store.root.rglob('*') if p.is_file()}
+    assert manifests == {p: p.read_bytes() for p in (native.root / 'runs').glob('*.json')}
+    assert native.bound_identity(fixture[2].semantic_evidence.evidence_identity) is None
+
+
+@pytest.mark.parametrize('case', ['zero', 'multiple'])
+def test_missing_or_ambiguous_mcx_lookup_is_bounded_negative_complete_publication(tmp_path, case):
+    import json
+    from types import SimpleNamespace
+    from kronos.application.intraday_probables_v2 import IntradayProbablesV2Application
+    from kronos.intraday.wo10_native_adapter import adapt_native
+    from tests.unit.intraday.test_native_pullback_mcx import _publication_fixture, _lookup_bundle
+    publisher, native, _, _, _, _, _, binding, _ = _publication_fixture(tmp_path)
+    identities = ('UNRELATED',) if case == 'zero' else (
+        binding.binding_identity, 'ACTIVE-DERIVATIVE-BINDING-' + 'a' * 64)
+    fixture = _lookup_bundle('CRUDE', identities)
+    store = ProbablesV2Store((tmp_path / 'probables').resolve())
+    run = _refresh_mcx_binding_fixture(IntradayProbablesV2Application(
+        store=store, native_selection=publisher), fixture)
+    assert store.load_current_run() == run and run.results == fixture[3].results
+    manifest = json.loads((native.root / 'runs' / (run.run_identity + '.json')).read_bytes())
+    decision = native.load(manifest['selections'][0])
+    assert decision.data['reasons'] == ['MCX_CONTRACT_BINDING_INVALID']
+    assert decision.data['cycle'] is None and decision.data['roles'] == {}
+    assert decision.data['target_manifest'] is None and decision.data['exact_contract'] is None
+    # Loader-only handoff-shaped probe grants no WO09 authority.
+    handoff = SimpleNamespace(canonical_subject_identity=decision.data['subject'], direction=decision.data['direction'])
+    with pytest.raises(ValueError, match='TARGET_POPULATION_INCOMPLETE'):
+        adapt_native(decision, handoff, None, None, now=run.analysis_boundary)
+
+
+def test_authentic_discovery_bundle_closes_all_98_native_and_probables_members(tmp_path):
+    import json
+    from kronos.application.intraday_native_selection import NativePullbackPublication
+    from kronos.application.intraday_probables_v2 import IntradayProbablesV2Application
+    from kronos.instrument.active_derivative_persistence import ActiveDerivativeBindingStore
+    from kronos.intraday.native_structural_selection import NativeStructuralStore
+    from kronos.intraday.native_pullback_decision import load_decision_source, decode_source
+    from kronos.intraday.probables_v2_refresh import map_discovery_execution_to_probables_v2
+    from tests.unit.intraday.test_discovery_source import _composition
+    from tests.unit.intraday.test_discovery_runtime import _publications
+    from tests.unit.instrument.test_active_derivative_selection import _resolve
+    boundary = datetime(2026, 8, 26, 11, 17, tzinfo=IST)
+    # The shared fixture is a local fake capability; no network/Provider acquisition.
+    execution, _, _, _, _ = _composition(tmp_path / 'discovery', observed_at=boundary,
+        active_mcx=True, retain_mcx=True)
+    _, reconciliation = _publications()
+    mapped = map_discovery_execution_to_probables_v2(execution=execution, reconciliation=reconciliation)
+    bindings = ActiveDerivativeBindingStore((tmp_path / 'bindings').resolve())
+    for binding in _resolve(boundary).successful_bindings: bindings.retain(binding)
+    native = NativeStructuralStore(tmp_path / 'native')
+    publisher = NativePullbackPublication(native, clock=lambda: boundary,
+        commissioned_at=boundary, binding_store=bindings)
+    store = ProbablesV2Store((tmp_path / 'probables').resolve())
+    original = execution.run
+    run = IntradayProbablesV2Application(store=store, native_selection=publisher).refresh_analysis(
+        source_discovery_run_identity=original.run_identity, universe_identity=original.universe_identity,
+        universe_version=original.universe_version, reconciliation_identity=original.reconciliation_identity,
+        reconciliation_version=original.reconciliation_version, market_session_identity=original.market_session_identity,
+        analysis_boundary=boundary, member_evidence=mapped.member_evidence,
+        unavailable_members=mapped.unavailable_members, provenance=('ISOLATED_DISCOVERY_02B',),
+        native_facts=execution.probables_v2_facts, native_bundles=execution.bundles)
+    assert len(run.results) == 98 and store.load_current_run() == run
+    assert len(mapped.member_evidence) == 98 and not mapped.unavailable_members
+    manifest = json.loads((native.root / 'runs' / (run.run_identity + '.json')).read_bytes())
+    assert manifest['result_identities'] == [r.result_identity for r in run.results]
+    assert len(manifest['selections']) == 98
+    decisions = [NativeStructuralStore(native.root).load(i) for i in manifest['selections']]
+    mcx = [d for d in decisions if d.data['subject'].startswith('MCX-')]
+    assert {d.data['subject'] for d in mcx} == {'MCX-SUBJECT-' + f for f in ('CRUDE', 'COPPER', 'GOLDM', 'SILVERM', 'NATGAS')}
+    for decision in mcx:
+        source = load_decision_source(native, decision, None)
+        facts, mapping, result, binding = decode_source(source)
+        assert 'failure' not in source
+        assert binding.canonical_subject_id == decision.data['subject']
+        assert decision.data['exact_contract'] == binding.active_binding.derivative_contract_id
+        assert decision.data['roll_lineage'] == binding.binding_identity
+        assert binding.domain008_session_identity == facts.current_schedule.session_id
+        assert binding.binding_identity in source['machine_bundle']['fields']['source_identities']['$tuple']
+        assert 'MCX_CONTRACT_BINDING_INVALID' not in decision.data['reasons']
+        assert native.bound_identity(mapping.semantic_evidence.evidence_identity) == decision.identity
+        if decision.data['subject'] == 'MCX-SUBJECT-NATGAS':
+            assert result.execution_eligibility != 'ELIGIBLE'
+            assert decision.data['result'] == 'NOT_ESTABLISHED'

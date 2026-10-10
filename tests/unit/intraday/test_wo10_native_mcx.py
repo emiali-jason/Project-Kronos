@@ -1,7 +1,7 @@
 """Exact MCX Native bindings; synthetic approved source, no market operation."""
 import pytest
 
-from kronos.intraday.wo10_futures_contract import digest
+from kronos.intraday.wo10_futures_contract import digest, moment, normalize
 from kronos.intraday.wo10_native_adapter import adapt_native
 from kronos.intraday.wo10_construction import construct_plan
 from tests.unit.intraday.test_wo10_native_composition import native, retain
@@ -18,19 +18,30 @@ def test_exact_native_mcx_contract_and_roll(tmp_path, family, case):
     store,r,h=intake(tmp_path/"mcx",subject=subject,market_family="MCX",
         exact_mcx_contract_identity=contract,exact_mcx_roll_lineage=roll,session_identity="MCX-2026-09-11")
     app.wo09=store
+    machine_identity=h.machine_evidence_identities[0]
+    boundary_shift=h.analysis_boundary-moment(v["analysis_boundary"])
     for target in (v,source):
         target.update(subject=subject,session=h.session_identity,exact_contract=contract,roll_lineage=roll,
-                      machine_integrity=h.machine_evidence_integrity)
+                      machine_identity=machine_identity,machine_integrity=h.machine_evidence_integrity,
+                      analysis_boundary=normalize(h.analysis_boundary))
+    v["setup_identity"]=machine_identity
     v["instrument_identity"]=contract
-    for candle in source["candles"].values():candle.update(subject=subject,session=h.session_identity)
-    for reference in v["roles"].values():reference["candle_integrity"]=digest(source["candles"][reference["candle_identity"]])
+    for candle in source["candles"].values():
+        candle.update(subject=subject,session=h.session_identity)
+        for field in ("start","end","available_at"):
+            candle[field]=normalize(moment(candle[field])+boundary_shift)
+    for reference in v["roles"].values():
+        reference["structure_identity"]=machine_identity
+        reference["candle_integrity"]=digest(source["candles"][reference["candle_identity"]])
     v["sources"][source["identity"]]=digest(source)
     selected=retain(app,v)
+    assert app.structural_loader.store.bound_identity(machine_identity)==selected.identity
     if case!="valid":
         _,_,h=intake(tmp_path/"different",subject=subject,market_family="MCX",
             exact_mcx_contract_identity="WRONG-CONTRACT" if case=="wrong_contract" else contract,
             exact_mcx_roll_lineage="WRONG-ROLL" if case=="wrong_roll" else roll,session_identity="MCX-2026-09-11")
-        with pytest.raises(ValueError,match="SOURCE_(EXACT_CONTRACT|ROLL_LINEAGE)_MISMATCH"):
+        reason="SOURCE_EXACT_CONTRACT_MISMATCH" if case=="wrong_contract" else "SOURCE_ROLL_LINEAGE_MISMATCH"
+        with pytest.raises(ValueError,match="^"+reason+"$"):
             app.structural_loader.load(h,now=NOW)
     else:
         assert app.structural_loader.load(h,now=NOW)==selected

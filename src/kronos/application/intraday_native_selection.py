@@ -1,4 +1,6 @@
 """Prospective Native companion publication; never reconstruct historical runs."""
+import re
+
 from kronos.intraday.native_pullback_policy import RULES, CHECKSUM, Reason
 from kronos.intraday.native_pullback_decision import source_document,unavailable_source,retain_decision
 from kronos.intraday.wo10_futures_contract import encoded,normalize,digest
@@ -36,7 +38,7 @@ class NativePullbackPublication:
                 bundle=source_bundles.get(f.discovery_bundle_identity)
                 binding=None
                 if result.canonical_subject_identity.startswith('MCX-'):
-                    ids=[] if bundle is None else [x for x in bundle.source_identities if x.startswith('ACTIVE-DERIVATIVE-BINDING-ARTIFACT-')]
+                    ids=[] if bundle is None else [x for x in bundle.source_identities if re.fullmatch(r'ACTIVE-DERIVATIVE-BINDING-[0-9a-f]{64}', x)]
                     if len(ids)!=1 or self.binding_store is None:raise ValueError(Reason.MCX.value)
                     binding=self.binding_store.load(binding_identity=ids[0])
                 source=source_document(f,mapping,result,run.run_identity,mcx_binding=binding,machine_bundle=bundle)
