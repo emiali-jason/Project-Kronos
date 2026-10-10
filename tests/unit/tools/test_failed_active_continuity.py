@@ -1,7 +1,9 @@
 """Disposable retained graphs; executed only by the kernel-isolated test runner."""
-from datetime import timedelta
+from contextlib import contextmanager
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -18,7 +20,7 @@ def _root(tmp_path, family):
         "lifecycle": "swing-v1/native-review/active-trade-lifecycle-v0",
         "wo11": "intraday-v1/prospective-v2-wo11-lifecycle",
         "wo17": "intraday-v1/wo17-position-evidence-active-lifecycle-monitoring-v1",
-        "notifications": "swing-v1/notification-centre-v1/intraday-source-references-v1",
+        "notifications": "swing-v1/native-review/notification-centre-v1/intraday-source-references-v1",
     }
     return tmp_path / "evidence" / paths[family]
 
@@ -324,3 +326,207 @@ def test_unreadable_directory_never_becomes_empty_estate(tmp_path, monkeypatch, 
         return original(path)
     monkeypatch.setattr(Path, "iterdir", guarded)
     assert main(["--evidence-root", str(tmp_path / "evidence")]) == 2
+
+
+@contextmanager
+def _canonical_browser_notifications(tmp_path):
+    """Use the real Browser's default centre wiring, never a fixture centre path."""
+    from kronos.application.intraday_notifications import IntradayNotifications
+    from kronos.application.swing_native_review import NativeReviewWorkflow
+    from kronos.application.swing_opportunities import SwingOpportunitiesApplication
+    from kronos.browser.server import create_browser_server
+    from kronos.swing.v1.native_review import NativeReviewEvidenceStore
+    from tests.unit.application.test_swing_opportunities import _Provider
+    from tests.unit.intraday.test_wo13_notifications import (
+        _NotificationSourceStore, _ResearchOriginSource,
+    )
+    evidence_root = tmp_path / "evidence"
+    native = NativeReviewWorkflow(NativeReviewEvidenceStore(
+        evidence_root / "swing-v1" / "native-review"))
+    application = SwingOpportunitiesApplication(_Provider)
+    server = create_browser_server(application, port=0, native_review=native)
+    try:
+        notifications = IntradayNotifications(
+            centre=server.notification_centre, research=_ResearchOriginSource(),
+            wo09=_NotificationSourceStore(), futures=_NotificationSourceStore(),
+            lifecycle=_NotificationSourceStore(), background=False,
+        )
+        notifications.bind(_NotificationSourceStore())
+        server.intraday_notifications = notifications
+        assert notifications.root == (
+            server.native_review.evidence_root / "notification-centre-v1"
+            / "intraday-source-references-v1")
+        yield server, notifications, evidence_root
+    finally:
+        server.server_close()
+
+
+def _signed_browser_checkpoint(tmp_path, notifications):
+    """The actual process-owned publisher signs the Browser owner's checkpoint."""
+    from kronos.browser.restart_control import BrowserBackendRestartControl
+    from kronos.common import maintenance
+    checkpoint = notifications.checkpoint(certify_durable=True)
+    control = BrowserBackendRestartControl.create(
+        tmp_path / "runtime" / "browser-backend-v1.control", token="a" * 64)
+    try:
+        drain = {field: 0 for field in maintenance._DRAIN_ZERO_FIELDS}
+        drain["notification_checkpoint"] = checkpoint
+        control.maintenance_drain_handoff("b" * 64, "c" * 64, "d" * 40, drain)
+        verified = maintenance.verify_drain_handoff(
+            control.path.parent / "maintenance", generation="b" * 64,
+            parent_pid=os.getpid(), proof="a" * 64, loaded_revision="d" * 40,
+            now=datetime.now(UTC),
+        )
+        assert verified["schema"] == "KRONOS_MAINTENANCE_HANDOFF_V2"
+        assert verified["drain"]["notification_checkpoint"] == checkpoint
+        return verified["drain"]["notification_checkpoint"]
+    finally:
+        control.remove()
+
+
+@pytest.mark.parametrize("completed,pending", [(1, 0), (0, 1), (2, 3)])
+def test_canonical_browser_helper_signed_handoff_roundtrip(tmp_path, completed, pending):
+    with _canonical_browser_notifications(tmp_path) as (server, notifications, root):
+        for index in range(completed):
+            notifications.enqueue("PROBABLES", f"COMPLETED-{index}")
+        notifications.drain()
+        for index in range(pending):
+            notifications.enqueue("PROBABLES", f"PENDING-{index}")
+        assert len(tuple(notifications.root.glob("*.done"))) == completed
+        assert len(tuple(notifications.root.glob("*.pending"))) == pending
+        checkpoint = _signed_browser_checkpoint(tmp_path, notifications)
+        before = _bytes(root)
+        proof = verify_continuity(root, expected_checkpoint=checkpoint)
+        assert (proof.notification_state, proof.notification_pending_count,
+                proof.notification_sha256) == (
+                    checkpoint["state"], pending, checkpoint["sha256"])
+        assert verify_continuity(root, expected_checkpoint=checkpoint) == proof
+        assert _bytes(root) == before
+        # Draining PROBABLES references refreshes the retained origin projection;
+        # this fixture produces no Sponsor event and has no Telegram transport.
+        assert server.notification_centre.snapshot(product="INTRADAY").records == ()
+        if completed and not pending:
+            assert checkpoint["state"] == "EMPTY"
+            assert checkpoint["sha256"] != sha256(b"").hexdigest()
+
+
+def test_wrong_notification_root_cannot_satisfy_canonical_handoff(tmp_path):
+    with _canonical_browser_notifications(tmp_path) as (_, notifications, root):
+        notifications.enqueue("PROBABLES", "COMPLETED-REFERENCE")
+        notifications.drain()
+        checkpoint = _signed_browser_checkpoint(tmp_path, notifications)
+        wrong = root / "swing-v1" / "notification-centre-v1" / notifications.root.name
+        wrong.parent.mkdir(parents=True)
+        notifications.root.rename(wrong)
+        before = _bytes(root)
+        assert notifications.checkpoint()["sha256"] == sha256(b"").hexdigest()
+        with pytest.raises(ValueError, match="NOTIFICATION_CHECKPOINT_MISMATCH"):
+            verify_continuity(root, expected_checkpoint=checkpoint)
+        assert _bytes(root) == before
+
+
+def test_lawful_changed_completed_reference_changes_signed_checkpoint(tmp_path):
+    with _canonical_browser_notifications(tmp_path) as (_, notifications, root):
+        notifications.enqueue("PROBABLES", "COMPLETED-REFERENCE")
+        notifications.drain()
+        checkpoint = _signed_browser_checkpoint(tmp_path, notifications)
+        path, = notifications.root.glob("*.done")
+        ref = json.loads(path.read_bytes())
+        ref["received_at"] = (
+            datetime.fromisoformat(ref["received_at"]) + timedelta(microseconds=1)).isoformat()
+        path.write_bytes(json.dumps(ref, sort_keys=True).encode())
+        changed = notifications.checkpoint()
+        assert changed["state"] == "EMPTY" and changed["pending_count"] == 0
+        assert changed["sha256"] != checkpoint["sha256"]
+        with pytest.raises(ValueError, match="NOTIFICATION_CHECKPOINT_MISMATCH"):
+            verify_continuity(root, expected_checkpoint=checkpoint)
+        assert verify_continuity(root, expected_checkpoint=changed).notification_sha256 == changed["sha256"]
+
+
+def test_canonical_reference_ordering_is_independent_of_directory_iteration(tmp_path, monkeypatch):
+    with _canonical_browser_notifications(tmp_path) as (_, notifications, root):
+        for identity in ("Z", "A", "M"):
+            notifications.enqueue("PROBABLES", identity)
+        checkpoint = notifications.checkpoint()
+        expected = verify_continuity(root, expected_checkpoint=checkpoint)
+        original = Path.iterdir
+        def reverse(directory):
+            return iter(reversed(tuple(original(directory))))
+        monkeypatch.setattr(Path, "iterdir", reverse)
+        assert notifications.checkpoint() == checkpoint
+        assert verify_continuity(root, expected_checkpoint=checkpoint) == expected
+
+
+def test_missing_notification_store_matches_only_the_governed_empty_checkpoint(tmp_path):
+    root = tmp_path / "evidence"
+    empty = dict(state="EMPTY", pending_count=0, sha256=sha256(b"").hexdigest())
+    assert verify_continuity(root, expected_checkpoint=empty).notification_sha256 == empty["sha256"]
+    assert not root.exists()
+    with _canonical_browser_notifications(tmp_path) as (_, notifications, root):
+        notifications.enqueue("PROBABLES", "REQUIRED-REFERENCE")
+        notifications.drain()
+        checkpoint = notifications.checkpoint()
+        shutil.rmtree(notifications.root)
+        before = _bytes(root)
+        with pytest.raises(ValueError, match="NOTIFICATION_CHECKPOINT_MISMATCH"):
+            verify_continuity(root, expected_checkpoint=checkpoint)
+        assert _bytes(root) == before
+        assert not notifications.root.exists()
+
+
+@pytest.mark.parametrize("mutation", [
+    "corrupt_json", "noncanonical", "naive_timestamp", "identity_mismatch",
+    "extra_field", "oversized", "wrong_filename", "unexpected_entry",
+])
+def test_canonical_invalid_completed_reference_blocks_both_readers(tmp_path, mutation):
+    with _canonical_browser_notifications(tmp_path) as (_, notifications, root):
+        notifications.enqueue("PROBABLES", "COMPLETED-REFERENCE")
+        notifications.drain()
+        checkpoint = notifications.checkpoint()
+        path, = notifications.root.glob("*.done")
+        ref = json.loads(path.read_bytes())
+        if mutation == "corrupt_json":
+            path.write_bytes(b"{")
+        elif mutation == "noncanonical":
+            path.write_bytes(json.dumps(ref, sort_keys=True, separators=(",", ":")).encode())
+        elif mutation == "naive_timestamp":
+            ref["received_at"] = "2026-10-10T00:00:00"
+            path.write_bytes(json.dumps(ref, sort_keys=True).encode())
+        elif mutation == "identity_mismatch":
+            ref["identity"] = "TAMPERED-COMPLETED-REFERENCE"
+            path.write_bytes(json.dumps(ref, sort_keys=True).encode())
+        elif mutation == "extra_field":
+            ref["unapproved"] = True
+            path.write_bytes(json.dumps(ref, sort_keys=True).encode())
+        elif mutation == "oversized":
+            path.write_bytes(b" " * 1025)
+        elif mutation == "wrong_filename":
+            path.rename(path.with_name("0" * 64 + ".done"))
+        else:
+            (notifications.root / "unexpected.json").write_bytes(b"{}")
+        before = _bytes(root)
+        with pytest.raises(ValueError, match="WO13_NOTIFICATION_CHECKPOINT_INVALID"):
+            notifications.checkpoint()
+        with pytest.raises(ValueError):
+            verify_continuity(root, expected_checkpoint=checkpoint)
+        assert _bytes(root) == before
+
+
+def test_unreadable_completed_reference_cannot_pass_either_reader(tmp_path, monkeypatch):
+    with _canonical_browser_notifications(tmp_path) as (_, notifications, root):
+        notifications.enqueue("PROBABLES", "COMPLETED-REFERENCE")
+        notifications.drain()
+        checkpoint = notifications.checkpoint()
+        path, = notifications.root.glob("*.done")
+        original = os.open
+        def denied(file, *args, **kwargs):
+            if Path(file) == path:
+                raise PermissionError("ISOLATED-REFERENCE-UNREADABLE")
+            return original(file, *args, **kwargs)
+        before = _bytes(root)
+        monkeypatch.setattr(os, "open", denied)
+        with pytest.raises(PermissionError, match="ISOLATED-REFERENCE-UNREADABLE"):
+            notifications.checkpoint()
+        with pytest.raises(PermissionError, match="ISOLATED-REFERENCE-UNREADABLE"):
+            verify_continuity(root, expected_checkpoint=checkpoint)
+        assert _bytes(root) == before

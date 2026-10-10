@@ -316,7 +316,7 @@ def verify_continuity(evidence_root: Path, *, expected_checkpoint=None) -> Conti
                  lifecycle=native / "active-trade-lifecycle-v0",
                  wo11=intraday / "prospective-v2-wo11-lifecycle",
                  wo17=intraday / "wo17-position-evidence-active-lifecycle-monitoring-v1",
-                 notifications=evidence_root / "swing-v1" / "notification-centre-v1" / "intraday-source-references-v1")
+                 notifications=native / "notification-centre-v1" / "intraday-source-references-v1")
     before = _inventory(roots)
     owners = _paper(roots["paper"]) + _swing_lifecycle(roots["lifecycle"]) + _wo11(roots["wo11"]) + _wo17(roots["wo17"])
     from kronos.application.intraday_notifications import IntradayNotifications
