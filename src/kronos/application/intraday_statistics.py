@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 
 from kronos.application.intraday_review_v2 import IntradayReviewV2Snapshot
@@ -189,6 +189,7 @@ class IntradayStatisticsApplication:
         current_review: Callable[[], IntradayReviewV2Snapshot],
         operational_readiness: Callable[[], dict[str, object]],
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
+        machine_assessment: Callable[[], dict] | None = None,
     ) -> None:
         if not all(callable(item) for item in (
             current_probables, current_review, operational_readiness, clock
@@ -198,17 +199,66 @@ class IntradayStatisticsApplication:
         self._current_review = current_review
         self._operational_readiness = operational_readiness
         self._clock = clock
+        self._machine_assessment = machine_assessment
 
     def project(self) -> IntradayStatisticsProjection:
         generated_at = self._clock()
         if not _aware(generated_at):
             raise IntradayStatisticsError("INTRADAY_STATISTICS_CLOCK_INVALID")
+        if self._machine_assessment is not None:
+            return self._project_machine(generated_at)
         return project_intraday_statistics(
             self._current_probables(),
             self._current_review(),
             self._operational_readiness(),
             generated_at=generated_at,
         )
+
+
+    def _project_machine(self, generated_at):
+        from kronos.intraday.review import ReviewError
+        run = self._current_probables()
+        if run is None:
+            raise IntradayStatisticsError("INTRADAY_STATISTICS_CURRENT_PROBABLES_UNAVAILABLE")
+        machine = self._machine_assessment()
+        if machine["current_probables_run_identity"] != run.run_identity:
+            raise IntradayStatisticsError("INTRADAY_STATISTICS_SOURCE_CHANGED")
+        history_state, history_source, history_count = "ABSENT", _UNAVAILABLE, _UNAVAILABLE
+        current_visual = IntradayReviewV2Snapshot(None, None, ())
+        try:
+            historical = self._current_review()
+            if historical.probables_run_identity is not None:
+                history_state = "HISTORICAL_ONLY"
+                history_source = historical.current_pointer_identity
+                history_count = len(historical.candidates)
+                if historical.probables_run_identity == run.run_identity:
+                    current_visual = historical
+        except (ReviewError, ValueError, OSError) as error:
+            history_state = "HISTORICAL_READ_UNAVAILABLE:" + str(error)
+        # WO-B records keep their original legacy ownership. They cannot become
+        # a new WO08 readiness gate through this export projection.
+        legacy = self._operational_readiness()
+        base = project_intraday_statistics(run, current_visual, legacy, generated_at=generated_at)
+        metrics = tuple(replace(m, metric="Historical " + m.metric, state="HISTORICAL_ONLY")
+                        if m.metric.startswith(("Review", "Chart", "Question", "Answer", "Visual", "WO-B")) else m
+                        for m in base.metrics)
+        extra = [_metric("Historical visual evidence", history_count, history_state,
+                         history_source, CURRENT_REVIEW_V2_POINTER_IDENTITY, REVIEW_V2_CONTRACT_VERSION,
+                         run, generated_at),
+                 _metric("WO08 currentness", machine["currentness"], machine["currentness"],
+                         run.run_identity, "KRONOS-INTRADAY-WO08-ASSESSMENT-V1", "1.0.0", run, generated_at),
+                 _metric("Intraday Chart Analyst required", "NO", "RETIRED_FOR_NEW_PRODUCTION",
+                         run.run_identity, "KRONOS-INTRADAY-WO08-ASSESSMENT-V1", "1.0.0", run, generated_at)]
+        if machine['currentness'] == 'SOURCE_LINEAGE_CURRENT':
+            for assessment in machine['assessments']:
+                extra.append(_metric("WO08 " + assessment['subject'], assessment['disposition'],
+                    assessment['failure_reason'] or 'AVAILABLE', assessment['identity'],
+                    assessment['methodology_identity'], assessment['methodology_version'], run, generated_at))
+        stages = tuple(IntradayStatisticsRow(row.values[:9] +
+                       ("HISTORICAL_LEGACY_CONTEXT:" + str(row.values[9]),) + row.values[10:11] +
+                       ("HISTORICAL_ONLY_NO_WO08_BLOCKING_AUTHORITY",) + row.values[12:])
+                       for row in base.stages)
+        return replace(base, metrics=metrics + tuple(extra), stages=stages)
 
 
 def project_intraday_statistics(

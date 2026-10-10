@@ -66,6 +66,18 @@ class IntradayWo09Application:
             self.store.retain_notification(notification)
         return readiness, requirements
 
+    def evaluate_wo08(self, assessment, *, created_at):
+        """Publish the exact current machine successor without visual evidence."""
+        from kronos.application.intraday_evidence_currentness import require_boundary
+        from kronos.intraday.wo09_machine_readiness import evaluate_machine_readiness
+        boundary = require_boundary(self.eligibility)
+        expected = boundary.capture_wo08(assessment=assessment, created_at=created_at)
+        readiness, requirements = evaluate_machine_readiness(assessment, created_at=created_at)
+        with boundary.final_readiness(expected) as mutation:
+            mutation.retain_readiness(readiness, requirements)
+        self.store.notify_publication(mutation.notices)
+        return readiness, requirements
+
     def register_reassessment_watches(self, readiness: ReadinessRecord,
                                       requirements: tuple[RequirementRecord, ...], *,
                                       at: datetime) -> tuple[Wo09Watch, ...]:

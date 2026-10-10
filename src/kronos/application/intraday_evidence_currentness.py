@@ -28,7 +28,7 @@ class PublicationExpectation:
 
 class IntradayPublicationBoundary:
     def __init__(self, *, review, probables, paired, bindings, reconciliation,
-                 ordered_batch, wo09, futures, calendar, clock):
+                 ordered_batch, wo09, futures, calendar, clock, wo08=None, native=None):
         from kronos.intraday.review_v2_persistence import IntradayReviewV2Store
         from kronos.intraday.probables_v2_persistence import ProbablesV2Store
         from kronos.intraday.review_mcx_paired_persistence import IntradayMcxPairedReviewStore
@@ -47,14 +47,26 @@ class IntradayPublicationBoundary:
         self.bindings, self.reconciliation = bindings, reconciliation
         self.ordered_batch, self.wo09, self.futures = ordered_batch, wo09, futures
         self.calendar, self.clock = calendar, clock
+        if wo08 is not None or native is not None:
+            from kronos.intraday.wo08_assessment_store import Wo08AssessmentStore
+            from kronos.intraday.native_structural_selection import NativeStructuralStore
+            if type(wo08) is not Wo08AssessmentStore or type(native) is not NativeStructuralStore:
+                raise TypeError("INTRADAY_WO08_PUBLICATION_DEPENDENCIES_REQUIRED")
+        self.wo08, self.native = wo08, native
 
     @contextmanager
-    def _sources(self):
+    def _sources(self, readiness=None):
         # None resets page caches. No page preparation or arbitrary supplied
         # callback/assessor runs while these producer guards are held.
         with ExitStack() as stack:
-            for owner in (self.review, self.probables, self.paired, self.bindings,
-                          self.reconciliation, self.ordered_batch):
+            from kronos.intraday.wo09_machine_readiness import MachineReadinessRecord
+            machine = type(readiness) is MachineReadinessRecord
+            if machine and (self.wo08 is None or self.native is None):
+                self._deny(EligibilityReason.ELIGIBILITY_AUTHORITY_UNAVAILABLE, "readiness")
+            owners = ((self.probables, self.bindings, self.wo08) if machine else
+                      (self.review, self.probables, self.paired, self.bindings,
+                       self.reconciliation, self.ordered_batch))
+            for owner in owners:
                 stack.enter_context(owner.page_read_scope(None))
             yield
 
@@ -64,6 +76,11 @@ class IntradayPublicationBoundary:
             if operation == "lifecycle" else NewWorkAction.READINESS_HANDOFF))
 
     def _source(self, readiness, operation):
+        from kronos.intraday.wo09_machine_readiness import MachineReadinessRecord
+        if type(readiness) is MachineReadinessRecord:
+            return self._machine_source(readiness, operation)
+        if self.wo08 is not None:
+            self._deny(EligibilityReason.WO07F_NEW_WORK_RETIRED, operation)
         # Every loader retains its own corruption/storage exception. An absent
         # required pointer is not interchangeable with corrupt evidence.
         pp = self.probables.load_current()
@@ -130,6 +147,73 @@ class IntradayPublicationBoundary:
                 digest(pack), digest(answer), digest(visual), digest(reconciliation_pointer),
                 digest(reconciled), digest(binding))
 
+    def _machine_source(self, readiness, operation):
+        """Uncached exact WO08/Probables/Native graph; no visual owner is read."""
+        from kronos.intraday.wo09_machine_readiness import evaluate_machine_readiness
+        readiness.__post_init__()
+        pp = self.probables.load_current()
+        wp = self.wo08.current_pointer()
+        if pp is None or wp is None:
+            self._deny(EligibilityReason.SOURCE_LINEAGE_NOT_ESTABLISHED, operation)
+        if pp.run_identity != readiness.probables_run_identity or wp["run_identity"] != pp.run_identity:
+            self._deny(EligibilityReason.SOURCE_SUPERSEDED, operation)
+        run = self.probables.load_current_run()
+        result = self.probables.load_result(readiness.probable_result_identity)
+        assessment = self.wo08.load(readiness.wo08_identity)
+        members = self.wo08.current_run()
+        d = assessment.data
+        if (result not in run.results or assessment not in members
+                or assessment.integrity != readiness.wo08_integrity
+                or d["run_integrity"] != run.integrity_identity
+                or d["probable_result_identity"] != result.result_identity
+                or d["probable_result_integrity"] != result.integrity_identity
+                or d["subject"] != result.canonical_subject_identity
+                or d["session_identity"] != result.market_session_identity
+                or d["semantic_evidence_identity"] != result.semantic_evidence_identity
+                or evaluate_machine_readiness(assessment, created_at=readiness.created_at)[0] != readiness):
+            raise ValueError("WO09_WO08_SOURCE_BINDING_INVALID")
+        semantic = selection = native = binding = native_source = None
+        if result.semantic_evidence_identity is not None:
+            semantic = self.probables.load_semantic(result.semantic_evidence_identity)
+            selection = self.probables.load_selection(result.completed_evidence_selection_identity)
+            if (semantic.integrity_identity != d["semantic_evidence_integrity"]
+                    or semantic.completed_evidence_selection_identity != selection.selection_identity
+                    or selection.selection_identity != d["completed_evidence_identity"]
+                    or selection.integrity_identity != d["completed_evidence_integrity"]
+                    or semantic.canonical_subject_identity != readiness.canonical_subject_identity):
+                raise ValueError("WO09_WO08_SOURCE_BINDING_INVALID")
+        if d.get("native_decision_identity") is not None:
+            native = self.native.load(d["native_decision_identity"])
+            from kronos.intraday.native_pullback_decision import load_decision_source
+            native_source = load_decision_source(self.native, native, None)
+            nd = native.data
+            if (native.integrity != d["native_decision_integrity"]
+                    or self.native.bound_identity(result.semantic_evidence_identity) != native.identity
+                    or nd["analysis_cycle"] != run.run_identity
+                    or nd["probable_result_identity"] != result.result_identity
+                    or nd["machine_identity"] != result.semantic_evidence_identity
+                    or nd["machine_integrity"] != d["semantic_evidence_integrity"]):
+                raise ValueError("WO09_WO08_NATIVE_BINDING_INVALID")
+        if readiness.market_family == "MCX":
+            binding = self.bindings.load_current(canonical_subject_id=readiness.canonical_subject_identity)
+            # A missing binding remains a truthful unavailable assessment. A
+            # change of an established binding invalidates this generation.
+            if readiness.exact_mcx_roll_lineage is not None:
+                if binding is None:
+                    self._deny(EligibilityReason.SOURCE_LINEAGE_NOT_ESTABLISHED, operation)
+                if (binding.binding_identity != readiness.exact_mcx_roll_lineage
+                        or binding.active_binding.derivative_contract_id != readiness.exact_mcx_contract_identity):
+                    self._deny(EligibilityReason.SOURCE_SUPERSEDED, operation)
+        return tuple(digest(item) for item in (pp, wp, run, result, d, semantic, selection, native, native_source, binding))
+
+    def capture_wo08(self, *, assessment, created_at):
+        from kronos.intraday.wo09_machine_readiness import evaluate_machine_readiness
+        readiness, _ = evaluate_machine_readiness(assessment, created_at=created_at)
+        with self._sources(readiness):
+            generations = self._source(readiness, "readiness")
+            expected = self.wo09.expectation(readiness.canonical_subject_identity)
+            return PublicationExpectation("readiness", assessment.identity, readiness, generations, expected)
+
     def _session(self, readiness, operation):
         # Reuse commissioned DOMAIN-008 interpretation, without adding a TTL or
         # making a closed NSE session a global MCX denial.
@@ -150,6 +234,8 @@ class IntradayPublicationBoundary:
     def capture_readiness(self, *, record, semantic, selection, visual, created_at,
                           exact_mcx_contract_identity=None, exact_mcx_roll_lineage=None,
                           natgas_commissioning_state=None):
+        if self.wo08 is not None:
+            self._deny(EligibilityReason.WO07F_NEW_WORK_RETIRED, "readiness")
         kwargs = dict(exact_mcx_contract_identity=exact_mcx_contract_identity,
             exact_mcx_roll_lineage=exact_mcx_roll_lineage,
             natgas_commissioning_state=natgas_commissioning_state)
@@ -224,7 +310,7 @@ class IntradayPublicationBoundary:
     def _final(self, expected, operation):
         if type(expected) is not PublicationExpectation or expected.operation != operation:
             raise TypeError("INTRADAY_PUBLICATION_EXPECTATION_REQUIRED")
-        with self._sources():
+        with self._sources(expected.readiness):
             generations = self._source(expected.readiness, operation)
             if generations != expected.generations[:len(generations)]:
                 self._deny(EligibilityReason.SOURCE_SUPERSEDED, operation)

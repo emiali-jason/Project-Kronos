@@ -46,7 +46,7 @@ def test_runtime_composes_valid_empty_v2_review_without_autonomous_work(
     assert shared.active_lease_count == 0
 
 
-def test_pf10_runtime_restoration_prepares_empty_generation_without_writes(
+def test_wo08_runtime_keeps_historical_visual_generation_unprepared_without_writes(
     tmp_path: Path,
 ) -> None:
     shared, provider, factory_calls = _shared()
@@ -55,16 +55,16 @@ def test_pf10_runtime_restoration_prepares_empty_generation_without_writes(
     composition = create_intraday_runtime(shared, evidence_root=tmp_path.resolve())
 
     generation = composition.review_v2_application._page_generation
-    assert generation is not None
-    assert generation.current_pointer_identity is None
-    with composition.review_v2_application.page_read_scope():
-        assert composition.review_v2_application.snapshot().candidates == ()
+    assert generation is None
+    assert composition.review_v2_application._prepare_pages is False
+    assert composition.review_v2_application.snapshot().candidates == ()
+    assert composition.wo08_store.current_run() == ()
     assert _fingerprints(tmp_path) == before
     assert provider.begin_count == 0
     assert factory_calls == []
 
 
-def test_runtime_restores_exact_v2_review_pointer_without_creating_review(
+def test_runtime_retains_historical_v2_pointer_for_explicit_reads_without_reactivating_review(
     tmp_path: Path,
 ) -> None:
     root = tmp_path.resolve()
@@ -90,9 +90,12 @@ def test_runtime_restores_exact_v2_review_pointer_without_creating_review(
         clock=lambda: run.analysis_boundary,
     )
 
-    assert composition.review_v2_current == expected_pointer
+    assert composition.review_v2_current is None
     assert composition.review_v2_store.load_current() == expected_pointer
     assert composition.review_v2_store.cycles_for_run(run.run_identity) == expected_cycles
+    historical = composition.review_v2_application.historical_snapshot()
+    assert historical.probables_run_identity == run.run_identity
+    assert len(historical.candidates) == len(expected_cycles)
     assert composition.review_v2_application.workspace_state() == "REVIEW_NON_CURRENT"
     assert composition.review_v2_application.snapshot().candidates == ()
     with pytest.raises(ReviewError, match=ReviewFailure.NOT_CURRENT.value):
@@ -104,7 +107,7 @@ def test_runtime_restores_exact_v2_review_pointer_without_creating_review(
     assert shared.active_lease_count == 0
 
 
-def test_runtime_never_falls_back_to_v1_and_corrupt_v2_pointer_fails_closed(
+def test_runtime_never_falls_back_to_v1_and_corrupt_historical_pointer_fails_only_on_read(
     tmp_path: Path,
 ) -> None:
     v1_only_root = (tmp_path / "v1-only").resolve()
@@ -129,8 +132,13 @@ def test_runtime_never_falls_back_to_v1_and_corrupt_v2_pointer_fails_closed(
     corrupt_pointer.write_bytes(b"{}")
     corrupt_shared, corrupt_provider, corrupt_factory_calls = _shared()
 
+    before = _fingerprints(corrupt_root)
+    restored = create_intraday_runtime(corrupt_shared, evidence_root=corrupt_root)
+    assert restored.review_v2_current is None
+    assert restored.wo08_store.current_run() == ()
     with pytest.raises(ReviewError, match=ReviewFailure.INTEGRITY_INVALID.value):
-        create_intraday_runtime(corrupt_shared, evidence_root=corrupt_root)
+        restored.review_v2_store.load_current()
+    assert _fingerprints(corrupt_root) == before
 
     assert corrupt_provider.capability.calls == 0
     assert corrupt_provider.begin_count == 0

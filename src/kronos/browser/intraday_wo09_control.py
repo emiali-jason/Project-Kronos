@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from kronos.intraday.wo09_readiness import (
     CriterionState, CurrentnessState, ReadinessRecord, ReadinessState,
@@ -16,25 +16,42 @@ WO09_PRODUCT_ROUTE = "/intraday/wo09"
 class IntradayWo09Projection:
     """Read persisted authority only; no evaluation path is exposed to Browser."""
 
-    def __init__(self, store: Wo09Store) -> None:
+    def __init__(self, store: Wo09Store, *, machine_successor: bool = False) -> None:
         if type(store) is not Wo09Store:
             raise ValueError("WO09_BROWSER_STORE_INVALID")
+        if type(machine_successor) is not bool:
+            raise ValueError("WO09_BROWSER_SUCCESSOR_MODE_INVALID")
         self.store = store
+        self.machine_successor = machine_successor
 
     def status_document(self) -> dict[str, object]:
         cards = []
         details = {}
+        historical_cards = []
+        historical_details = {}
         for pointer, record in self.store.restore_current():
             requirements = self.store.load_requirements(record.readiness_identity)
             card = project_card(record, requirements, currentness=pointer.currentness)
-            cards.append(card)
-            details[record.readiness_identity] = project_analysis_details(record, requirements)
+            detail = project_analysis_details(record, requirements)
+            if self.machine_successor and record.source_authority == "WO07F":
+                # The retained pointer is evidence of its original publication, not
+                # new-work authority after retirement of the visual production path.
+                historical_cards.append(replace(card,
+                    monitorability_state="HISTORICAL_ONLY", attention_state="NONE",
+                    next_action="HISTORICAL_EVIDENCE_ONLY"))
+                detail["F. WHAT HAPPENS NEXT"] = "HISTORICAL_EVIDENCE_ONLY"
+                historical_details[record.readiness_identity] = detail
+            else:
+                cards.append(card)
+                details[record.readiness_identity] = detail
         active = active_attention_cards(tuple(cards))
         return {
             "authority_owner": "INTRADAY_WO09",
             "cards": tuple(cards),
             "active_attention": active,
             "analysis_details": details,
+            "historical_cards": tuple(historical_cards),
+            "historical_analysis_details": historical_details,
             "provider_calls": 0,
             "calculations": 0,
         }
@@ -55,11 +72,17 @@ class Wo09SponsorCard:
     attention_state: str
     next_action: str
     analysis_details_action: str = "VIEW ANALYSIS DETAILS"
+    source_authority: str = "WO07F"
+    assessment_state: str | None = None
+    probables_run_identity: str | None = None
+    analysis_boundary: str | None = None
+    created_at: str | None = None
 
 
 def project_card(record: ReadinessRecord, requirements: tuple[RequirementRecord, ...], *,
                  currentness: CurrentnessState | None = None) -> Wo09SponsorCard:
-    if type(record) is not ReadinessRecord or any(type(item) is not RequirementRecord for item in requirements):
+    from kronos.intraday.wo09_machine_readiness import MachineReadinessRecord
+    if type(record) not in {ReadinessRecord, MachineReadinessRecord} or any(type(item) is not RequirementRecord for item in requirements):
         raise ValueError("WO09_BROWSER_PROJECTION_INPUT_INVALID")
     if {item.readiness_identity for item in requirements} != {record.readiness_identity}:
         raise ValueError("WO09_BROWSER_BINDING_INVALID")
@@ -75,8 +98,14 @@ def project_card(record: ReadinessRecord, requirements: tuple[RequirementRecord,
     )
     return Wo09SponsorCard(
         readiness_identity=record.readiness_identity,
+        source_authority=record.source_authority,
+        probables_run_identity=record.probables_run_identity,
+        analysis_boundary=record.analysis_boundary.isoformat(),
+        created_at=record.created_at.isoformat(),
+        assessment_state=getattr(record, "assessment_disposition", None),
         instrument=record.canonical_subject_identity, direction=record.direction,
-        wo07f_state=record.wo07f_outcome.value, readiness_state=record.readiness_state.value,
+        wo07f_state="HISTORICAL_ONLY" if record.wo07f_outcome is None else record.wo07f_outcome.value,
+        readiness_state=record.readiness_state.value,
         score="NOT_APPLICABLE" if record.satisfied_count is None else f"{record.satisfied_count} / 5",
         outstanding_count="NOT_APPLICABLE" if record.outstanding_count is None else str(record.outstanding_count),
         highest_priority_outstanding=tuple(item.criterion.criterion_id.value for item in outstanding[:2]),
@@ -101,6 +130,27 @@ def project_card(record: ReadinessRecord, requirements: tuple[RequirementRecord,
 def project_analysis_details(record: ReadinessRecord, requirements: tuple[RequirementRecord, ...]) -> dict[str, object]:
     """Seven progressive-disclosure sections with no domain calculation."""
     by_id = {item.criterion.criterion_id.value: item.criterion for item in requirements}
+    if record.source_authority == "WO08":
+        return {
+            "A. MACHINE WO08 ASSESSMENT": {
+                "identity": record.wo08_identity, "integrity": record.wo08_integrity,
+                "disposition": record.assessment_disposition,
+                "methodology": record.methodology_identity, "version": record.methodology_version,
+                "failure_stage": record.failure_stage, "failure_reason": record.failure_reason,
+                "criteria": {key: {"state": value.state.value, "current": value.current_value}
+                             for key, value in by_id.items()},
+            },
+            "B. WO09 READINESS": {"state": record.readiness_state.value,
+                "satisfied": record.satisfied_count, "outstanding": record.outstanding_count},
+            "C. AUTHORITY BOUNDARY": "Chart Analyst is not required. No trade, PAPER or broker authority.",
+            "D. HISTORICAL VISUAL EVIDENCE": "Retained separately; retired for new Intraday production.",
+            "E. EVIDENCE LINEAGE": {"readiness_identity": record.readiness_identity,
+                "probables_run_identity": record.probables_run_identity,
+                "probable_result_identity": record.probable_result_identity,
+                "machine_evidence_identities": record.machine_evidence_identities,
+                "analysis_boundary": record.analysis_boundary.isoformat(),
+                "session_identity": record.session_identity},
+        }
     return {
         "A. WHAT NATIVE / MACHINE ANALYSIS SAYS": {
             "criteria": {key: value.current_value for key, value in by_id.items() if value.authority == "MACHINE"},

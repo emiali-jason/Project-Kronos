@@ -189,9 +189,13 @@ class IntradayBrowserRoutes:
         statistics: IntradayStatisticsApplication | None = None,
         research_control: IntradayResearchControl | None = None,
         review_workstation: object | None = None,
+        wo08_projection=None,
+        visual_history=None,
     ) -> None:
         if not callable(getattr(workstation, "snapshot", None)):
             raise ValueError("INTRADAY_BROWSER_ROUTES_INVALID")
+        self._wo08_projection = wo08_projection
+        self._visual_history = visual_history
         self._lifecycle_control = lifecycle_control
         self._workstation = workstation
         self._review_workstation = (
@@ -393,6 +397,38 @@ class IntradayBrowserRoutes:
         request: BrowserGetRequest,
         snapshot_provider: BrowserSnapshotProvider,
     ) -> BrowserRouteResponse | None:
+        if self._wo08_projection is not None:
+            from kronos.browser.intraday_wo08 import (
+                WO08_STATUS_ROUTE, HISTORY_ROUTE, HISTORY_ARTIFACT_ROUTE, render_machine_review,
+            )
+            if request.path == REVIEW_V2_STATUS_ROUTE:
+                from kronos.browser.intraday_wo08 import RETIREMENT_REASON
+                return BrowserRouteResponse(json.dumps({"state": "HISTORICAL_ONLY",
+                    "new_work_authority": "RETIRED", "reason": RETIREMENT_REASON,
+                    "historical_evidence_route": HISTORY_ROUTE}), content_type="application/json; charset=utf-8")
+            if request.path in {WO08_STATUS_ROUTE, "/intraday/review", HISTORY_ROUTE, HISTORY_ARTIFACT_ROUTE}:
+                try:
+                    if request.path == HISTORY_ROUTE:
+                        if request.query or self._visual_history is None:
+                            raise ValueError("HISTORICAL_VISUAL_REQUEST_INVALID")
+                        return BrowserRouteResponse(self._visual_history.render(snapshot_provider()))
+                    if request.path == HISTORY_ARTIFACT_ROUTE:
+                        if self._visual_history is None:
+                            raise ValueError("HISTORICAL_VISUAL_UNAVAILABLE")
+                        return self._visual_history.artifact(request.query)
+                    document = self._wo08_projection.status_document()
+                    if request.path == WO08_STATUS_ROUTE:
+                        if request.query:
+                            raise ValueError("WO08_STATUS_REQUEST_INVALID")
+                        return BrowserRouteResponse(json.dumps(document, default=str),
+                            content_type="application/json; charset=utf-8")
+                    return BrowserRouteResponse(render_machine_review(snapshot_provider(), document,
+                        {} if self._wo09_projection is None else self._wo09_projection.status_document(),
+                        candidate=request.query.get("candidate", [None])[0]))
+                except (ValueError, OSError, ReviewError) as error:
+                    return BrowserRouteResponse(json.dumps({"outcome": "UNAVAILABLE",
+                        "failure_stage": "READ_ONLY_PROJECTION", "failure_reason": str(error)}),
+                        status=HTTPStatus.SERVICE_UNAVAILABLE, content_type="application/json; charset=utf-8")
         if request.path == CHART_PREVIEW_ROUTE:
             try:
                 if self._review_v2_control is None:
@@ -467,8 +503,15 @@ class IntradayBrowserRoutes:
             if status is not None and status.get("current_analysis_identity") != identity:
                 from kronos.application.intraday_review_v2 import IntradayPageUnavailable
                 raise IntradayPageUnavailable("INTRADAY_PAGE_SOURCE_CHANGED")
-            review = self._opportunity_review_snapshot(
-                expected_run=identity, check_run=control is not None)
+            if self._wo08_projection is not None:
+                try:
+                    review = self._wo08_projection.opportunity_snapshot(expected_run=identity)
+                except (ValueError, OSError) as error:
+                    from kronos.application.intraday_review_v2 import IntradayPageUnavailable
+                    raise IntradayPageUnavailable("WO08_CURRENT_ASSESSMENT_UNAVAILABLE") from error
+            else:
+                review = self._opportunity_review_snapshot(
+                    expected_run=identity, check_run=control is not None)
             return BrowserRouteResponse(
                 render_intraday_workstation(
                     snapshot_provider(), workstation,
@@ -619,7 +662,8 @@ class IntradayBrowserRoutes:
             return BrowserRouteResponse(
                 render_intraday_operational_readiness(
                     snapshot_provider(),
-                    self._operational_readiness.status_document(),
+                    {**self._operational_readiness.status_document(),
+                     **({"historical_context_only": True} if self._wo08_projection is not None else {})},
                 )
             )
         elif request.path == "/control/intraday-discovery/v2/status":
@@ -839,6 +883,18 @@ class IntradayBrowserRoutes:
     ) -> BrowserRouteResponse | None:
         if not self.owns_post(request.path):
             return None
+        if self._wo08_projection is not None and request.path in {
+            "/control/intraday-review/v2", REVIEW_V2_CHART_ROUTE,
+            REVIEW_V2_QUESTION_TRANSPORT_ROUTE, REVIEW_V2_ANSWER_IMPORT_ROUTE,
+            "/intraday/review/start", "/intraday/review/chart", "/intraday/review/question-pack",
+            "/intraday/review/question-packs", "/intraday/review/answer", "/intraday/review/answers",
+            "/intraday/review/reconcile", "/intraday/review/reconcile-all",
+        }:
+            from kronos.browser.intraday_wo08 import RETIREMENT_REASON
+            return BrowserRouteResponse(json.dumps({"outcome": "REJECTED",
+                "failure_stage": "RETIRED_PRODUCTION_AUTHORITY", "failure_reason": RETIREMENT_REASON,
+                "authority_owner": "INTRADAY_WO08", "historical_evidence": "PRESERVED"}),
+                status=HTTPStatus.CONFLICT, content_type="application/json; charset=utf-8")
         try:
             if request.path == RESEARCH_UPDATE_ROUTE:
                 if (self._research_control is None or request.query

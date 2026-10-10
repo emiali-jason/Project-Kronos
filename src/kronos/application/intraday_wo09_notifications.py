@@ -55,6 +55,10 @@ class Wo09NotificationSource:
 def project_notification(record: ReadinessRecord, *, currentness: CurrentnessState | None = None,
                          effective_at: datetime | None = None) -> Wo09NotificationSource | None:
     """Project one immutable source; repeated projection is deterministic/deduplicated."""
+    from kronos.intraday.wo09_machine_readiness import MachineReadinessRecord
+    if type(record) is MachineReadinessRecord:
+        record.__post_init__()
+        return None
     if type(record) is not ReadinessRecord:
         raise ValueError("WO09_NOTIFICATION_INPUT_INVALID")
     if record.attention_state is AttentionState.NONE:

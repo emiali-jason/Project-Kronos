@@ -56,3 +56,5 @@ WO-12 remains research authority. LIVE remains uncommissioned, Observation is
 non-exposure, and NATGAS remains HELD. Source identities and presentation deletion
 boundaries are preserved. Publication/runtime/production remain separately gated;
 PERF/LAG-01 is not started.
+
+[WO08 Assessment V1 / WO09 Machine Readiness V2](KRONOS-INTRADAY-WO08-ASSESSMENT-V1.md) defines complete98 machine authority, unavailable criteria, existing publication protection and separate WO12 association under Sponsor-approved ADR0062.

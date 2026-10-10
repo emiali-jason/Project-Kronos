@@ -111,3 +111,7 @@ execution eligibility.
 Follow the [Intraday Shared-File Change Rule](../../../engineering/INTRADAY-SHARED-FILE-CHANGE-RULE.md).
 
 - [WO-06C Assessment observation provenance](KRONOS-INTRADAY-WO-06C-ASSESSMENT-OBSERVATION.md) — prospective immutable measurement provenance; historical missing authority preserved.
+
+## WO08 successor — 10 October 2026
+
+[ADR0062](../../adr/ADR-0062-WO08-PRODUCTION-SUCCESSOR-AND-WO07F-RETIREMENT.md) prospectively replaces the mandatory Intraday Chart Analyst/WO07F dependency. [Retirement and slice reconciliation](KRONOS-INTRADAY-WO07F-RETIREMENT-AND-WO08-SUCCESSOR.md) and the [assessment interface](../../interfaces/KRONOS-INTRADAY-WO08-ASSESSMENT-V1.md) define new authority. Older dated manifests remain preserved historical evidence. Unsupported criteria stay fail-closed; publication/runtime status requires exact deployment evidence.

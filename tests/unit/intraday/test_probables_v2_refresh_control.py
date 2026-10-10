@@ -276,10 +276,16 @@ def test_active_v2_refresh_rejects_concurrent_v1_before_second_provider_read(
     assert provider_requests == [1]
 
     proceed.set()
-    thread.join(timeout=10)
+    # The fence is proven above, while the Provider barrier is held.  Completion
+    # now also durably publishes all 98 WO08 assessments and WO09 records; the
+    # old ten-second fixture wait was not an Analysis performance contract.
+    # Keep a bounded join and verify the complete successor population below.
+    thread.join(timeout=120)
     assert not thread.is_alive()
     assert len(outcomes) == 1 and outcomes[0]["outcome"] == "SUCCESS"
     assert provider_requests == [465]
+    assert len(composition.wo08_store.current_run()) == 98
+    assert len(composition.wo09_application.restore()) == 98
 
 
 def test_failed_later_v2_preserves_last_success(tmp_path: Path) -> None:

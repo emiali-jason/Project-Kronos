@@ -138,6 +138,9 @@ class DiscoveryOperationStage(StrEnum):
     )
     PROBABLES_EVIDENCE_MAPPING = "PROBABLES_EVIDENCE_MAPPING"
     PROBABLES_INVOCATION = "PROBABLES_INVOCATION"
+    WO08_ASSESSMENT_PUBLICATION = "WO08_ASSESSMENT_PUBLICATION"
+    WO09_READINESS_PUBLICATION = "WO09_READINESS_PUBLICATION"
+    PUBLICATION_CONFLICT = "PUBLICATION_CONFLICT"
     REFRESH_STATE_PERSISTENCE = "REFRESH_STATE_PERSISTENCE"
     COMPLETE = "COMPLETE"
 
@@ -173,6 +176,9 @@ class DiscoveryOperationFailure(StrEnum):
     SNAPSHOT_UPDATE_FAILURE = "SNAPSHOT_UPDATE_FAILURE"
     PROBABLES_MAPPING_FAILURE = "PROBABLES_MAPPING_FAILURE"
     PROBABLES_REFRESH_FAILURE = "PROBABLES_REFRESH_FAILURE"
+    WO08_ASSESSMENT_PUBLICATION_FAILURE = "WO08_ASSESSMENT_PUBLICATION_FAILURE"
+    WO09_READINESS_PUBLICATION_FAILURE = "WO09_READINESS_PUBLICATION_FAILURE"
+    WO09_PUBLICATION_EXPECTATION_CHANGED = "WO09_PUBLICATION_EXPECTATION_CHANGED"
     REFRESH_STATE_PERSISTENCE_FAILURE = "REFRESH_STATE_PERSISTENCE_FAILURE"
     OPERATION_CONFLICT = "OPERATION_CONFLICT"
 
@@ -332,6 +338,8 @@ class IntradayDiscoveryOperationService:
         provider_snapshot_store: ProviderInstrumentSnapshotStore | None = None,
         live_shadow=None,
         wo08_shadow=None,
+        wo08_publication=None,
+        wo09_application=None,
         clock: Callable[[], datetime] = trusted_now,
     ) -> None:
         if (
@@ -362,6 +370,8 @@ class IntradayDiscoveryOperationService:
                 and type(refresh_state_store) is not RefreshOperationalStateStore
             )
             or not callable(clock)
+            or ((wo08_publication is None) != (wo09_application is None))
+            or (wo08_publication is not None and probables_v2 is None)
             or (
                 refresh_admission is not None
                 and type(refresh_admission) is not IntradayRefreshAdmission
@@ -392,6 +402,8 @@ class IntradayDiscoveryOperationService:
         self._probables = probables
         self.live_shadow = live_shadow
         self.wo08_shadow = wo08_shadow
+        self.wo08_publication = wo08_publication
+        self.wo09_application = wo09_application
         self._probables_v2 = probables_v2
         self._probables_v2_diagnostics_store = probables_v2_diagnostics_store
         self._refresh_state_store = refresh_state_store
@@ -733,11 +745,13 @@ class IntradayDiscoveryOperationService:
                 # Metadata inventory precedes publication; it does not use a
                 # later clock to claim an already-retained run was newly published.
                 wo08_prior = None
-                if self.wo08_shadow is not None:
+                if self.wo08_shadow is not None or self.wo08_publication is not None:
                     try:
                         from kronos.application.intraday_wo08_shadow import retained_run_ids
                         wo08_prior = retained_run_ids(self._probables_v2.store)
                     except Exception:
+                        if self.wo08_publication is not None:
+                            raise
                         self._wo08_incomplete(request.operation_identity, "RUN_INVENTORY_UNAVAILABLE")
                 probables_run = self._probables_v2.refresh_analysis(
                     native_facts=execution.probables_v2_facts,
@@ -775,6 +789,24 @@ class IntradayDiscoveryOperationService:
                     raise ProbablesV2Error(
                         "DISCOVERY_PROBABLES_V2_LINKAGE_INVALID"
                     )
+                if self.wo08_publication is not None:
+                    # Operational assessment consumes the completed Native /
+                    # Probables publication. Research capture is downstream and
+                    # cannot grant, veto or repair this authority.
+                    stage = DiscoveryOperationStage.WO08_ASSESSMENT_PUBLICATION
+                    machine_assessments = self.wo08_publication.publish_run(
+                        run=probables_run,
+                        mapping=mapping,
+                        native_publication=self._probables_v2.native_selection,
+                        published_at=self._clock(),
+                        newly_published=probables_run.run_identity not in wo08_prior,
+                    )
+                    stage = DiscoveryOperationStage.WO09_READINESS_PUBLICATION
+                    for assessment in machine_assessments:
+                        self.wo09_application.evaluate_wo08(
+                            assessment,
+                            created_at=datetime.fromisoformat(assessment.data["created_at"]),
+                        )
             if self.wo08_shadow is not None and self._probables_v2 is not None and wo08_prior is not None:
                 # refresh_analysis has returned: no WO08 admission, I/O, waits,
                 # Provider capability or worker is inserted into its locked callback.
@@ -865,10 +897,16 @@ class IntradayDiscoveryOperationService:
                     if stage is DiscoveryOperationStage.PROBABLES_EVIDENCE_MAPPING
                     else DiscoveryOperationFailure.PERSISTENCE_FAILURE
                     if stage is DiscoveryOperationStage.PROBABLES_REPLAY_ENVELOPE_PERSISTENCE
+                    else DiscoveryOperationFailure.WO08_ASSESSMENT_PUBLICATION_FAILURE
+                    if stage is DiscoveryOperationStage.WO08_ASSESSMENT_PUBLICATION
+                    else DiscoveryOperationFailure.WO09_READINESS_PUBLICATION_FAILURE
+                    if stage is DiscoveryOperationStage.WO09_READINESS_PUBLICATION
                     else DiscoveryOperationFailure.PROBABLES_REFRESH_FAILURE
                 ),
                 execution=execution,
                 mapping=mapping,
+                probables_run=probables_run,
+                historical_request_count=0 if execution is None else source.historical_request_count,
                 replay_envelope=replay_envelope,
                 diagnostic_error=error,
             )
@@ -883,6 +921,10 @@ class IntradayDiscoveryOperationService:
                 mapping=mapping,
             )
         except Exception as error:
+            from kronos.intraday.wo09_persistence import Wo09PublicationConflict
+
+            if isinstance(error, Wo09PublicationConflict):
+                stage = DiscoveryOperationStage.PUBLICATION_CONFLICT
             failure = {
                 DiscoveryOperationStage.OBSERVATION_BOUNDARY:
                     DiscoveryOperationFailure.MARKET_SESSION_UNAVAILABLE,
@@ -900,6 +942,12 @@ class IntradayDiscoveryOperationService:
                     DiscoveryOperationFailure.PROBABLES_MAPPING_FAILURE,
                 DiscoveryOperationStage.PROBABLES_INVOCATION:
                     DiscoveryOperationFailure.PROBABLES_REFRESH_FAILURE,
+                DiscoveryOperationStage.WO08_ASSESSMENT_PUBLICATION:
+                    DiscoveryOperationFailure.WO08_ASSESSMENT_PUBLICATION_FAILURE,
+                DiscoveryOperationStage.WO09_READINESS_PUBLICATION:
+                    DiscoveryOperationFailure.WO09_READINESS_PUBLICATION_FAILURE,
+                DiscoveryOperationStage.PUBLICATION_CONFLICT:
+                    DiscoveryOperationFailure.WO09_PUBLICATION_EXPECTATION_CHANGED,
             }.get(stage, DiscoveryOperationFailure.OPERATION_UNAVAILABLE)
             return self._finish(
                 request,
@@ -909,6 +957,8 @@ class IntradayDiscoveryOperationService:
                 failure=failure,
                 execution=execution,
                 mapping=mapping,
+                probables_run=probables_run,
+                historical_request_count=0 if execution is None else source.historical_request_count,
                 replay_envelope=replay_envelope,
                 diagnostic_error=error,
             )

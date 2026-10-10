@@ -19,8 +19,8 @@ from tests.unit.intraday.test_probables_v2 import _opening_inputs, _run
 class _Probables:
     def __init__(self, root: Path, run) -> None:
         self.root = root
-        (root / "runs").mkdir(parents=True)
-        (root / "runs" / f"{run.run_identity}.json").write_text("{}")
+        (root / "probables-v2" / "runs").mkdir(parents=True)
+        (root / "probables-v2" / "runs" / f"{run.run_identity}.json").write_text("{}")
         self._run = run
 
     def load_run(self, identity):

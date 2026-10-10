@@ -208,7 +208,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         intraday_runtime.probables_v2_store,
         intraday_runtime.wo10_policy_registry,
     )
-    intraday_wo09_projection = IntradayWo09Projection(intraday_runtime.wo09_store)
+    intraday_wo09_projection = IntradayWo09Projection(intraday_runtime.wo09_store, machine_successor=True)
     def futures_guard():
         governance.require_operations()
         return True
@@ -261,14 +261,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     intraday_operational_readiness = IntradayOperationalReadinessProjection(
         intraday_runtime.wo_b_runtime
     )
+    from kronos.browser.intraday_wo08 import IntradayWo08Projection, IntradayVisualHistory
+    intraday_wo08_projection = IntradayWo08Projection(
+        intraday_runtime.wo08_store, intraday_runtime.probables_v2_store)
+    intraday_visual_history = IntradayVisualHistory(
+        intraday_runtime.review_v2_store, intraday_runtime.mcx_paired_review_store,
+        intraday_runtime.visual_reconciliation_v2_store)
     intraday_statistics = IntradayStatisticsApplication(
         current_probables=intraday_runtime.probables_v2_store.load_current_run,
-        current_review=intraday_runtime.review_v2_application.snapshot,
+        current_review=intraday_runtime.review_v2_application.historical_snapshot,
+        machine_assessment=intraday_wo08_projection.status_document,
         operational_readiness=intraday_runtime.wo_b_runtime.status_document,
     )
     product_routes = ProductBrowserRoutes((IntradayBrowserRoutes(
         intraday_runtime.discovery_v2_application,
         probables_v2_control=intraday_probables_v2_control,
+        wo08_projection=intraday_wo08_projection,
+        visual_history=intraday_visual_history,
         review_v2_control=intraday_review_v2_control,
         visual_reconciliation_v2_control=intraday_visual_reconciliation_v2_control,
         wo09_projection=intraday_wo09_projection,

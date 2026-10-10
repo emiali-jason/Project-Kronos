@@ -18,6 +18,7 @@ from kronos.intraday.wo09_readiness import (
     HardGate, Monitorability, NextWoHandoff, ReadinessRecord, ReadinessState,
     RequirementRecord, artifact_bytes, create_next_wo_handoff,
 )
+from kronos.intraday.wo09_machine_readiness import MachineReadinessRecord, SCHEMA_IDENTITY as MACHINE_SCHEMA
 from kronos.intraday.wo09_watch import WatchState, Wo09Watch
 from kronos.application.intraday_wo09_notifications import Wo09NotificationSource, Wo09NotificationState
 
@@ -220,7 +221,7 @@ class Wo09Store:
         return result
 
     def _retain_readiness(self, record, requirements):
-        if type(record) is not ReadinessRecord or len(requirements) != 5:
+        if type(record) not in {ReadinessRecord, MachineReadinessRecord} or len(requirements) != 5:
             raise Wo09PersistenceError("WO09_PERSISTENCE_INPUT_INVALID")
         record.__post_init__()
         if tuple(item.criterion.criterion_id for item in requirements) != tuple(CriterionId):
@@ -396,8 +397,10 @@ def _criterion(value: dict[str, object]) -> CriterionSnapshot:
 
 def _readiness(value: dict[str, object]) -> ReadinessRecord:
     data = dict(value)
+    machine = data.get("schema_identity") == MACHINE_SCHEMA
+    if not machine:
+        data["wo07f_outcome"] = VisualReconciliationOutcome(data["wo07f_outcome"])
     data.update(
-        wo07f_outcome=VisualReconciliationOutcome(data["wo07f_outcome"]),
         criteria=tuple(_criterion(item) for item in data["criteria"]),
         hard_gate=HardGate(data["hard_gate"]), readiness_state=ReadinessState(data["readiness_state"]),
         attention_state=AttentionState(data["attention_state"]), currentness=CurrentnessState(data["currentness"]),
@@ -406,7 +409,7 @@ def _readiness(value: dict[str, object]) -> ReadinessRecord:
         machine_evidence_identities=tuple(data["machine_evidence_identities"]),
         source_provenance=tuple(data["source_provenance"]),
     )
-    return ReadinessRecord(**data)
+    return MachineReadinessRecord(**data) if machine else ReadinessRecord(**data)
 
 
 def _requirement(value: dict[str, object]) -> RequirementRecord:

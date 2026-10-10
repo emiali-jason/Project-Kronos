@@ -96,6 +96,9 @@ class Monitorability(StrEnum):
 
 class HardGate(StrEnum):
     NONE = "NONE"
+    PROBABLES_NOT_ADMITTED = "PROBABLES_NOT_ADMITTED"
+    PROBABLES_UNAVAILABLE = "PROBABLES_UNAVAILABLE"
+    MCX_CONTRACT_BINDING_UNAVAILABLE = "MCX_CONTRACT_BINDING_UNAVAILABLE"
     WO07F_CONTRADICTED = "07F_CONTRADICTED"
     WO07F_INSUFFICIENT = "07F_INSUFFICIENT"
     WO07F_NOT_RECONCILABLE = "07F_NOT_RECONCILABLE"
@@ -288,6 +291,10 @@ class ReadinessRecord:
             or self.integrity_identity != _identity("INTEGRITY-INTRADAY-WO09-READINESS-", values)
         ):
             raise ValueError("WO09_READINESS_RECORD_INVALID")
+
+    @property
+    def source_authority(self):
+        return "WO07F"
 
     @property
     def outstanding(self) -> tuple[CriterionSnapshot, ...]:
@@ -590,6 +597,10 @@ def create_next_wo_handoff(
     superseded_readiness_identity: str | None,
     first_five_of_five_at: datetime | None = None,
 ) -> NextWoHandoff:
+    from kronos.intraday.wo09_machine_readiness import MachineReadinessRecord
+    if type(readiness) is MachineReadinessRecord:
+        readiness.__post_init__()
+        raise ValueError("WO09_MACHINE_CRITERIA_NOT_ESTABLISHED")
     if (
         readiness.currentness is not CurrentnessState.CURRENT
         or currentness is not CurrentnessState.CURRENT

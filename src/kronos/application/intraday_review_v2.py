@@ -535,6 +535,7 @@ class IntradayReviewV2Application:
         transport: IntradayReviewV2Transport | None = None,
         visual_identity_resolver: VisualIdentityResolver | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+        prepare_pages: bool = True,
     ) -> None:
         if (
             type(probables_store) is not ProbablesV2Store
@@ -543,6 +544,7 @@ class IntradayReviewV2Application:
             or visual_identity_resolver is not None
             and type(visual_identity_resolver) is not VisualIdentityResolver
             or not callable(clock)
+            or type(prepare_pages) is not bool
         ):
             raise ValueError("INTRADAY_REVIEW_V2_APPLICATION_INVALID")
         self._probables = probables_store
@@ -561,13 +563,16 @@ class IntradayReviewV2Application:
         from kronos.instrument.visual_identity import uses_family_visual_authority
         self._paired = IntradayReviewV2PairedAdapter(review_store, self._transport, chart_input=self._chart_input,
             native_resolver=visual_identity_resolver if uses_family_visual_authority(visual_identity_resolver) else None)
-        self._probables.bind_page_preparation(self.prepare_page_generation)
-        self.prepare_page_generation()
+        self._prepare_pages = prepare_pages
+        if prepare_pages:
+            self._probables.bind_page_preparation(self.prepare_page_generation)
+            self.prepare_page_generation()
 
     def bind_page_reconciliation(self, store):
         """Composition-only owner registration; it neither restores nor evaluates."""
         self._page_reconciliation_store = store
-        self.prepare_page_generation()
+        if self._prepare_pages:
+            self.prepare_page_generation()
 
     @contextmanager
     def _owner_page_scope(self, scope):
@@ -1018,6 +1023,17 @@ class IntradayReviewV2Application:
                 return IntradayReviewV2Snapshot(None, None, ())
             pointer = self._require_current_workspace(currentness=currentness)
             return self._loaded_snapshot(pointer)
+
+    def historical_snapshot(self) -> IntradayReviewV2Snapshot:
+        """Read the retained workspace as history without current-work authority."""
+        with self._lock:
+            pointer = self._review.load_current()
+            if pointer is None:
+                return IntradayReviewV2Snapshot(None, None, ())
+            snapshot = self._loaded_snapshot(pointer)
+            if self._review.load_current() != pointer:
+                raise ReviewError(ReviewFailure.INTEGRITY_INVALID)
+            return snapshot
 
     def _loaded_snapshot(self, pointer) -> IntradayReviewV2Snapshot:
         # Display and batch transport share the governed retained Review order.

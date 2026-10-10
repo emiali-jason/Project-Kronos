@@ -169,3 +169,7 @@ PERF/LAG-01 is not started.
 Sponsor-authorized bounded engineering for typed recovery, authoritative startup
 results and prospective Native preparation witnesses. Final candidate reviews and
 release remain pending; historical ADR-0050/0059 authority is preserved.
+
+## WO08 analytical successor / Intraday WO07F retirement
+
+[ADR0062](ADR-0062-WO08-PRODUCTION-SUCCESSOR-AND-WO07F-RETIREMENT.md) records direct Sponsor successor authority, exact machine/unavailable criteria, existing WO09 consistency and separate WO12 validation. Historical visual evidence and Swing Chart Analyst remain preserved; final review/deployment are separate gates.

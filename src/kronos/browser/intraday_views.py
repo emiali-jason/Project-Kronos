@@ -189,7 +189,8 @@ def _readiness_body(status: dict[str, object]) -> str:
             and card.monitorability_state == "CURRENT" else "")
         rendered.append(
             "<article class='intraday-review-card'>"
-            f"<h2>{escape(card.instrument)}</h2><p>{escape(card.direction)} · {escape(card.wo07f_state)}</p>"
+            f"<h2>{escape(card.instrument)}</h2><p>{escape(card.direction)} · "
+            f"{escape(card.source_authority)} · {escape(card.assessment_state or card.wo07f_state)}</p>"
             f"<strong>{escape(card.readiness_state.replace('_', ' '))} · {escape(card.score)}</strong>"
             f"<p>Outstanding: {escape(card.outstanding_count)} · Currentness: {escape(card.monitorability_state)}</p>"
             f"<p>Priority requirements: {escape(', '.join(card.highest_priority_outstanding))}</p>"
@@ -203,6 +204,29 @@ def _readiness_body(status: dict[str, object]) -> str:
         "<p>Persisted WO-09 authority. No trade, Risk or broker authority.</p></div></div>"
         f"<div class='intraday-review-v2-grid'>{''.join(rendered) or '<p>No active-attention readiness records.</p>'}</div></section>"
     )
+    historical = status.get("historical_cards", ())
+    historical_details = status.get("historical_analysis_details", {})
+    history = []
+    for card in historical if isinstance(historical, (tuple, list)) else ():
+        sections = historical_details.get(card.readiness_identity, {}) if isinstance(historical_details, dict) else {}
+        analysis = "".join(
+            f"<section><h3>{escape(str(title))}</h3><pre>{escape(str(value))}</pre></section>"
+            for title, value in sections.items()
+        )
+        history.append(
+            "<article class='intraday-review-card'>"
+            f"<h3>{escape(card.instrument)} · {escape(card.direction)}</h3>"
+            f"<p>Original visual-era readiness: {escape(card.readiness_state.replace('_', ' '))} · {escape(card.score)}</p>"
+            f"<p>Analysis boundary: {escape(str(card.analysis_boundary))} · Published: {escape(str(card.created_at))}</p>"
+            "<p>HISTORICAL ONLY · Read-only evidence. No current new-work action.</p>"
+            f"<details><summary>VIEW HISTORICAL ANALYSIS DETAILS</summary>{analysis}</details></article>"
+        )
+    if history:
+        body += (
+            "<section class='intraday-review-v2'><h2>Historical visual-era readiness</h2>"
+            "<p>These retained WO-07F results do not control current WO08 assessment or WO09 readiness.</p>"
+            f"<div class='intraday-review-v2-grid'>{''.join(history)}</div></section>"
+        )
     return body
 
 
@@ -222,6 +246,10 @@ def render_intraday_operational_readiness(
 ) -> str:
     """Render exact source states and WO-B review classifications side by side."""
 
+    historical_notice = (
+        '<div class="intraday-warning"><strong>HISTORICAL LEGACY STAGE CONTEXT</strong>'
+        '<span>These stages do not control current WO08 assessment or WO09 readiness.</span></div>'
+        if status.get("historical_context_only") else "")
     reviews = status.get("reviews")
     review_items = reviews if type(reviews) in {tuple, list} else ()
     cards = "".join(
@@ -252,7 +280,7 @@ def render_intraday_operational_readiness(
         for item in failure_items if type(item) is dict
     )
     body = (
-        _intraday_tabs(False, active="wo-b")
+        _intraday_tabs(False, active="wo-b") + historical_notice
         + '<div class="intraday-warning"><strong>OPERATIONAL READINESS REVIEW</strong>'
         "<span>READ-ONLY CROSS-DOMAIN COMPOSITION<br>"
         "NO GLOBAL READINESS, EXECUTION, POSITION, MONITORING OR BROKER AUTHORITY</span></div>"
@@ -2865,6 +2893,9 @@ def _status_time(value: object) -> str:
 
 def _opportunity_review_status(result, snapshot) -> str:  # type: ignore[no-untyped-def]
     """Present exact current Review facts; never infer analytical readiness."""
+    from kronos.browser.intraday_wo08 import MachineOpportunitySnapshot
+    if isinstance(snapshot, MachineOpportunitySnapshot):
+        return "WO08 · " + snapshot.assessment_state(result).replace("_", " ")
     candidate = next((item for item in (() if snapshot is None else snapshot.candidates)
                       if item.probable_result_identity == result.result_identity), None)
     if candidate is None:
@@ -2914,7 +2945,7 @@ def _probable_v2_card(result, sponsor_label: str, review_v2=None) -> str:  # typ
         + '</strong></span><span>' + escape(reason) + '</span></div>'
         + '<div class="intraday-opportunity-review"><span>Review · <strong>'
         + escape(review_status) + '</strong></span><a class="detail-link" href="'
-        + escape(review_href, quote=True) + '">Open Native Review →</a></div></article>'
+        + escape(review_href, quote=True) + '">Open Analysis Review →</a></div></article>'
     )
 
 

@@ -67,6 +67,19 @@ class IntradayNotifications:
         if not values:raise ValueError("WO13_OPPORTUNITY_ORIGIN_NOT_RETAINED")
         return max(values,key=lambda x:(aware(x.data["origin_at"]),x.identity))
 
+    def _readiness_origin(self, readiness):
+        from kronos.intraday.wo09_machine_readiness import MachineReadinessRecord
+        if type(readiness) is MachineReadinessRecord:
+            readiness.__post_init__()
+            # WO08 includes non-admitted population. Such unavailable records
+            # have no opportunity origin and cannot create a notification.
+            values = [x for x in self._origins.get((readiness.canonical_subject_identity,
+                readiness.session_identity), {}).values()
+                if aware(x.data["origin_at"]) <= aware(readiness.created_at)]
+            if not values:
+                return None
+        return self._origin(readiness.canonical_subject_identity, readiness.session_identity, readiness.created_at)
+
     def bind(self, probables):
         checkpoint = self.checkpoint()
         if (self._expected_checkpoint is not None
@@ -255,12 +268,14 @@ class IntradayNotifications:
         if kind=="CURRENTNESS":
             pointer=self.wo09.load_pointer(identity)
             r=self.wo09.load_readiness(pointer.readiness_identity)
-            origin=self._origin(r.canonical_subject_identity,r.session_identity,r.created_at)
+            origin=self._readiness_origin(r)
+            if origin is None:return
             self.centre.expire_intraday(origin.data["opportunity_identity"],{"READY_FOUR","READY_FIVE"},at=pointer.updated_at)
             return
         if kind=="READINESS":
             r=self.wo09.load_readiness(identity)
-            origin=self._origin(r.canonical_subject_identity,r.session_identity,r.created_at)
+            origin=self._readiness_origin(r)
+            if origin is None:return
             d=sources.ready(origin,r)
             if r.satisfied_count!=4:
                 self.centre.expire_intraday(origin.data["opportunity_identity"],{"READY_FOUR"},at=r.created_at)

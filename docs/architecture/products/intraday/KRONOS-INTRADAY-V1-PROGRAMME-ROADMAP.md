@@ -201,3 +201,7 @@ WO-12 remains research authority. LIVE remains uncommissioned, Observation is
 non-exposure, and NATGAS remains HELD. Source identities and presentation deletion
 boundaries are preserved. Publication/runtime/production remain separately gated;
 PERF/LAG-01 is not started.
+
+## WO08 production successor — Sponsor decision, 10 October 2026
+
+ADR0062 prospectively replaces required Intraday Chart Analyst/WO07F authority with deterministic machine WO08. The original evidence and earlier roadmap reservations remain historical. Existing machine I1 is assessed; I2–I5 remain uncommissioned. WO09 consumes versioned machine authority; WO12 validates asynchronously using02A original T0/T1+ evidence; WO13 owns notifications. New work does not require visual intake. Final exact review/release/runtime acceptance remains separately evidenced. See retirement/slice reconciliation and assessment interface.

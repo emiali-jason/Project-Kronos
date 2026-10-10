@@ -285,6 +285,8 @@ class IntradayRuntimeComposition:
     startup_evidence: StartupEvidence | None = None
     lifecycle_application: object | None = None
     wo08_shadow: object | None = None
+    wo08_store: object | None = None
+    wo08_publication: object | None = None
 
 
 def create_intraday_runtime(
@@ -353,10 +355,12 @@ def create_intraday_runtime(
     native_publication = NativePullbackPublication(native_store, clock=clock, commissioned_at=clock(), binding_store=active_binding_store)
     probables_v2 = IntradayProbablesV2Application(store=probables_v2_store, native_selection=native_publication)
     review_v2_store = IntradayReviewV2Store(Path(evidence_root) / "review-v2")
-    review_v2_current = review_v2_store.load_current()
+    # Historical visual pointers are read only by the explicit history surface.
+    review_v2_current = None
     review_v2 = IntradayReviewV2Application(
         probables_store=probables_v2_store,
         review_store=review_v2_store,
+        prepare_pages=False,
         visual_identity_resolver=load_visual_identity_resolver(
             publication_version=(
                 VISUAL_IDENTITY_COMPLETE_VERSION
@@ -383,6 +387,12 @@ def create_intraday_runtime(
         clock=clock,
     )
     review_v2.bind_page_reconciliation(visual_reconciliation_v2_store)
+    from kronos.intraday.wo08_assessment_store import Wo08AssessmentStore
+    from kronos.application.intraday_wo08 import Wo08Publication
+    wo08_store = Wo08AssessmentStore(Path(evidence_root))
+    # Restoration verifies retained complete publications; it never assesses or backfills.
+    wo08_store.current_run()
+    wo08_publication = Wo08Publication(wo08_store)
     wo09_store = Wo09Store(Path(evidence_root) / "wo09-promotion-readiness-v1")
     from kronos.intraday.native_structural_selection import NativeStructuralLoader, NativeStructuralStore
     # Exact lookup only; startup/page reads never classify or backfill a cycle.
@@ -396,7 +406,8 @@ def create_intraday_runtime(
         paired=mcx_paired_review_store, bindings=active_binding_store,
         reconciliation=visual_reconciliation_v2_store,
         ordered_batch=intraday_review_ordered_batch, wo09=wo09_store,
-        futures=futures_application.store, calendar=calendar, clock=clock)
+        futures=futures_application.store, calendar=calendar, clock=clock,
+        wo08=wo08_store, native=native_store)
     futures_application.eligibility = publication_boundary
     wo09_application = IntradayWo09Application(wo09_store, eligibility=publication_boundary)
     wo10_store = Wo10Store(Path(evidence_root) / "wo10-reconciliation-v2")
@@ -533,6 +544,8 @@ def create_intraday_runtime(
         probables_v2=probables_v2,
         live_shadow=live_shadow,
         wo08_shadow=wo08_shadow,
+        wo08_publication=wo08_publication,
+        wo09_application=wo09_application,
         probables_v2_diagnostics_store=probables_v2_diagnostics_store,
         refresh_admission=refresh_admission,
         active_derivative_catalogue=active_catalogue,
@@ -575,12 +588,15 @@ def create_intraday_runtime(
         session_source=lifecycle_session, timing_source=lifecycle_timing,
         operational_guard=lifecycle_guard, eligibility=publication_boundary,
         contract_source=lambda subject: None if operation_v2.last_active_derivative_resolutions is None else operation_v2.last_active_derivative_resolutions.for_subject(subject).binding)
+    from kronos.intraday.wo08_shadow_persistence import Wo08ShadowStore
     research_application = IntradayResearchApplication(
         probables=probables_v2_store,
         wo09=wo09_store,
         futures=futures_application.store,
         lifecycle=lifecycle_store,
         store=research_store,
+        wo08=wo08_store,
+        wo08_shadow=Wo08ShadowStore(Path(evidence_root)),
         clock=clock,
     )
     journal_store = JournalStore(Path(evidence_root) / "prospective-v2-wo14-trading-journal-v1")
@@ -720,6 +736,8 @@ def create_intraday_runtime(
         refresh_v2_provenance_store=refresh_v2_provenance_store,
         probables_v2_diagnostics_store=probables_v2_diagnostics_store,
         wo08_shadow=wo08_shadow,
+        wo08_store=wo08_store,
+        wo08_publication=wo08_publication,
         mcx_history_store=mcx_history_store,
         refresh_state_store=refresh_state_store,
         reliance_bootstrap=bootstrap,

@@ -24,6 +24,10 @@ def base(origin, *, subject, direction, session, source_identity, source_integri
 
 
 def ready(origin, record):
+    from kronos.intraday.wo09_machine_readiness import MachineReadinessRecord
+    if type(record) is MachineReadinessRecord:
+        record.__post_init__()
+        return None
     if type(record) is not ReadinessRecord:
         raise ValueError("WO13_READINESS_RECORD_REQUIRED")
     record.__post_init__()

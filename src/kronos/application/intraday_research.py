@@ -45,6 +45,15 @@ OPPORTUNITY_COLUMNS = (
     "paper_gross_model_result", "observation_entry_price", "observation_exit_price",
     "observation_points", "observation_model_r", "observation_gross_model_result",
     "data_quality_issue_count", "research_authority",
+    "wo08_assessment_identity", "wo08_methodology_identity", "wo08_methodology_version",
+    "wo08_assessment_disposition", "wo08_failure_stage", "wo08_failure_reason",
+    "wo08_assessment_count", "wo08_original_t0_state", "wo08_t0_identities",
+    "wo08_outcome_count", "wo08_assessment_latency_seconds",
+    "wo08_original_prediction_state", "wo08_original_assessment_identity",
+    "wo08_original_direction", "wo08_original_probables_reasons",
+    "wo08_original_criteria_reasons", "wo08_original_disposition",
+    "wo08_latest_probables_state", "wo08_latest_wo09_record_state",
+    "wo08_eod_validation_state", "wo08_eod_prediction_match",
 )
 
 TRACK_COLUMNS = (
@@ -106,7 +115,9 @@ class IntradayResearchApplication:
     """Compose retained upstream evidence; only ``update`` writes WO-12 state."""
 
     def __init__(self, *, probables, wo09, futures, lifecycle, store,
-                 publication_root: Path = Path(LOCAL_PUBLICATION_ROOT), clock=None) -> None:
+                 publication_root: Path = Path(LOCAL_PUBLICATION_ROOT), clock=None,
+                 wo08=None, wo08_shadow=None) -> None:
+        self.wo08, self.wo08_shadow = wo08, wo08_shadow
         self.probables = probables
         self.wo09 = wo09
         self.futures = futures
@@ -116,7 +127,7 @@ class IntradayResearchApplication:
         self.clock = clock or (lambda: datetime.now(timezone.utc))
 
     def _runs(self):
-        root = self.probables.root / "runs"
+        root = self.probables.root / "probables-v2" / "runs"
         return tuple(sorted((self.probables.load_run(path.stem) for path in root.glob("*.json")),
                             key=lambda item: (item.analysis_boundary, item.run_identity))) if root.exists() else ()
 
@@ -242,6 +253,15 @@ class IntradayResearchApplication:
         local_now = now.astimezone(IST)
         month = local_now.strftime("%Y_%m")
         readiness_history = self._readiness_history_by_result()
+        from kronos.application.intraday_wo08_research import associate_assessments, research_metrics
+        associations = associate_assessments(assessments=self.wo08, shadow=self.wo08_shadow,
+            probables=self.probables, origins=origins, readiness=readiness_history,
+            futures=self.futures, lifecycle=self.lifecycle)
+        associations = tuple(item for item in associations if
+            datetime.fromisoformat(item.data["analysis_boundary"]).astimezone(IST).strftime("%Y_%m") == month)
+        if ensure_origins:
+            for item in associations:
+                self.store.retain(item)
         opportunities = self.futures.records("WO10_OPPORTUNITY_V1")
         comparisons = self.futures.records("WO10_SPONSOR_COMPARISON_V1")
         unavailable = self.futures.records("WO10_CONSTRUCTION_UNAVAILABLE_V1")
@@ -255,7 +275,20 @@ class IntradayResearchApplication:
             origin_at = datetime.fromisoformat(str(od["origin_at"]))
             if origin_at.astimezone(IST).strftime("%Y_%m") != month:
                 continue
-            history = readiness_history.get(od["probable_result_identity"], ())
+            # Exact subject/session origin intervals include lawful reassessments.
+            successors = [datetime.fromisoformat(item.data["origin_at"]) for item in origins
+                if item.data["canonical_subject_identity"] == od["canonical_subject_identity"]
+                and item.data["market_session_identity"] == od["market_session_identity"]
+                and datetime.fromisoformat(item.data["origin_at"]) > origin_at]
+            end = min(successors) if successors else None
+            history = tuple(sorted((item for values in readiness_history.values() for item in values
+                if item.canonical_subject_identity == od["canonical_subject_identity"]
+                and item.session_identity == od["market_session_identity"]
+                and item.analysis_boundary >= origin_at and (end is None or item.analysis_boundary < end)),
+                key=lambda item: (item.created_at, item.readiness_identity)))
+            associated = [item for item in associations if item.data["opportunity_identity"] == od["opportunity_identity"]]
+            latest = max(associated, key=lambda item: (item.data["assessment_created_at"], item.identity)).data if associated else None
+            original_prediction = None if latest is None else latest["original_prediction"]
             r = history[-1] if history else None
             wo10 = [item for item in opportunities if r is not None and item.data["readiness_identity"] == r.readiness_identity]
             if len(wo10) > 1:
@@ -323,7 +356,7 @@ class IntradayResearchApplication:
                 "chart_revision_identity": None if r is None else r.chart_revision_identity,
                 "answer_pack_identity": None if r is None else r.answer_pack_identity,
                 "wo07f_identity": None if r is None else r.wo07f_identity,
-                "wo07f_outcome": None if r is None else r.wo07f_outcome.value,
+                "wo07f_outcome": None if r is None or r.wo07f_outcome is None else r.wo07f_outcome.value,
                 "wo09_readiness_identity": None if r is None else r.readiness_identity,
                 "wo09_readiness_state": None if r is None else r.readiness_state.value,
                 "wo09_highest_satisfied_count": self._highest_count(history),
@@ -373,6 +406,28 @@ class IntradayResearchApplication:
                 "observation_exit_price": obs[2], "observation_points": obs[3],
                 "observation_model_r": obs[4], "observation_gross_model_result": obs[5],
                 "data_quality_issue_count": len(quality), "research_authority": "RESEARCH_ONLY_NO_TRADING_AUTHORITY",
+                "wo08_assessment_identity": None if latest is None else latest["assessment_identity"],
+                "wo08_methodology_identity": None if latest is None else latest["methodology_identity"],
+                "wo08_methodology_version": None if latest is None else latest["methodology_version"],
+                "wo08_assessment_disposition": None if latest is None else latest["disposition"],
+                "wo08_failure_stage": None if latest is None else latest["failure_stage"],
+                "wo08_failure_reason": None if latest is None else latest["failure_reason"],
+                "wo08_assessment_count": len(associated),
+                "wo08_original_t0_state": None if latest is None else latest["t0_state"],
+                "wo08_t0_identities": None if latest is None else ",".join(t["identity"] for t in latest["t0_references"]),
+                "wo08_outcome_count": None if latest is None else len(latest["outcomes"]),
+                "wo08_assessment_latency_seconds": None if latest is None else latest["assessment_latency_seconds"],
+                "wo08_original_prediction_state": "ORIGINAL_PREDICTION_UNAVAILABLE" if latest is None else latest["original_prediction_state"],
+                "wo08_original_assessment_identity": None if original_prediction is None else original_prediction["assessment_identity"],
+                "wo08_original_direction": None if original_prediction is None else original_prediction["direction"],
+                "wo08_original_probables_reasons": None if original_prediction is None else ",".join(original_prediction["probables_reasons"]),
+                "wo08_original_criteria_reasons": None if original_prediction is None else "; ".join(
+                    c["criterion_id"] + ":" + ",".join(c["reason_codes"]) for c in original_prediction["criteria"]),
+                "wo08_original_disposition": None if original_prediction is None else original_prediction["disposition"],
+                "wo08_latest_probables_state": None if latest is None else latest["probables_state"],
+                "wo08_latest_wo09_record_state": None if latest is None else latest["wo09_record_state"],
+                "wo08_eod_validation_state": "UNAVAILABLE_NO_GOVERNED_EOD_OUTCOME",
+                "wo08_eod_prediction_match": "NOT_ESTABLISHED",
             }
             row = tuple(row_values.get(column) for column in OPPORTUNITY_COLUMNS)
             rows.append(row)
@@ -380,7 +435,28 @@ class IntradayResearchApplication:
             for item in related:
                 track_rows.append(self._track_row(od, item))
             quality_rows.extend(quality)
-        analysis = self._analysis(rows, track_rows)
+        # Complete-population associations stay in the immutable audit ledger.
+        # The scorecard shows admitted consideration and its subsequent journey.
+        for item in associations:
+            d = item.data
+            if not d["considered_at_assessment"] and d["opportunity_identity"] is None:
+                continue
+            event_rows.append((d["opportunity_id"], d["opportunity_identity"], d["assessment_created_at"],
+                "WO08_ASSESSMENT_ASSOCIATION", d["disposition"], item.schema, item.identity,
+                "RESEARCH_ONLY", d["assessment_identity"], d["failure_reason"]))
+            event_rows.append((d["opportunity_id"], d["opportunity_identity"], d["analysis_boundary"],
+                "WO08_FROZEN_PROBABLES", d["probables_state"], item.schema, item.identity,
+                "RESEARCH_ONLY", d["probable_result_identity"], ",".join(d["probables_reasons"])))
+            if d["wo09_record_state"] == "MISSING":
+                event_rows.append((d["opportunity_id"], d["opportunity_identity"], d["assessment_created_at"],
+                    "WO09_PUBLICATION", "MISSING", item.schema, item.identity, "RESEARCH_ONLY", d["assessment_identity"],
+                    "Missing readiness does not remove an admitted assessment from validation"))
+            for outcome in d["outcomes"]:
+                event_rows.append((d["opportunity_id"], d["opportunity_identity"], outcome["captured_at"],
+                    "WO08_OBSERVED_OUTCOME", outcome["state"], item.schema, outcome["identity"], "RESEARCH_ONLY",
+                    outcome["sample_id"], f"{outcome['horizon']}; quality={outcome['quality']}; return={outcome['directional_return']}; "
+                    f"mfe={outcome['mfe']}; mae={outcome['mae']}; reason={outcome['reason']}"))
+        analysis = self._analysis(rows, track_rows) + research_metrics(associations)
         month_state = "FINALIZED_MONTH" if datetime.strptime(month, "%Y_%m").date().replace(day=28) < local_now.date().replace(day=1) else "OPEN_MONTH"
         material = dict(year_month=month, generated_at=now, opportunities=rows, tracks=track_rows,
                         events=event_rows, analysis=analysis, data_quality=quality_rows)
@@ -394,6 +470,11 @@ class IntradayResearchApplication:
             ("publication_transport", "ATOMIC_LOCAL_FILESYSTEM"),
             ("google_drive", "NOT_COMMISSIONED"),
             ("authority", "RESEARCH_ONLY_NO_TRADING_AUTHORITY"),
+            ("wo08_association_schema", "WO12_WO08_ASSESSMENT_ASSOCIATION_V2"),
+            ("wo08_validation_population", "FROZEN_LONG_OR_SHORT_PROBABLE_NO_READINESS_FILTER"),
+            ("wo08_audit_population", "ALL_RETAINED_ASSESSMENTS_SEPARATE_FROM_VALIDATION"),
+            ("wo08_eod_validation", "UNAVAILABLE_NO_GOVERNED_EOD_OUTCOME"),
+            ("wo08_live_control_authority", "NONE"),
         )
         return ResearchProjection(month, now, projection_identity, tuple(rows), tuple(track_rows),
                                   tuple(sorted(event_rows, key=lambda row: (str(row[2]), str(row[6])))),
@@ -413,6 +494,7 @@ class IntradayResearchApplication:
                 return self._result(receipt, idempotent=True, outcome=str(data.get("outcome", "PUBLISHED")))
             projection = self.project(ensure_origins=True)
             source_boundary_identity = "WO12-SOURCE-BOUNDARY-" + digest({
+                "workbook_schema": (WORKBOOK_SCHEMA, WORKBOOK_VERSION),
                 "source_events": tuple((row[2], row[4], row[5], row[6], row[8]) for row in projection.events),
                 "track_currents": tuple(row[-1] for row in projection.tracks),
                 "opportunity_origins": tuple((
