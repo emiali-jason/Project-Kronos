@@ -20,7 +20,7 @@ _OWNER_KINDS = frozenset({
     "SWING_ANALYSIS", "PROVIDER_CONNECTION", "SPONSOR_RESTORATION",
     "BULK_IMPORT", "MONITORING_CALLBACK", "NOTIFICATION", "REMINDER",
     "PROGRESSION", "PROVIDER_CALLBACK", "FINALIZER",
-    "SWING_RESEARCH",
+    "SWING_RESEARCH", "WO08_SHADOW",
 })
 _current_ticket = ContextVar(
     "kronos_maintenance_ticket", default=None
@@ -85,6 +85,15 @@ class MaintenanceAdmissionCoordinator:
                     return None
             self._owners[kind] = self._owners.get(kind, 0) + 1
             return AdmissionTicket(self, kind, self._generation or "OPEN")
+
+    def admit_root(self, kind: str) -> AdmissionTicket | None:
+        """OPEN-only independent work; never inherit an accepted parent at fence."""
+        self._require_kind(kind)
+        with self._condition:
+            if self._state != "OPEN":
+                return None
+            self._owners[kind] = self._owners.get(kind, 0) + 1
+            return AdmissionTicket(self, kind, "OPEN")
 
     def claim(self, generation: str) -> bool:
         if type(generation) is not str or _GENERATION.fullmatch(generation) is None:

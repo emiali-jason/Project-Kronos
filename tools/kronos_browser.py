@@ -25,6 +25,8 @@ with StartupCapture(Path(__file__).resolve().parents[1], keep_sources_pinned=Tru
     from kronos.application.swing_opportunities import SwingOpportunitiesApplication
     from kronos.application.swing_analysis_process import SwingAnalysisProcessOwner
     from kronos.application.intraday_runtime import create_intraday_runtime
+    from kronos.application.intraday_reliance_bootstrap import DEFAULT_INTRADAY_EVIDENCE_ROOT
+    from kronos.application.intraday_wo08_shadow import compose_wo08_shadow
     from kronos.application.intraday_statistics import IntradayStatisticsApplication
     from kronos.browser.server import create_browser_server
     from kronos.browser.intraday_discovery_control import (
@@ -177,7 +179,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         }),
     )
     intraday_runtime = create_intraday_runtime(
-        shared_provider_runtime, startup_evidence=_STARTUP_EVIDENCE
+        shared_provider_runtime, startup_evidence=_STARTUP_EVIDENCE,
+        # Construction is inert; only future completed Analysis can admit work.
+        wo08_shadow_factory=lambda: compose_wo08_shadow(DEFAULT_INTRADAY_EVIDENCE_ROOT),
     )
     intraday_discovery_control = IntradayDiscoveryOperationalControl(
         intraday_runtime.discovery_operation,
@@ -328,6 +332,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                     DEFAULT_PROVIDER_INSTRUMENT_SNAPSHOT_ROOT),
                 calendar=MarketCalendarPublisher()),
         )
+        # The canonical collector borrows this exact coordinator before READY/serve.
+        # Direct runtime compositions remain default-absent; no second coordinator.
+        wo08_shadow = getattr(intraday_runtime, "wo08_shadow", None)
+        if wo08_shadow is not None:
+            wo08_shadow.bind_maintenance_admission(server.maintenance_admission)
         server.housekeeping = _compose_housekeeping(server, intraday_runtime)
         server.housekeeping.bind_maintenance_admission(server.maintenance_admission)
         server.provider_runtime = shared_provider_runtime
@@ -386,6 +395,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             else:
                 restart_control.remove()
         finally:
+            wo08_shadow = getattr(intraday_runtime, "wo08_shadow", None)
+            if wo08_shadow is not None:
+                wo08_shadow.close()
             shared_provider_runtime.end_kronos_session()
     return 0
 

@@ -325,7 +325,9 @@ def test_developer_no_browser_mode_does_not_open_browser(monkeypatch) -> None:
     assert kronos_browser.main(["--no-browser"]) == 0
 
 
-def test_canonical_main_installs_real_mcx_owner_before_ready_without_acquisition(tmp_path, monkeypatch):
+def test_canonical_main_installs_real_mcx_owner_before_ready_without_acquisition(
+    tmp_path, monkeypatch, *, _check_wo08=None,
+):
     """Run main's actual server/factory path in the governed isolated home.
 
     The startup source gate is the module's explicit test fixture. READY and
@@ -344,6 +346,8 @@ def test_canonical_main_installs_real_mcx_owner_before_ready_without_acquisition
 
     def ready(_root, _revision):
         assert events == ['owners-installed']
+        if _check_wo08 is not None:
+            _check_wo08(_root)
         events.append('ready')
 
     original = kronos_browser.create_browser_server
@@ -360,6 +364,8 @@ def test_canonical_main_installs_real_mcx_owner_before_ready_without_acquisition
 
     def serve(server, **_kwargs):
         assert events == ['owners-installed', 'ready']
+        if _check_wo08 is not None:
+            _check_wo08(server)
         assert server.mcx_v1_control._maintenance_admission is server.maintenance_admission
         events.append('serve')
 
@@ -591,3 +597,155 @@ def test_macos_launcher_is_minimal_double_click_app_without_credentials() -> Non
     assert "<string>KRONOS</string>" in plist.read_text(encoding="utf-8")
     assert icon_png.read_bytes() == brand_mark.read_bytes()
     assert icon_icns.read_bytes().startswith(b"icns")
+
+
+def test_wo08_canonical_main_binds_actual_collector_before_ready_and_serve(tmp_path, monkeypatch):
+    from kronos.application.intraday_wo08_shadow import Wo08ShadowCollector
+    from kronos.intraday.wo08_shadow_persistence import Wo08ShadowStore
+    from kronos.application.intraday_reliance_bootstrap import DEFAULT_INTRADAY_EVIDENCE_ROOT
+
+    runtimes, servers, bound, order = [], [], [], []
+    from kronos.application.intraday_live_shadow import IntradayLiveShadowService
+    dependency_init = IntradayLiveShadowService.__init__
+    store_init = Wo08ShadowStore.__init__
+    collector_init = Wo08ShadowCollector.__init__
+
+    def dependencies(owner, *args, **kwargs):
+        dependency_init(owner, *args, **kwargs)
+        order.append('analysis-dependencies')
+
+    def store_created(owner, *args, **kwargs):
+        assert order == ['analysis-dependencies']
+        store_init(owner, *args, **kwargs)
+        order.append('store')
+
+    def collector_created(owner, *args, **kwargs):
+        assert order == ['analysis-dependencies', 'store']
+        collector_init(owner, *args, **kwargs)
+        order.append('collector')
+
+    monkeypatch.setattr(IntradayLiveShadowService, '__init__', dependencies)
+    monkeypatch.setattr(Wo08ShadowStore, '__init__', store_created)
+    monkeypatch.setattr(Wo08ShadowCollector, '__init__', collector_created)
+    monkeypatch.setattr(kronos_browser, '_build_provider',
+                        lambda **_: pytest.fail('startup/GET called Provider builder'))
+    original_runtime = kronos_browser.create_intraday_runtime
+    original_server = kronos_browser.create_browser_server
+    original_bind = Wo08ShadowCollector.bind_maintenance_admission
+
+    def runtime(*args, **kwargs):
+        # Observe the real canonical argument; do not inject a collector.
+        composed = original_runtime(*args, **kwargs)
+        assert type(composed.wo08_shadow) is Wo08ShadowCollector
+        assert type(composed.wo08_shadow.store) is Wo08ShadowStore
+        assert callable(kwargs['wo08_shadow_factory'])
+        assert 'wo08_shadow' not in kwargs
+        assert composed.discovery_v2_operation.wo08_shadow is composed.wo08_shadow
+        runtimes.append(composed)
+        return composed
+
+    def server(*args, **kwargs):
+        composed = original_server(*args, **kwargs)
+        servers.append(composed)
+        order.append('server')
+        return composed
+
+    def checked(collector, coordinator):
+        assert len(runtimes) == len(servers) == 1
+        assert collector is runtimes[0].wo08_shadow
+        assert coordinator is servers[0].maintenance_admission
+        assert collector.store.root == DEFAULT_INTRADAY_EVIDENCE_ROOT / 'wo08-research-only-v1'
+        assert not collector.store.root.exists()
+        assert collector._worker is None
+        assert runtimes[0].provider_access._runtime.active_lease_count == 0
+        original_bind(collector, coordinator)
+        bound.append(coordinator)
+        order.append('bound')
+
+    monkeypatch.setattr(kronos_browser, 'create_intraday_runtime', runtime)
+    monkeypatch.setattr(kronos_browser, 'create_browser_server', server)
+    monkeypatch.setattr(Wo08ShadowCollector, 'bind_maintenance_admission', checked)
+    checkpoints = []
+
+    def check_before_ready_and_serve(server):
+        collector = runtimes[0].wo08_shadow
+        assert collector.maintenance_coordinator is server.maintenance_admission
+        assert bound == [server.maintenance_admission]
+        assert collector._worker is None and not collector.store.root.exists()
+        assert collector.snapshot()['counts']['attempted'] == 0
+        assert runtimes[0].provider_access._runtime.active_lease_count == 0
+        order.append('ready' if not checkpoints else 'serve')
+        if checkpoints:
+            # Exercise real read-only handlers on a disposable allowed test socket.
+            from http.client import HTTPConnection
+            from threading import Thread
+            before = collector.snapshot()
+            for path in ('/status', '/intraday'):
+                worker = Thread(target=server.handle_request)
+                worker.start()
+                connection = HTTPConnection(*server.server_address, timeout=3)
+                try:
+                    connection.request('GET', path)
+                    response = connection.getresponse()
+                    assert response.status == 200
+                    assert response.read()
+                finally:
+                    connection.close()
+                    worker.join(3)
+                assert not worker.is_alive()
+                assert collector.snapshot() == before
+                assert not collector.store.root.exists() and collector._worker is None
+        checkpoints.append(server)
+
+    # Real composition, actual server and pre-READY/serve assertions; no injected collector.
+    test_canonical_main_installs_real_mcx_owner_before_ready_without_acquisition(
+        tmp_path, monkeypatch, _check_wo08=check_before_ready_and_serve,
+    )
+    assert checkpoints == [servers[0], servers[0]]
+    assert order == ['analysis-dependencies', 'store', 'collector', 'server', 'bound', 'ready', 'serve']
+    collector = runtimes[0].wo08_shadow
+    assert bound == [servers[0].maintenance_admission]
+    assert collector.maintenance_coordinator is bound[0]
+    assert not collector.store.root.exists()
+    assert collector.snapshot()['counts'] == dict(
+        eligible=0, attempted=0, admitted=0, not_admitted=0,
+        captured=0, failed=0, partial=0, excluded=0,
+    )
+    assert collector._worker is None and collector.snapshot()['closed'] is True
+
+
+@pytest.mark.parametrize('failure', ['store', 'collector'])
+def test_canonical_startup_isolates_unavailable_research_construction(tmp_path, monkeypatch, failure):
+    from kronos.application.intraday_wo08_shadow import Wo08ShadowCollector, UnavailableWo08ShadowCollector
+    from kronos.intraday.wo08_shadow_persistence import Wo08ShadowStore
+    calls, observed = [], []
+
+    def fail(*args, **kwargs):
+        calls.append(True)
+        raise OSError('research unavailable')
+
+    monkeypatch.setattr(Wo08ShadowStore if failure == 'store' else Wo08ShadowCollector, '__init__', fail)
+    original = kronos_browser.create_intraday_runtime
+    def runtime(*args, **kwargs):
+        composed = original(*args, **kwargs)
+        assert type(composed.wo08_shadow) is UnavailableWo08ShadowCollector
+        observed.append(composed.wo08_shadow)
+        return composed
+    monkeypatch.setattr(kronos_browser, 'create_intraday_runtime', runtime)
+    monkeypatch.setattr(kronos_browser, '_build_provider',
+                        lambda **_: pytest.fail('unavailable research acquired Provider'))
+
+    def check(server):
+        owner = observed[0]
+        assert owner.maintenance_coordinator is server.maintenance_admission
+        assert owner.snapshot()['availability'] == 'UNAVAILABLE'
+        assert owner.snapshot()['unavailable_reason'] == 'WO08_CONSTRUCTION_UNAVAILABLE'
+        assert owner.snapshot()['unavailable_error_type'] == 'OSError'
+        assert owner.store is None and owner._worker is None
+        assert server.maintenance_admission.snapshot()['owners'] == {}
+
+    test_canonical_main_installs_real_mcx_owner_before_ready_without_acquisition(
+        tmp_path, monkeypatch, _check_wo08=check,
+    )
+    assert len(calls) == len(observed) == 1
+    assert observed[0].snapshot()['closed'] is True

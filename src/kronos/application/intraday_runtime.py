@@ -284,6 +284,7 @@ class IntradayRuntimeComposition:
     reliance_bootstrap: RelianceIntradayBootstrap
     startup_evidence: StartupEvidence | None = None
     lifecycle_application: object | None = None
+    wo08_shadow: object | None = None
 
 
 def create_intraday_runtime(
@@ -295,6 +296,8 @@ def create_intraday_runtime(
     last_successful_discovery_run_identity: str | None = None,
     last_successful_probables_run_identity: str | None = None,
     clock=lambda: datetime.now(timezone.utc),
+    wo08_shadow=None,
+    wo08_shadow_factory=None,
 ) -> IntradayRuntimeComposition:
     """Compose Intraday without moving product policy into shared modules."""
 
@@ -501,6 +504,12 @@ def create_intraday_runtime(
             ),
         )
     live_shadow = IntradayLiveShadowService(store=ShadowStore(Path(evidence_root)), clock=clock, mcx_history_store=mcx_history_store, probables_store=probables_v2_store)
+    # Canonical-only explicit opt-in after the analysis dependencies exist.
+    # Reusable/default compositions and explicit collector injection are unchanged.
+    if wo08_shadow_factory is not None:
+        if wo08_shadow is not None:
+            raise ValueError('WO08_COMPOSITION_AMBIGUOUS')
+        wo08_shadow = wo08_shadow_factory()
     operation_v2 = IntradayDiscoveryOperationService(
         provider_runtime=provider_runtime,
         acquire_lease=access.acquire_admission_discovery_lease,
@@ -523,6 +532,7 @@ def create_intraday_runtime(
         ),
         probables_v2=probables_v2,
         live_shadow=live_shadow,
+        wo08_shadow=wo08_shadow,
         probables_v2_diagnostics_store=probables_v2_diagnostics_store,
         refresh_admission=refresh_admission,
         active_derivative_catalogue=active_catalogue,
@@ -709,6 +719,7 @@ def create_intraday_runtime(
         wo_b_runtime=wo_b_runtime,
         refresh_v2_provenance_store=refresh_v2_provenance_store,
         probables_v2_diagnostics_store=probables_v2_diagnostics_store,
+        wo08_shadow=wo08_shadow,
         mcx_history_store=mcx_history_store,
         refresh_state_store=refresh_state_store,
         reliance_bootstrap=bootstrap,

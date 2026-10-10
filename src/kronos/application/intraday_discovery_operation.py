@@ -331,6 +331,7 @@ class IntradayDiscoveryOperationService:
         active_derivative_binding_store: ActiveDerivativeBindingStore | None = None,
         provider_snapshot_store: ProviderInstrumentSnapshotStore | None = None,
         live_shadow=None,
+        wo08_shadow=None,
         clock: Callable[[], datetime] = trusted_now,
     ) -> None:
         if (
@@ -390,6 +391,7 @@ class IntradayDiscoveryOperationService:
         self._source_factory = factual_source_factory
         self._probables = probables
         self.live_shadow = live_shadow
+        self.wo08_shadow = wo08_shadow
         self._probables_v2 = probables_v2
         self._probables_v2_diagnostics_store = probables_v2_diagnostics_store
         self._refresh_state_store = refresh_state_store
@@ -404,6 +406,15 @@ class IntradayDiscoveryOperationService:
         self._last_active_derivative_resolutions: ActiveDerivativeResolutionSet | None = None
         self._last_provider_snapshot_identity: str | None = None
         self._last_instrument_master_read_count = 0
+
+    def _wo08_incomplete(self, identity, reason):
+        # Even failure-accounting trouble is research-only. Never reclassify an
+        # already completed analytical publication as a failed operational run.
+        self.wo08_capture_failure = reason
+        try:
+            self.wo08_shadow.incomplete(identity, reason)
+        except Exception:
+            self.wo08_capture_failure = "CAPTURE_DIAGNOSTIC_UNAVAILABLE"
 
     @property
     def operation_available(self) -> bool:
@@ -719,6 +730,15 @@ class IntradayDiscoveryOperationService:
                     reconciliation=self._reconciliation,
                 )
                 stage = DiscoveryOperationStage.PROBABLES_INVOCATION
+                # Metadata inventory precedes publication; it does not use a
+                # later clock to claim an already-retained run was newly published.
+                wo08_prior = None
+                if self.wo08_shadow is not None:
+                    try:
+                        from kronos.application.intraday_wo08_shadow import retained_run_ids
+                        wo08_prior = retained_run_ids(self._probables_v2.store)
+                    except Exception:
+                        self._wo08_incomplete(request.operation_identity, "RUN_INVENTORY_UNAVAILABLE")
                 probables_run = self._probables_v2.refresh_analysis(
                     native_facts=execution.probables_v2_facts,
                     native_bundles=execution.bundles,
@@ -755,6 +775,21 @@ class IntradayDiscoveryOperationService:
                     raise ProbablesV2Error(
                         "DISCOVERY_PROBABLES_V2_LINKAGE_INVALID"
                     )
+            if self.wo08_shadow is not None and self._probables_v2 is not None and wo08_prior is not None:
+                # refresh_analysis has returned: no WO08 admission, I/O, waits,
+                # Provider capability or worker is inserted into its locked callback.
+                try:
+                    from kronos.application.intraday_wo08_shadow import freeze_publication
+                    handoff = freeze_publication(
+                        run=probables_run, mapping=mapping, execution=execution,
+                        operation=request.operation_identity,
+                        native_publication=self._probables_v2.native_selection,
+                        assessments=self._probables_v2.store.load_assessment_observations(probables_run.run_identity),
+                        newly_published=probables_run.run_identity not in wo08_prior,
+                        published_at=self._clock(), reconciliation=self._reconciliation, replay_envelope=replay_envelope)
+                    self.wo08_shadow.submit(handoff)
+                except Exception:
+                    self._wo08_incomplete(request.operation_identity, "HANDOFF_CAPTURE_FAILED")
             return self._finish(
                 request,
                 trusted_admission_time=trusted_admission_at,

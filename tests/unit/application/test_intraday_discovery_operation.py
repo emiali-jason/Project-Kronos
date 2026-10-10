@@ -584,3 +584,92 @@ def test_publication_stale_preserves_last_successful_application_truth(
     assert snapshot.current_failure == DiscoveryOperationFailure.PUBLICATION_STALE.value
     assert request_count == [372]
     assert factory_calls == [1]
+
+
+def test_wo08_post_return_capture_preserves_complete_analysis_and_provider_budget(tmp_path,monkeypatch):
+    from kronos.application.intraday_wo08_shadow import Wo08ShadowCollector
+    from kronos.intraday.wo08_shadow_persistence import Wo08ShadowStore
+    from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
+    boundary=SEMANTIC_BOUNDARY
+    baseline_shared,_,_,baseline_calls=_configured_shared();_authenticate(baseline_shared)
+    baseline=create_intraday_runtime(baseline_shared,evidence_root=tmp_path/'baseline',clock=lambda:boundary)
+    baseline.probables_v2_application.native_selection.commissioned_at=boundary
+    original=baseline.discovery_v2_operation.execute(_request_at('BUDGET-BASE',boundary))
+    assert original.state is DiscoveryOperationState.COMPLETE
+    shared,_,_,calls=_configured_shared();_authenticate(shared)
+    collector=Wo08ShadowCollector(Wo08ShadowStore(tmp_path/'research'))
+    coordinator=MaintenanceAdmissionCoordinator();collector.bind_maintenance_admission(coordinator)
+    composed=create_intraday_runtime(shared,evidence_root=tmp_path/'candidate',clock=lambda:boundary,wo08_shadow=collector)
+    composed.probables_v2_application.native_selection.commissioned_at=boundary
+    app=composed.probables_v2_application;seen=[];admit=coordinator.admit_root
+    def outside(kind):
+        assert not app._lock._is_owned()
+        assert app.store.load_current_run() is not None
+        seen.append(kind);return admit(kind)
+    monkeypatch.setattr(coordinator,'admit_root',outside)
+    from kronos.application import intraday_wo08_shadow as shadow_module
+    freeze=shadow_module.freeze_publication
+    freeze_errors=[]
+    def freeze_checked(**kwargs):
+        try:
+            return freeze(**kwargs)
+        except Exception as error:
+            import traceback
+            freeze_errors.append(traceback.format_exc())
+            raise
+    monkeypatch.setattr(shadow_module,'freeze_publication',freeze_checked)
+    result=composed.discovery_v2_operation.execute(_request_at('BUDGET-CANDIDATE',boundary))
+    assert result.state is DiscoveryOperationState.COMPLETE
+    assert result.universe_count==98 and len(app.store.load_current_run().results)==98
+    assert collector.close() and coordinator.snapshot()['owners']=={}
+    assert not freeze_errors, '\n'.join(freeze_errors)
+    assert calls==baseline_calls and seen==['WO08_SHADOW'], collector.snapshot()
+    results=collector.snapshot()['results']
+    assert len(results)==1
+    assert next(iter(results.values())).state in {'SHADOW_CAPTURED','SHADOW_CAPTURE_PARTIAL'}
+    manifests=list((collector.store.root/'run').glob('*.json'));assert len(manifests)==1
+    manifest=collector.store.load('RUN',manifests[0].stem)
+    assert manifest.data['population_total']==98
+    assert len(manifest.data['all_result_ids'])==98
+    assert len(manifest.data['selected_sample_ids'])+len(manifest.data['excluded_result_reasons'])==98
+    assert not any(p.name.startswith('CURRENT') for p in collector.store.root.rglob('*'))
+
+
+def test_wo08_failure_and_duplicate_do_not_replace_operational_authority(tmp_path,monkeypatch):
+    from kronos.application.intraday_wo08_shadow import Wo08ShadowCollector
+    from kronos.intraday.wo08_shadow_persistence import Wo08ShadowStore
+    from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
+    boundary=SEMANTIC_BOUNDARY
+    shared,_,_,calls=_configured_shared();_authenticate(shared)
+    collector=Wo08ShadowCollector(Wo08ShadowStore(tmp_path/'research'))
+    coordinator=MaintenanceAdmissionCoordinator();collector.bind_maintenance_admission(coordinator)
+    monkeypatch.setattr(collector.store,'retain_handoff',lambda _h: (_ for _ in ()).throw(OSError('DISK')))
+    composed=create_intraday_runtime(shared,evidence_root=tmp_path/'candidate',clock=lambda:boundary,wo08_shadow=collector)
+    composed.probables_v2_application.native_selection.commissioned_at=boundary
+    result=composed.discovery_v2_operation.execute(_request_at('RESEARCH-FAIL',boundary))
+    assert result.state is DiscoveryOperationState.COMPLETE;assert collector.close()
+    run=composed.probables_v2_store.load_current_run();assert len(run.results)==98
+    pointer=(composed.probables_v2_store.root/'refresh-v2/CURRENT-PROBABLES-V2.json').read_bytes()
+    again=composed.discovery_v2_operation.execute(_request_at('RESEARCH-DUPLICATE',boundary))
+    assert again.state is DiscoveryOperationState.COMPLETE
+    assert composed.probables_v2_store.load_current_run()==run
+    assert (composed.probables_v2_store.root/'refresh-v2/CURRENT-PROBABLES-V2.json').read_bytes()==pointer
+    assert 'ALREADY_PUBLISHED_NO_BACKFILL' in {v.reason for v in collector.snapshot()['results'].values()}
+    assert coordinator.snapshot()['owners']=={}
+
+
+def test_wo08_capture_and_diagnostic_failure_cannot_fail_analysis(tmp_path,monkeypatch):
+    from kronos.application.intraday_wo08_shadow import Wo08ShadowCollector
+    from kronos.intraday.wo08_shadow_persistence import Wo08ShadowStore
+    shared,_,_,_=_configured_shared();_authenticate(shared)
+    collector=Wo08ShadowCollector(Wo08ShadowStore(tmp_path/'research'))
+    def broken(*_args,**_kwargs):raise OSError('injected research failure')
+    monkeypatch.setattr(collector,'incomplete',broken)
+    from kronos.application import intraday_wo08_shadow as module
+    monkeypatch.setattr(module,'freeze_publication',broken)
+    r=create_intraday_runtime(shared,evidence_root=tmp_path/'candidate',clock=lambda:SEMANTIC_BOUNDARY,wo08_shadow=collector)
+    result=r.discovery_v2_operation.execute(_request_at('DIAGNOSTIC-FAIL',SEMANTIC_BOUNDARY))
+    assert result.state is DiscoveryOperationState.COMPLETE
+    assert len(r.probables_v2_store.load_current_run().results)==98
+    assert r.discovery_v2_operation.wo08_capture_failure=='CAPTURE_DIAGNOSTIC_UNAVAILABLE'
+    assert collector.close() and not collector.store.root.exists()

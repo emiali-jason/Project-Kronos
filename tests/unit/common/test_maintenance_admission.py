@@ -244,3 +244,16 @@ def test_v2_handoff_signs_valid_pending_replay_and_rejects_invalid_checkpoint(tm
             publish_drain_handoff(root, generation="b" * 64, parent_pid=os.getpid(),
                 proof="d" * 64, runtime_identity="e" * 64,
                 loaded_revision="f" * 40, drain=invalid, now=now)
+
+
+def test_wo08_root_is_open_only_while_existing_child_contract_is_preserved():
+    from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
+    c=MaintenanceAdmissionCoordinator();parent=c.admit('BROWSER_POST')
+    root=c.admit_root('WO08_SHADOW');assert root.generation=='OPEN'
+    assert c.claim('e'*64)
+    with parent.activate():
+        assert c.admit_root('WO08_SHADOW') is None
+        child=c.admit('SWING_RESEARCH');assert child is not None;child.release()
+    c.draining('e'*64)
+    assert c.snapshot()['owners']=={'BROWSER_POST':1,'WO08_SHADOW':1}
+    root.release();parent.release();assert c.wait_for_zero('e'*64,0)
