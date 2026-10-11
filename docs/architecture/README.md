@@ -274,3 +274,7 @@ provenance and selective I2/I3-only 4/5 watches. Predictive usefulness remains
 NOT_ESTABLISHED. Historical methods remain readable; ticks are advisory only;
 ordinary completed Analysis owns promotion. Exact-byte review and technical
 acceptance are required before claiming runtime commissioning.
+
+### WO12 considered-opportunity journey
+
+[ADR-0065](adr/ADR-0065-WO12-OPPORTUNITY-JOURNEY-REPORTING.md) and the [Opportunity Journey V1 interface](interfaces/KRONOS-INTRADAY-WO12-OPPORTUNITY-JOURNEY-V1.md) add a reporting-only seventh worksheet. Sponsor Choice A uses retained governed WO11 events only, discloses missing coverage and preserves historical six-sheet reconstruction. SAME_INTERVAL is deferred outside V1.

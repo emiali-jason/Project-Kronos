@@ -14,7 +14,7 @@ import tempfile
 from kronos.intraday.probables import ProbableState
 from kronos.intraday.wo12_research_contract import (
     LOCAL_PUBLICATION_ROOT, POLICY_CHECKSUM, POLICY_IDENTITY, POLICY_VERSION,
-    WORKBOOK_SCHEMA, WORKBOOK_VERSION, digest, opportunity_origin, record,
+    WORKBOOK_SCHEMA, WORKBOOK_VERSION, JOURNEY_WORKBOOK_VERSION, digest, opportunity_origin, record,
 )
 
 
@@ -101,6 +101,8 @@ class ResearchProjection:
     analysis: tuple[tuple[object, ...], ...]
     data_quality: tuple[tuple[object, ...], ...]
     metadata: tuple[tuple[object, ...], ...]
+    journey: tuple[tuple[object, ...], ...] = ()
+    workbook_version: str = WORKBOOK_VERSION
 
 
 @dataclass(frozen=True, slots=True)
@@ -248,7 +250,9 @@ class IntradayResearchApplication:
                     values.append((item.analysis_boundary, item.result_identity, run.run_identity, item))
         return tuple(sorted(values, key=lambda item: (item[0], item[1])))
 
-    def project(self, *, generated_at: datetime | None = None, ensure_origins: bool = False, year_month: str | None = None) -> ResearchProjection:
+    def project(self, *, generated_at: datetime | None = None, ensure_origins: bool = False, year_month: str | None = None, workbook_version: str = JOURNEY_WORKBOOK_VERSION) -> ResearchProjection:
+        if workbook_version not in {WORKBOOK_VERSION, JOURNEY_WORKBOOK_VERSION}:
+            raise ValueError("WO12_WORKBOOK_VERSION_UNSUPPORTED")
         now = generated_at or self.clock()
         if now.tzinfo is None or now.utcoffset() is None:
             raise ValueError("WO12_AWARE_TIMESTAMP_REQUIRED")
@@ -532,9 +536,18 @@ class IntradayResearchApplication:
         month_state = "FINALIZED_MONTH" if datetime.strptime(month, "%Y_%m").date().replace(day=28) < local_now.date().replace(day=1) else "OPEN_MONTH"
         material = dict(year_month=month, generated_at=now, opportunities=rows, tracks=track_rows,
                         events=event_rows, analysis=analysis, data_quality=quality_rows)
+        journey_rows = ()
+        if workbook_version == JOURNEY_WORKBOOK_VERSION:
+            from kronos.application.intraday_opportunity_journey import build_journey_rows
+            journey_rows = build_journey_rows(cohorts=cohorts, associations=associations,
+                readiness=readiness_history, outcomes=eod_results, futures=self.futures,
+                lifecycle=self.lifecycle, tracks=tracks, pointer_currentness=pointer_currentness,
+                assessments=self.wo08)
+            material['opportunity_journey'] = journey_rows
+            material['workbook_version'] = workbook_version
         projection_identity = "WO12-RESEARCH-PROJECTION-" + digest(material)
         metadata = (
-            ("workbook_schema", f"{WORKBOOK_SCHEMA} / {WORKBOOK_VERSION}"),
+            ("workbook_schema", f"{WORKBOOK_SCHEMA} / {workbook_version}"),
             ("policy_identity", POLICY_IDENTITY), ("policy_version", POLICY_VERSION),
             ("policy_checksum", POLICY_CHECKSUM), ("projection_identity", projection_identity),
             ("generated_at", now), ("year_month", month), ("month_state", month_state),
@@ -550,9 +563,15 @@ class IntradayResearchApplication:
             ("wo12_considered_count", len(cohorts)),
             ("wo08_live_control_authority", "NONE"),
         )
+        if workbook_version == JOURNEY_WORKBOOK_VERSION:
+            metadata += (("opportunity_journey_version", "1.0.0"),
+                ("chronology_authority", "RETAINED_GOVERNED_WO11_MODEL_EVENTS_ONLY"),
+                ("chronology_missing_coverage", "NOT_EVALUABLE_NO_OHLC_TOUCH_INFERENCE"),
+                ("same_interval_acceptance", "DEFERRED_OUTSIDE_V1"),
+                ("journey_time_display", "Asia/Kolkata IST; retained observed event precision"))
         return ResearchProjection(month, now, projection_identity, tuple(rows), tuple(track_rows),
                                   tuple(sorted(event_rows, key=lambda row: (str(row[2]), str(row[6])))),
-                                  tuple(analysis), tuple(quality_rows), metadata)
+                                  tuple(analysis), tuple(quality_rows), metadata, journey_rows, workbook_version)
 
     def update(self, *, operation_identity: str) -> PublicationResult:
         if not isinstance(operation_identity, str) or not operation_identity.strip() or len(operation_identity) > 160:
@@ -582,8 +601,8 @@ class IntradayResearchApplication:
                        else self.store.load(str(data["receipt_identity"])))
             return self._result(receipt, idempotent=True, outcome=str(data.get("outcome", "PUBLISHED")))
         projection = _projection or self.project(ensure_origins=True, year_month=year_month)
-        source_boundary_identity = "WO12-SOURCE-BOUNDARY-" + digest({
-            "workbook_schema": (WORKBOOK_SCHEMA, WORKBOOK_VERSION),
+        source_material = {
+            "workbook_schema": (WORKBOOK_SCHEMA, projection.workbook_version),
             "source_events": tuple((row[2], row[4], row[5], row[6], row[8]) for row in projection.events),
             "track_currents": tuple(row[-1] for row in projection.tracks),
             "opportunity_origins": tuple((
@@ -592,7 +611,10 @@ class IntradayResearchApplication:
                 row[OPPORTUNITY_COLUMNS.index("probable_result_identity")],
                 row[OPPORTUNITY_COLUMNS.index("probables_run_identity")],
             ) for row in projection.opportunities),
-        })
+        }
+        if projection.workbook_version == JOURNEY_WORKBOOK_VERSION:
+            source_material["opportunity_journey"] = projection.journey
+        source_boundary_identity = "WO12-SOURCE-BOUNDARY-" + digest(source_material)
         current_receipt = self.store.current_receipt(projection.year_month)
         if (current_receipt is not None
                 and current_receipt.data.get("source_boundary_identity") == source_boundary_identity):
@@ -654,7 +676,7 @@ class IntradayResearchApplication:
                 prior_workbook_sha256=None if previous is None else digest_bytes(previous),
                 policy_identity=POLICY_IDENTITY, policy_version=POLICY_VERSION,
                 policy_checksum=POLICY_CHECKSUM, schema_identity=WORKBOOK_SCHEMA,
-                schema_version=WORKBOOK_VERSION, generator_identity="KRONOS-WO12-LOCAL-XLSX-GENERATOR-V1",
+                schema_version=projection.workbook_version, generator_identity="KRONOS-WO12-LOCAL-XLSX-GENERATOR-V1",
                 atomic_replace=True, readback_verified=True, status="VERIFIED", authority="RESEARCH_ONLY")
             try:
                 self.store.publish_receipt(receipt)
@@ -689,7 +711,7 @@ class IntradayResearchApplication:
         """Recreate the exact receipted workbook without creating new authority."""
         data = receipt.data
         boundary = datetime.fromisoformat(str(data["research_boundary"]))
-        projection = self.project(generated_at=boundary, ensure_origins=False, year_month=data["year_month"])
+        projection = self.project(generated_at=boundary, ensure_origins=False, year_month=data["year_month"], workbook_version=data["schema_version"])
         if projection.projection_identity != data["projection_identity"]:
             raise ValueError("WO12_RECEIPTED_PROJECTION_NOT_REPRODUCIBLE")
         projection = replace(projection, metadata=projection.metadata + (
@@ -755,6 +777,10 @@ class IntradayResearchApplication:
             "policy_checksum": POLICY_CHECKSUM, "current_month": month,
             "publication_root": str(self.publication_root), "receipt_identity": None if receipt is None else receipt.identity,
             "workbook_verified": False if receipt is None else self._receipt_verified(receipt),
+            "available_workbook_schema": WORKBOOK_SCHEMA,
+            "available_workbook_version": JOURNEY_WORKBOOK_VERSION,
+            "opportunity_journey_version": "1.0.0",
+            "chronology_authority": "RETAINED_GOVERNED_WO11_MODEL_EVENTS_ONLY",
             "automatic_schedule": "NONE_V1", "google_drive": "NOT_COMMISSIONED",
             "production_operations": 0,
         }

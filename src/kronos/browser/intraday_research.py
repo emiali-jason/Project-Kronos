@@ -1,4 +1,4 @@
-"""Deterministic six-sheet WO-12 research workbook and Sponsor controls."""
+"""Deterministic versioned six/seven-sheet WO-12 workbooks and Sponsor controls."""
 
 from __future__ import annotations
 
@@ -15,7 +15,8 @@ from kronos.application.intraday_research import (
     ANALYSIS_COLUMNS, EVENT_COLUMNS, Formula, METADATA_COLUMNS, OPPORTUNITY_COLUMNS,
     QUALITY_COLUMNS, ResearchProjection, TRACK_COLUMNS,
 )
-from kronos.intraday.wo12_research_contract import SHEETS
+from kronos.intraday.wo12_research_contract import SHEETS, WORKBOOK_VERSION, JOURNEY_WORKBOOK_VERSION
+from kronos.application.intraday_opportunity_journey import JOURNEY_COLUMNS
 
 
 RESEARCH_ROUTE = "/intraday/research"
@@ -40,25 +41,43 @@ _SHEET_DEFINITIONS = tuple(
 )
 
 
+def _definitions(projection):
+    if projection.workbook_version == WORKBOOK_VERSION:
+        if projection.journey:
+            raise ValueError("WO12_LEGACY_JOURNEY_NOT_SUPPORTED")
+        return _SHEET_DEFINITIONS
+    if projection.workbook_version != JOURNEY_WORKBOOK_VERSION:
+        raise ValueError("WO12_WORKBOOK_VERSION_UNSUPPORTED")
+    widths = tuple(45 if c.endswith('Contract') else 34 if c.endswith(' At') else 46 if 'Identity' in c or 'References' in c
+        else 48 if c in {'Original Reasons', 'Chronology Coverage', 'Measurement Authority'}
+        else 28 if c == 'Opportunity ID' else 24 for c in JOURNEY_COLUMNS)
+    return _SHEET_DEFINITIONS + (("Opportunity_Journey", JOURNEY_COLUMNS, widths),)
+
+
+def _payloads(projection):
+    rows = (projection.opportunities, projection.tracks, projection.events,
+        projection.analysis, projection.data_quality, projection.metadata)
+    return rows + (projection.journey,) if projection.workbook_version == JOURNEY_WORKBOOK_VERSION else rows
+
+
 def export_research_workbook(projection: ResearchProjection) -> bytes:
     if type(projection) is not ResearchProjection:
         raise TypeError("WO12_RESEARCH_PROJECTION_REQUIRED")
-    payloads = (
-        projection.opportunities, projection.tracks, projection.events,
-        projection.analysis, projection.data_quality, projection.metadata,
-    )
+    definitions = _definitions(projection)
+    names = tuple(d[0] for d in definitions)
+    payloads = _payloads(projection)
     output = BytesIO()
     with ZipFile(output, "w", compression=ZIP_DEFLATED, compresslevel=9) as archive:
-        _write(archive, "[Content_Types].xml", _content_types())
+        _write(archive, "[Content_Types].xml", _content_types(len(names)))
         _write(archive, "_rels/.rels", _package_relationships())
         _write(archive, "docProps/core.xml", _core_properties(projection.generated_at))
-        _write(archive, "docProps/app.xml", _app_properties())
-        _write(archive, "xl/workbook.xml", _workbook())
-        _write(archive, "xl/_rels/workbook.xml.rels", _workbook_relationships())
-        _write(archive, "xl/styles.xml", _styles())
-        for index, ((name, columns, widths), rows) in enumerate(zip(_SHEET_DEFINITIONS, payloads, strict=True), start=1):
+        _write(archive, "docProps/app.xml", _app_properties(names))
+        _write(archive, "xl/workbook.xml", _workbook(names))
+        _write(archive, "xl/_rels/workbook.xml.rels", _workbook_relationships(len(names)))
+        _write(archive, "xl/styles.xml", _journey_styles() if len(names) == 7 else _styles())
+        for index, ((name, columns, widths), rows) in enumerate(zip(definitions, payloads, strict=True), start=1):
             all_rows = (columns, *rows)
-            _write(archive, f"xl/worksheets/sheet{index}.xml", _sheet(all_rows, widths, table_id=index))
+            _write(archive, f"xl/worksheets/sheet{index}.xml", _sheet(all_rows, widths, table_id=index, journey=index == 7))
             _write(archive, f"xl/worksheets/_rels/sheet{index}.xml.rels", _sheet_relationship(index))
             _write(archive, f"xl/tables/table{index}.xml", _table(index, name, columns, len(all_rows)))
     result = output.getvalue()
@@ -127,14 +146,17 @@ def _write(archive, name, value):
     archive.writestr(info, value.encode("utf-8"))
 
 
-def _sheet(rows, widths, *, table_id):
+def _sheet(rows, widths, *, table_id, journey=False):
     if not rows or any(len(row) != len(rows[0]) for row in rows) or len(widths) != len(rows[0]):
         raise ValueError("WO12_WORKBOOK_COLUMNS_INVALID")
     xml_rows = []
     for row_index, row in enumerate(rows, 1):
         cells = "".join(_cell(f"{_column(column)}{row_index}", value, header=row_index == 1)
                         for column, value in enumerate(row, 1))
-        xml_rows.append(f'<row r="{row_index}">{cells}</row>')
+        if journey and row_index == 1:
+            cells = cells.replace(' s="1"', ' s="2"')
+        height = ' ht="32" customHeight="1"' if journey and row_index == 1 else ""
+        xml_rows.append(f'<row r="{row_index}"{height}>{cells}</row>')
     end = f"{_column(len(rows[0]))}{len(rows)}"
     cols = "".join(f'<col min="{index}" max="{index}" width="{width}" customWidth="1"/>'
                    for index, width in enumerate(widths, 1))
@@ -183,9 +205,9 @@ def _sheet_relationship(index):
             '</Relationships>')
 
 
-def _content_types():
-    sheets = "".join(f'<Override PartName="/xl/worksheets/sheet{i}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' for i in range(1, 7))
-    tables = "".join(f'<Override PartName="/xl/tables/table{i}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml"/>' for i in range(1, 7))
+def _content_types(count=6):
+    sheets = "".join(f'<Override PartName="/xl/worksheets/sheet{i}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' for i in range(1, count + 1))
+    tables = "".join(f'<Override PartName="/xl/tables/table{i}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml"/>' for i in range(1, count + 1))
     return ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
             '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>'
             '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' + sheets + tables +
@@ -201,16 +223,16 @@ def _package_relationships():
             '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/></Relationships>')
 
 
-def _workbook():
-    sheets = "".join(f'<sheet name="{name}" sheetId="{index}" r:id="rId{index}"/>' for index, name in enumerate(SHEETS, 1))
+def _workbook(names=SHEETS):
+    sheets = "".join(f'<sheet name="{name}" sheetId="{index}" r:id="rId{index}"/>' for index, name in enumerate(names, 1))
     return ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
             f'<sheets>{sheets}</sheets><calcPr calcId="191029" calcMode="auto" fullCalcOnLoad="1"/></workbook>')
 
 
-def _workbook_relationships():
-    sheets = "".join(f'<Relationship Id="rId{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet{i}.xml"/>' for i in range(1, 7))
+def _workbook_relationships(count=6):
+    sheets = "".join(f'<Relationship Id="rId{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet{i}.xml"/>' for i in range(1, count + 1))
     return ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' + sheets +
-            '<Relationship Id="rId7" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>')
+            f'<Relationship Id="rId{count + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>')
 
 
 def _styles():
@@ -222,6 +244,12 @@ def _styles():
             '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>')
 
 
+def _journey_styles():
+    # Keep legacy styles byte-identical; only the new header uses added style 2.
+    return _styles().replace('<cellXfs count="2">', '<cellXfs count="3">').replace(
+        '</cellXfs>', '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment wrapText="1" vertical="center"/></xf></cellXfs>')
+
+
 def _core_properties(created):
     stamp = created.astimezone(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
     return ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">'
@@ -230,11 +258,11 @@ def _core_properties(created):
             '<dc:title>KRONOS Intraday Monthly Research Ledger</dc:title></cp:coreProperties>')
 
 
-def _app_properties():
-    titles = "".join(f"<vt:lpstr>{name}</vt:lpstr>" for name in SHEETS)
+def _app_properties(names=SHEETS):
+    titles = "".join(f"<vt:lpstr>{name}</vt:lpstr>" for name in names)
     return ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">'
-            '<Application>KRONOS</Application><DocSecurity>0</DocSecurity><HeadingPairs><vt:vector size="2" baseType="variant"><vt:variant><vt:lpstr>Worksheets</vt:lpstr></vt:variant><vt:variant><vt:i4>6</vt:i4></vt:variant></vt:vector></HeadingPairs>'
-            f'<TitlesOfParts><vt:vector size="6" baseType="lpstr">{titles}</vt:vector></TitlesOfParts></Properties>')
+            f'<Application>KRONOS</Application><DocSecurity>0</DocSecurity><HeadingPairs><vt:vector size="2" baseType="variant"><vt:variant><vt:lpstr>Worksheets</vt:lpstr></vt:variant><vt:variant><vt:i4>{len(names)}</vt:i4></vt:variant></vt:vector></HeadingPairs>'
+            f'<TitlesOfParts><vt:vector size="{len(names)}" baseType="lpstr">{titles}</vt:vector></TitlesOfParts></Properties>')
 
 
 def _column(index):
@@ -245,18 +273,19 @@ def _column(index):
 
 
 def _validate_package(payload, projection=None):
+    definitions = _SHEET_DEFINITIONS if projection is None else _definitions(projection)
+    sheet_names = tuple(d[0] for d in definitions)
     with ZipFile(BytesIO(payload)) as archive:
         names = set(archive.namelist())
-        required = {"xl/workbook.xml", "xl/styles.xml", *{f"xl/worksheets/sheet{i}.xml" for i in range(1, 7)}, *{f"xl/tables/table{i}.xml" for i in range(1, 7)}}
+        required = {"xl/workbook.xml", "xl/styles.xml", *{f"xl/worksheets/sheet{i}.xml" for i in range(1, len(definitions) + 1)}, *{f"xl/tables/table{i}.xml" for i in range(1, len(definitions) + 1)}}
         if not required <= names or any("vbaProject" in name or "externalLinks" in name for name in names):
             raise ValueError("WO12_RESEARCH_WORKBOOK_PACKAGE_INVALID")
         workbook = archive.read("xl/workbook.xml").decode()
-        if any(f'name="{name}"' not in workbook for name in SHEETS):
+        if any(f'name="{name}"' not in workbook for name in sheet_names):
             raise ValueError("WO12_RESEARCH_WORKBOOK_SCHEMA_INVALID")
         if projection is not None:
-            rows = (projection.opportunities, projection.tracks, projection.events,
-                    projection.analysis, projection.data_quality, projection.metadata)
-            for index, ((name, columns, _), values) in enumerate(zip(_SHEET_DEFINITIONS, rows, strict=True), 1):
+            rows = _payloads(projection)
+            for index, ((name, columns, _), values) in enumerate(zip(definitions, rows, strict=True), 1):
                 table = archive.read(f"xl/tables/table{index}.xml").decode()
                 end = f"{_column(len(columns))}{len(values) + 1}"
                 exact_columns = "".join(

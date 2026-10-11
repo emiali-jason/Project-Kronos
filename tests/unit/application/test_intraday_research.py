@@ -97,7 +97,7 @@ def test_admitted_probables_origin_producer_is_idempotent_without_research_publi
 
 def test_six_sheet_workbook_has_tables_formulas_and_no_active_content(tmp_path) -> None:
     application, _ = _application(tmp_path)
-    projection = application.project(ensure_origins=True)
+    projection = application.project(ensure_origins=True, workbook_version="2.2.0")
     first = export_research_workbook(projection)
     second = export_research_workbook(projection)
     assert first == second

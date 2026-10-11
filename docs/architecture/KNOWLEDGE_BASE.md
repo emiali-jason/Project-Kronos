@@ -377,3 +377,7 @@ WO13 retains notification ownership, WO12 retains terminal-directional research
 semantics, LIVE stays uncommissioned and NATGAS stays HELD. Entered-position
 safety remains independent of later analytical eligibility. Engineering,
 review, release, loaded runtime and natural business acceptance are distinct.
+
+## WO12 Opportunity Journey — ADR-0065
+
+The [versioned journey view](interfaces/KRONOS-INTRADAY-WO12-OPPORTUNITY-JOURNEY-V1.md) presents the retained considered cohort, original prediction/Assessment Price, selective-watch and first-five provenance, separate constructed levels, and unique-track governed WO11 events. Unknown hit coverage is NOT_EVALUABLE; gaps and reversals remain explicit. It introduces no OHLC touch inference, new market-data call, automatic activity or trading authority. Workbook presentation 2.3.0 appends a seventh sheet while keeping frozen research policy and exact historical 2.2.0 recovery. SAME_INTERVAL remains deferred under Sponsor Choice A; IWO-UX is next after technical acceptance.

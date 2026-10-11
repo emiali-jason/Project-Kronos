@@ -18,6 +18,8 @@ POLICY_IDENTITY = "KRONOS-INTRADAY-WO12-LOCAL-RESEARCH-PUBLICATION-POLICY"
 POLICY_VERSION = "1.0.0"
 WORKBOOK_SCHEMA = "KRONOS-INTRADAY-RESEARCH-WORKBOOK-V2"
 WORKBOOK_VERSION = "2.2.0"
+# Additive presentation version; the frozen record policy and six-sheet version stay unchanged.
+JOURNEY_WORKBOOK_VERSION = "2.3.0"
 LOCAL_PUBLICATION_ROOT = "/Users/imranali/Documents/Project-KRONOS/Statistics/Intraday"
 SHEETS = ("Opportunities", "Tracks", "Events", "Analysis", "Data_Quality", "Metadata")
 MONTH_STATES = frozenset({"OPEN_MONTH", "FINALIZED_MONTH", "CORRECTION_PENDING", "REPUBLISHED_MONTH"})
