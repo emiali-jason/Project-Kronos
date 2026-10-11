@@ -337,12 +337,14 @@ class KronosBrowserServer(ThreadingHTTPServer):
         native_intake: NativeReviewIntakeWorkflow | None = None,
         mcx_v1_composition_factory: Callable | None = None,
         swing_research_control: SwingResearchControl | None = None,
+        intraday_dashboard_summary: Callable | None = None,
     ) -> None:
         # The research workbook imports the Browser package. Resolve its
         # composition only when constructing a server, after module import.
         from kronos.application.swing_research_control import SwingResearchControl
         if (
             address[0] != _LOOPBACK_HOST
+            or (intraday_dashboard_summary is not None and not callable(intraday_dashboard_summary))
             or not isinstance(application, SwingOpportunitiesApplication)
             or (v1_review is not None and type(v1_review) is not SwingV1ReviewWorkflow)
             or (
@@ -476,6 +478,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
         self._shutdown_started = False
         self._active_sponsor_work = 0
         self._next_lifecycle_pulse = 0.0
+        self.intraday_dashboard_summary = intraday_dashboard_summary
         self.product_routes = (
             product_routes
             if product_routes is not None
@@ -2592,7 +2595,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 body = render_dashboard(snapshot, project_sponsor_dashboard(
                     snapshot, discovery, promotions, notifications,
                     self.server.ux10_notifications.snapshot(),
-                    promotions_v2=promotions_v2))
+                    promotions_v2=promotions_v2,
+                    **({} if self.server.intraday_dashboard_summary is None else
+                       {"intraday": self.server.intraday_dashboard_summary()})))
                 _, latest = self.server.application.opportunities_projection()
                 if (latest is not discovery or
                         promotions_v2 != self.server.current_v2_promotions(discovery)):
@@ -6629,6 +6634,7 @@ def create_browser_server(
     native_intake: NativeReviewIntakeWorkflow | None = None,
     mcx_v1_composition_factory: Callable | None = None,
     swing_research_control: SwingResearchControl | None = None,
+    intraday_dashboard_summary: Callable | None = None,
 ) -> KronosBrowserServer:
     if type(port) is not int or not 0 <= port <= 65535:
         raise ValueError("BROWSER_SERVER_PORT_INVALID")
@@ -6663,6 +6669,7 @@ def create_browser_server(
         native_intake,
         mcx_v1_composition_factory,
         swing_research_control,
+        intraday_dashboard_summary,
     )
 
 

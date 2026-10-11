@@ -328,9 +328,7 @@ def render_dashboard(
         raise TypeError("SPONSOR_DASHBOARD_PROJECTION_INVALID")
     swing = _dashboard_swing_card(dashboard)
     inactive = (
-        _dashboard_inactive_strategy(
-            "INTRADAY", "intraday", "/intraday", "VIEW INTRADAY →"
-        )
+        _dashboard_intraday_card(dashboard.intraday)
         + _dashboard_inactive_strategy(
             "THETA EARNERS", "theta", "/theta-earners", "VIEW THETA EARNERS →"
         )
@@ -453,6 +451,20 @@ def _dashboard_swing_card(dashboard: SponsorDashboardProjection) -> str:
         + content + '<div class="strategy-footer"><a href="/swing/opportunities">'
         'VIEW SWING →</a></div></article>'
     )
+
+
+def _dashboard_intraday_card(summary) -> str:
+    available = summary.now is not None and summary.ready is not None
+    values = (("NOW", summary.now), ("READY", summary.ready))
+    counts = ''.join('<div class="strategy-count"><span>' + label + '</span><strong>'
+        + (str(value) if value is not None else '—') + '</strong></div>' for label, value in values)
+    return ('<article class="strategy-card intraday"><h3>INTRADAY</h3>'
+        + '<div class="strategy-counts">' + counts + '</div>'
+        + '<div class="strategy-groups"><div class="strategy-group"><span>WO09 · EXPERIMENTAL PAPER</span>'
+        + '<small>READY_FIVE · 5/5 NOW<br>READY_FOUR · 4/5 READY<br>Readiness only · handoff checked separately</small></div></div>'
+        + '<p class="strategy-empty">' + ('No current READY/NOW opportunities.' if summary.now == summary.ready == 0
+            else 'Current session verified.' if available else 'Current authority unavailable.') + '</p>'
+        + '<div class="strategy-footer"><a href="/intraday">VIEW INTRADAY →</a></div></article>')
 
 
 def _dashboard_inactive_strategy(

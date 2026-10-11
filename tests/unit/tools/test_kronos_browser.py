@@ -101,8 +101,8 @@ def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch, tm
         lambda app, port, restart_control, product_routes,
         provider_instrument_master_operation, intraday_discovery_control,
         intraday_historical_control, provider_login_navigation,
-        mcx_v1_composition_factory: (
-            events.append((
+        mcx_v1_composition_factory, intraday_dashboard_summary: (
+            events.append(intraday_dashboard_summary()) or events.append((
                 app,
                 port,
                 restart_control,
@@ -134,6 +134,9 @@ def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch, tm
     assert events.index("checkpoint-bound") < events.index("notification-bind") < events.index("ready")
     assert "http://127.0.0.1:9123/swing/opportunities" in events
     assert "close" in events
+    from kronos.browser.dashboard import IntradayDashboardSummary
+    summary = next(item for item in events if type(item) is IntradayDashboardSummary)
+    assert (summary.now, summary.ready, summary.state) == (0, 0, "NO_CURRENT_READINESS")
     server_event = next(
         item for item in events if isinstance(item, tuple) and len(item) == 9
     )
@@ -309,7 +312,7 @@ def test_developer_no_browser_mode_does_not_open_browser(monkeypatch) -> None:
         lambda _app, port, restart_control, product_routes,
         provider_instrument_master_operation, intraday_discovery_control,
         intraday_historical_control, provider_login_navigation,
-        mcx_v1_composition_factory: _Server(),
+        mcx_v1_composition_factory, intraday_dashboard_summary: _Server(),
     )
     monkeypatch.setattr(
         kronos_browser,
@@ -616,10 +619,26 @@ def test_wo08_canonical_main_binds_actual_collector_before_ready_and_serve(tmp_p
         dependency_init(owner, *args, **kwargs)
         order.append('analysis-dependencies')
 
+    # The production assessment and research reader also reuse store I/O.
+    # Observe the collector factory only, not every reuse of that helper.
+    import kronos.application.intraday_wo08_shadow as shadow_owner
+    compose = shadow_owner.compose_wo08_shadow
+    composing = [False]
+    def compose_collector(root):
+        composing[0] = True
+        try:
+            return compose(root)
+        finally:
+            composing[0] = False
+    monkeypatch.setattr(shadow_owner, 'compose_wo08_shadow', compose_collector)
+    monkeypatch.setattr(kronos_browser, 'compose_wo08_shadow', compose_collector)
+
     def store_created(owner, *args, **kwargs):
-        assert order == ['analysis-dependencies']
+        if composing[0]:
+            assert order == ['analysis-dependencies']
         store_init(owner, *args, **kwargs)
-        order.append('store')
+        if composing[0]:
+            order.append('store')
 
     def collector_created(owner, *args, **kwargs):
         assert order == ['analysis-dependencies', 'store']
@@ -721,8 +740,22 @@ def test_canonical_startup_isolates_unavailable_research_construction(tmp_path, 
     from kronos.application.intraday_wo08_shadow import Wo08ShadowCollector, UnavailableWo08ShadowCollector
     from kronos.intraday.wo08_shadow_persistence import Wo08ShadowStore
     calls, observed = [], []
+    import kronos.application.intraday_wo08_shadow as shadow_owner
+    compose = shadow_owner.compose_wo08_shadow
+    store_init = Wo08ShadowStore.__init__
+    composing = [False]
+    def compose_collector(root):
+        composing[0] = True
+        try:
+            return compose(root)
+        finally:
+            composing[0] = False
+    monkeypatch.setattr(shadow_owner, 'compose_wo08_shadow', compose_collector)
+    monkeypatch.setattr(kronos_browser, 'compose_wo08_shadow', compose_collector)
 
     def fail(*args, **kwargs):
+        if failure == 'store' and not composing[0]:
+            return store_init(*args, **kwargs)
         calls.append(True)
         raise OSError('research unavailable')
 

@@ -16,13 +16,14 @@ WO09_PRODUCT_ROUTE = "/intraday/wo09"
 class IntradayWo09Projection:
     """Read persisted authority only; no evaluation path is exposed to Browser."""
 
-    def __init__(self, store: Wo09Store, *, machine_successor: bool = False) -> None:
+    def __init__(self, store: Wo09Store, *, machine_successor: bool = False, operational_summary=None) -> None:
         if type(store) is not Wo09Store:
             raise ValueError("WO09_BROWSER_STORE_INVALID")
         if type(machine_successor) is not bool:
             raise ValueError("WO09_BROWSER_SUCCESSOR_MODE_INVALID")
         self.store = store
         self.machine_successor = machine_successor
+        self.operational_summary = operational_summary
 
     def status_document(self) -> dict[str, object]:
         cards = []
@@ -71,6 +72,7 @@ class IntradayWo09Projection:
         active = active_attention_cards(tuple(cards))
         return {
             "authority_owner": "INTRADAY_WO09",
+            "operational_summary": None if self.operational_summary is None else self.operational_summary(),
             "cards": tuple(cards),
             "active_attention": active,
             "analysis_details": details,

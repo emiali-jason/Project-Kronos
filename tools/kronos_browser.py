@@ -208,7 +208,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         intraday_runtime.probables_v2_store,
         intraday_runtime.wo10_policy_registry,
     )
-    intraday_wo09_projection = IntradayWo09Projection(intraday_runtime.wo09_store, machine_successor=True)
+    from kronos.browser.dashboard import project_intraday_dashboard
+    def intraday_dashboard_summary():
+        return project_intraday_dashboard(intraday_runtime.wo09_store,
+            intraday_runtime.wo09_application.eligibility)
+    intraday_wo09_projection = IntradayWo09Projection(intraday_runtime.wo09_store,
+        machine_successor=True, operational_summary=intraday_dashboard_summary)
     def futures_guard():
         governance.require_operations()
         return True
@@ -330,6 +335,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             port=args.port,
             restart_control=restart_control,
             product_routes=product_routes,
+            intraday_dashboard_summary=intraday_dashboard_summary,
             provider_instrument_master_operation=(
                 provider_instrument_master_operation
             ),

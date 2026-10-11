@@ -61,6 +61,115 @@ class DashboardIssue:
 
 
 @dataclass(frozen=True, slots=True)
+class IntradayDashboardSummary:
+    now: int | None = None
+    ready: int | None = None
+    state: str = "CURRENT_AUTHORITY_UNAVAILABLE"
+    current_readiness: tuple[str, ...] = ()
+    watching_disposition: str = "DEFERRED_NOT_AUTHORITATIVE"
+
+
+def project_intraday_dashboard(store, boundary=None) -> IntradayDashboardSummary:
+    """Read exact WO09 authority under existing source/session owner checks.
+
+    Counts are persisted readiness classifications, never assessed/browser rows.
+    No handoff, watch, pointer, evaluation publication or acquisition is created.
+    A closed/historical session contributes zero; missing/corrupt authority is
+    unavailable, not an apparently successful empty operational population.
+    """
+    from contextlib import nullcontext
+    from kronos.application.intraday_evidence_currentness import require_boundary
+    from kronos.intraday.evidence_currentness import NewWorkNotEligible
+    from kronos.intraday.wo09_readiness import CurrentnessState, ReadinessState
+    if boundary is None:
+        return IntradayDashboardSummary()
+    try:
+        owner = require_boundary(boundary)
+        if owner.wo09 is not store or owner.wo08 is None or owner.native is None:
+            raise ValueError("INTRADAY_DASHBOARD_OWNER_MISMATCH")
+        before = store.restore_current()
+        machine_preview = next((record for _, record in before if record.source_authority == 'WO08'), None)
+        with (nullcontext() if machine_preview is None else owner._sources(machine_preview)):
+            current = []
+            now = ready = 0
+            current_population = None
+            for pointer, record in before:
+                if record.source_authority != "WO08" or pointer.currentness is not CurrentnessState.CURRENT:
+                    continue
+                try:
+                    # Compare retained owner identities; never run an evaluator on GET.
+                    probable = owner.probables.load_current()
+                    machine = owner.wo08.current_pointer()
+                    if probable is None or machine is None:
+                        raise ValueError('INTRADAY_DASHBOARD_SOURCE_UNAVAILABLE')
+                    if (probable.run_identity != record.probables_run_identity
+                            or machine['run_identity'] != probable.run_identity):
+                        continue
+                    if current_population is None:
+                        current_population = ({a.identity:a for a in owner.wo08.current_run()},
+                                              owner.probables.load_current_run())
+                    assessments, run = current_population
+                    assessment = assessments.get(record.wo08_identity)
+                    if assessment is None:
+                        continue
+                    data = assessment.data
+                    result = owner.probables.load_result(record.probable_result_identity)
+                    if (run is None or result not in run.results
+                            or run.integrity_identity != data['run_integrity']
+                            or result.integrity_identity != data['probable_result_integrity']):
+                        raise ValueError('INTRADAY_DASHBOARD_PROBABLE_BINDING_INVALID')
+                    if (assessment.integrity != record.wo08_integrity
+                            or data['probable_result_identity'] != record.probable_result_identity
+                            or data['subject'] != record.canonical_subject_identity
+                            or data['session_identity'] != record.session_identity):
+                        raise ValueError("INTRADAY_DASHBOARD_BINDING_INVALID")
+                    if data.get('native_decision_identity') is not None:
+                        native = owner.native.load(data['native_decision_identity'])
+                        if native.integrity != data['native_decision_integrity']:
+                            raise ValueError('INTRADAY_DASHBOARD_NATIVE_BINDING_INVALID')
+                        native_current = owner.native.bound_identity(data['semantic_evidence_identity'])
+                        if native_current is None:
+                            raise ValueError('INTRADAY_DASHBOARD_NATIVE_SOURCE_UNAVAILABLE')
+                        if native_current != data['native_decision_identity']:
+                            continue
+                    if record.market_family == 'MCX':
+                        # A retained unavailable/hard-gated assessment may truthfully
+                        # have no contract. It cannot contribute READY/NOW, and no
+                        # current-session assessment is claimed for that subject.
+                        if (record.exact_mcx_contract_identity is None
+                                and record.exact_mcx_roll_lineage is None
+                                and record.readiness_state in {ReadinessState.HARD_GATE, ReadinessState.READINESS_UNAVAILABLE}):
+                            continue
+                        binding = owner.bindings.load_current(canonical_subject_id=record.canonical_subject_identity)
+                        if binding is None:
+                            raise ValueError('INTRADAY_DASHBOARD_MCX_SOURCE_UNAVAILABLE')
+                        if (binding.binding_identity != record.exact_mcx_roll_lineage
+                                or binding.active_binding.derivative_contract_id != record.exact_mcx_contract_identity):
+                            continue
+                    owner._session(record, "readiness")
+                    if (store.load_pointer(record.canonical_subject_identity) != pointer
+                            or probable != owner.probables.load_current()
+                            or machine != owner.wo08.current_pointer()):
+                        raise ValueError("INTRADAY_DASHBOARD_SOURCE_CHANGED")
+                except NewWorkNotEligible as error:
+                    if error.reason.value == "ELIGIBILITY_AUTHORITY_UNAVAILABLE":
+                        raise
+                    continue
+                except ValueError as error:
+                    if str(error) == "WO10_SESSION_NOT_OPEN":
+                        continue
+                    raise
+                current.append(record.readiness_identity)
+                now += record.readiness_state in {ReadinessState.BUY_NOW, ReadinessState.SELL_NOW}
+                ready += record.readiness_state in {ReadinessState.BUY_READY, ReadinessState.SELL_READY}
+            if before != store.restore_current():
+                raise ValueError("INTRADAY_DASHBOARD_SOURCE_CHANGED")
+            return IntradayDashboardSummary(now, ready, "CURRENT_SESSION_VERIFIED" if current else "NO_CURRENT_READINESS", tuple(current))
+    except (ValueError, OSError):
+        return IntradayDashboardSummary()
+
+
+@dataclass(frozen=True, slots=True)
 class SponsorDashboardProjection:
     current_run_identity: str | None
     swing_summary_available: bool
@@ -71,6 +180,7 @@ class SponsorDashboardProjection:
     data_status: str
     analysis_status: str
     last_successful_analysis: datetime | None
+    intraday: IntradayDashboardSummary = IntradayDashboardSummary()
 
     @property
     def now_count(self) -> int:
@@ -103,11 +213,13 @@ def project_sponsor_dashboard(
     ux10: Ux10NotificationSnapshot | None = None,
     *,
     promotions_v2: tuple[V2PromotionRecord, ...] = (),
+    intraday: IntradayDashboardSummary = IntradayDashboardSummary(),
 ) -> SponsorDashboardProjection:
     """Project current facts without evaluating or mutating any source authority."""
 
     if (
         type(snapshot) is not BrowserWorkspaceSnapshot
+        or type(intraday) is not IntradayDashboardSummary
         or (discovery is not None and type(discovery) is not NativeDiscoveryRun)
         or type(promotions) is not tuple
         or any(type(item) is not Kr370AnalyticalPromotionRecord for item in promotions)
@@ -237,6 +349,7 @@ def project_sponsor_dashboard(
         ),
         analysis_status=snapshot.analysis_state.value,
         last_successful_analysis=snapshot.completed_at,
+        intraday=intraday,
     )
 
 
