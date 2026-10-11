@@ -265,3 +265,12 @@ governed endpoint relative to exact original Assessment Price only. It grants no
 readiness, economic or trading authority. All-98 audit association and admitted
 assessment diagnostics are separate from the actual WO09 entrant denominator.
 WO08 remains closed/active; WO07F retirement and WO13 ownership remain intact.
+
+## IWO-01/02/03 experimental PAPER successor
+
+[ADR-0064](adr/ADR-0064-IWO-EXPERIMENTAL-PAPER-METHOD-FIRST-FIVE-AND-WATCH.md)
+records the Sponsor-approved experimental PULLBACK method, prospective first-five
+provenance and selective I2/I3-only 4/5 watches. Predictive usefulness remains
+NOT_ESTABLISHED. Historical methods remain readable; ticks are advisory only;
+ordinary completed Analysis owns promotion. Exact-byte review and technical
+acceptance are required before claiming runtime commissioning.

@@ -129,6 +129,32 @@ class SharedSwingMonitoringHub:
             self._registrations[id(registration)] = registration
         return registration
 
+    def observe_existing(self, capability, consumer, instruments):
+        """Attach an advisory consumer without subscribing or owning transport.
+
+        Only already applied subscriptions can be observed. A later transport
+        loss invalidates this registration; it cannot reconnect or keep a
+        physical session alive after its ordinary owners detach.
+        """
+        if not instruments or any(type(i) is not InstrumentRecord for i in instruments):
+            raise ValueError("SHARED_MONITORING_SUBSCRIPTION_INVALID")
+        registration = self.open(capability, consumer)
+        with self._lock:
+            if (self._session is None or self._capability is not capability
+                    or self._connection_state is not MonitoringConnectionState.CONNECTED
+                    or not set(instruments).issubset(self._subscribed)
+                    or not all(self._by_instrument.get(i) for i in instruments)):
+                self._registrations.pop(id(registration), None)
+                raise ValueError("SHARED_MONITORING_EXISTING_SUBSCRIPTION_REQUIRED")
+            registration._passive = True
+            registration._observed_session = self._session_generation
+            try:
+                self._subscribe(registration, tuple(instruments))
+            except Exception:
+                self._registrations.pop(id(registration), None)
+                raise
+            return registration
+
     @property
     def active_session_count(self) -> int:
         with self._lock:
@@ -279,6 +305,8 @@ class SharedSwingMonitoringHub:
         with self._lock:
             if id(registration) not in self._registrations:
                 raise ValueError("SHARED_MONITORING_REGISTRATION_CLOSED")
+            if registration._passive and registration._instruments:
+                raise ValueError("SHARED_MONITORING_ADVISORY_SUBSCRIPTION_IMMUTABLE")
             additions = set(instruments) - registration._instruments
             retained_instruments = {
                 item
@@ -308,6 +336,8 @@ class SharedSwingMonitoringHub:
         with self._lock:
             if self._registrations.get(id(registration)) is not registration:
                 raise ValueError("SHARED_MONITORING_REGISTRATION_CLOSED")
+            if registration._passive:
+                raise ValueError("SHARED_MONITORING_ADVISORY_CONNECT_FORBIDDEN")
             if registration._connected:
                 return
             if self._transport_cleanup_state == "FAILED":
@@ -369,6 +399,7 @@ class SharedSwingMonitoringHub:
                     subscribed = set(self._subscribed)
                 if session is not None and (not desired or capability is not current_capability):
                     with self._lock:
+                        interrupted = self._invalidate_observers_locked()
                         self._session = None
                         self._capability = None
                         self._session_generation = None
@@ -379,6 +410,7 @@ class SharedSwingMonitoringHub:
                         self._cleanup_instruments = set(subscribed)
                         self._connection_state = MonitoringConnectionState.DISCONNECTED
                         self._last_interruption = MonitoringConnectionState.DISCONNECTED.value
+                    self._notify_interrupted_observers(interrupted)
                     unsubscribe_error = None
                     try:
                         if subscribed:
@@ -505,6 +537,11 @@ class SharedSwingMonitoringHub:
                 self._count_release('already_detached')
                 return registration._detached_result
             self._registrations.pop(id(registration), None)
+            if registration._passive:
+                registration._consumer = None
+                registration._capability = None
+                registration._instruments.clear()
+                return registration._detached_result
             removals = []
             retained = 0
             for instrument in registration._instruments:
@@ -527,10 +564,37 @@ class SharedSwingMonitoringHub:
             registration._instruments.clear()
             registration._detached_result = (len(removals), retained)
             self._ownership_generation += 1
+            interrupted = self._invalidate_observers_locked(removals)
+        self._notify_interrupted_observers(interrupted, subscription_only=True)
         if self.maintenance_governance is not None and self.maintenance_governance.shutting_down:
             consumer.on_connection_state(MonitoringConnectionState.DISCONNECTED)
         self._reconcile_transport()
         return registration._detached_result
+
+    def _invalidate_observers_locked(self, instruments=None):
+        """Latch continuity loss before another ordinary owner can resubscribe."""
+        affected = None if instruments is None else set(instruments)
+        interrupted = []
+        for registration in self._registrations.values():
+            if (registration._passive and registration._observed_session is not None
+                    and (affected is None or registration._instruments.intersection(affected))):
+                registration._observed_session = None
+                interrupted.append(registration)
+        return tuple(interrupted)
+
+    @staticmethod
+    def _notify_interrupted_observers(registrations, *, subscription_only=False):
+        for registration in registrations:
+            try:
+                consumer = registration._consumer
+                if consumer is not None:
+                    scoped = getattr(consumer, 'on_subscription_lost', None)
+                    if subscription_only and callable(scoped):
+                        scoped()
+                    else:
+                        consumer.on_connection_state(MonitoringConnectionState.DISCONNECTED)
+            except Exception:
+                registration._advisory_failure = "ADVISORY_CALLBACK_FAILED"
 
     def on_market_tick(self, tick: ProviderMarketTick, *, _generation=None) -> None:
         accepted, ticket = self._callback_ticket()
@@ -573,8 +637,18 @@ class SharedSwingMonitoringHub:
                 for identity in self._by_instrument.get(tick.instrument, ())
                 if identity in self._registrations
             )
+            advisory = tuple(r for r in self._registrations.values()
+                if r._passive and r.active and tick.instrument in r._instruments)
         for consumer in consumers:
             consumer.on_market_tick(tick)
+        for registration in advisory:
+            try:
+                consumer = registration._consumer
+                if consumer is not None:
+                    consumer.on_market_tick(tick)
+            except Exception:
+                # Advisory persistence cannot interrupt entered-position owners.
+                registration._advisory_failure = "ADVISORY_CALLBACK_FAILED"
 
     def on_order_update(self, update: ProviderOrderUpdateEvidence, *, _generation=None) -> None:
         accepted, ticket = self._callback_ticket()
@@ -626,15 +700,26 @@ class SharedSwingMonitoringHub:
             self._connection_state = state
             if state is not MonitoringConnectionState.CONNECTED:
                 self._last_interruption = state.value
+                for registration in self._registrations.values():
+                    if registration._passive:
+                        registration._observed_session = None
             listener = self._connection_listener
             consumers = tuple(
                 registration._consumer for registration in self._registrations.values()
                 if registration._connected
             )
+            advisory = tuple(r for r in self._registrations.values() if r._passive)
         if listener is not None:
             listener(state)
         for consumer in consumers:
             consumer.on_connection_state(state)
+        for registration in advisory:
+            try:
+                consumer = registration._consumer
+                if consumer is not None:
+                    consumer.on_connection_state(state)
+            except Exception:
+                registration._advisory_failure = "ADVISORY_CALLBACK_FAILED"
 
 
 class _SharedRegistration:
@@ -648,6 +733,9 @@ class _SharedRegistration:
         )
         self._instruments: set[InstrumentRecord] = set()
         self._connected = False
+        self._passive = False
+        self._observed_session = None
+        self._advisory_failure = None
         self._detached_result = (0, 0)
 
     @property
@@ -657,6 +745,15 @@ class _SharedRegistration:
         if capability is None or getattr(capability, "active", False) is not True:
             return False
         with self._hub._lock:
+            if self._passive:
+                return (self._hub._registrations.get(id(self)) is self
+                    and self._hub._session is not None
+                    and self._hub._session_generation is self._observed_session
+                    and self._hub._capability is capability
+                    and self._hub._connection_state is MonitoringConnectionState.CONNECTED
+                    and bool(self._instruments)
+                    and self._instruments.issubset(self._hub._subscribed)
+                    and all(self._hub._by_instrument.get(i) for i in self._instruments))
             return (
                 self._connected
                 and self._hub._registrations.get(id(self)) is self
@@ -682,6 +779,12 @@ class _SharedRegistration:
     @property
     def owner_identity(self) -> str:
         return self._owner_identity
+
+    @property
+    def advisory_failure(self):
+        """Sanitized observer callback failure; no Provider internals."""
+        with self._hub._lock:
+            return self._advisory_failure
 
     def observation_context(self, instrument: InstrumentRecord):
         """Project only this live owner's exact applied transport subscription."""

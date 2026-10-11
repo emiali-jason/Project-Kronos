@@ -597,6 +597,13 @@ def create_next_wo_handoff(
     superseded_readiness_identity: str | None,
     first_five_of_five_at: datetime | None = None,
 ) -> NextWoHandoff:
+    from kronos.intraday.wo09_experimental import ExperimentalReadinessRecord, create_experimental_handoff
+    if type(readiness) is ExperimentalReadinessRecord:
+        return create_experimental_handoff(readiness, created_at=created_at,
+            current_readiness_identity=current_readiness_identity,
+            current_pointer_integrity=current_pointer_integrity, currentness=currentness,
+            superseded_readiness_identity=superseded_readiness_identity,
+            first_five_of_five_at=first_five_of_five_at)
     from kronos.intraday.wo09_machine_readiness import MachineReadinessRecord
     if type(readiness) is MachineReadinessRecord:
         readiness.__post_init__()

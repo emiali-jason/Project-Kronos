@@ -264,3 +264,64 @@ def test_legacy_wo09_projection_retains_original_current_attention_contract(tmp_
     assert status['historical_cards'] == ()
     assert 'href="/intraday/trade-candidates"' in _readiness_body(status)
     assert _bytes(tmp_path) == before
+
+
+def test_experimental_projection_reads_watch_history_once_for_multiple_cards(tmp_path, monkeypatch):
+    from datetime import timedelta
+    from decimal import Decimal
+    from kronos.application.intraday_experimental_watch import ExperimentalWatchStore, BINDING, HINT
+    from kronos.browser.intraday_wo09_control import IntradayWo09Projection
+    from kronos.provider.contracts.monitoring import ProviderMarketTick
+    from tests.unit.application.test_intraday_experimental_watch import setup_watch
+    for subject in ('NSE-ONE', 'NSE-TWO'):
+        watch, record, _, bindings, clock, _, instrument, _ = setup_watch(tmp_path, subject=subject)
+        clock[0] += timedelta(seconds=1)
+        price = Decimal(bindings[0]['hint_levels']['I2']) + Decimal('.1')
+        tick = ProviderMarketTick(instrument, price, clock[0], clock[0],
+            'KITE_CONNECT_WEBSOCKET', 'ONE', 1, True, True, True)
+        assert watch.on_tick(tick)
+    documents = ExperimentalWatchStore(watch.wo09.store).records()
+    original = ExperimentalWatchStore.records
+    reads = []
+    def counted(self, schema=None):
+        reads.append(schema)
+        return original(self, schema)
+    monkeypatch.setattr(ExperimentalWatchStore, 'records', counted)
+    before = _bytes(tmp_path)
+    projection = IntradayWo09Projection(watch.wo09.store)
+    status = projection.status_document()
+    assert reads == [None] and len(status['cards']) == 2
+    for card in status['cards']:
+        expected_bindings = tuple(d for d in documents if d['schema'] == BINDING
+            and d['readiness_identity'] == card.readiness_identity)
+        expected_hints = tuple(d for d in documents if d['schema'] == HINT
+            and any(b['identity'] == d['binding_identity'] for b in expected_bindings))
+        detail = status['analysis_details'][card.readiness_identity]['F. EXPERIMENTAL OBSERVATION']
+        assert detail['selective_watch'] == expected_bindings
+        assert detail['advisory_wake_hints'] == expected_hints
+        assert card.next_action == 'Retained advisory hint — completed Analysis required'
+        assert detail['currentness_scope'] == 'RETAINED_POINTER_STATE_ONLY'
+    assert projection.status_document() == status
+    assert reads == [None, None]  # Fresh request reads afresh; no authority cache.
+    assert _bytes(tmp_path) == before
+
+
+def test_retained_experimental_five_requires_guarded_check_in_projection(tmp_path):
+    from datetime import datetime
+    from kronos.browser.intraday_wo09_control import IntradayWo09Projection
+    from kronos.intraday.wo09_persistence import Wo09Store
+    from tests.unit.intraday.test_wo09_experimental import experimental_fixture, origin_for, publish
+    assessment = experimental_fixture()[-1]
+    original_time = datetime.fromisoformat(assessment.data['created_at'])
+    store = Wo09Store(tmp_path)
+    readiness, _ = publish(store, assessment, origin_for(assessment), original_time)
+    before = _bytes(tmp_path)
+    status = IntradayWo09Projection(store).status_document()
+    card, = status['cards']
+    assert card.score == '5 / 5' and card.monitorability_state == 'CURRENT'
+    assert card.next_action == 'REQUEST_GUARDED_PAPER_HANDOFF_CHECK'
+    observation = status['analysis_details'][readiness.readiness_identity]['F. EXPERIMENTAL OBSERVATION']
+    assert observation['first_five_at'] == original_time.isoformat()
+    assert observation['currentness_scope'] == 'RETAINED_POINTER_STATE_ONLY'
+    assert observation['action_authority'] == 'Current session, source and freshness require an explicit guarded check.'
+    assert _bytes(tmp_path) == before

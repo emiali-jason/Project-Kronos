@@ -14,6 +14,9 @@ from kronos.intraday.wo09_persistence import Wo09Store, Wo09PublicationExpectati
 from kronos.intraday.wo10_futures_store import FuturesStore
 from kronos.intraday.wo10_futures_contract import digest, require
 from kronos.intraday.wo10_construction import validate_intake
+from kronos.intraday.wo09_experimental import (
+    ExperimentalReadinessRecord, evaluate_experimental_readiness, origin_from, first_five_from,
+)
 
 
 @dataclass(frozen=True)
@@ -53,6 +56,7 @@ class IntradayPublicationBoundary:
             if type(wo08) is not Wo08AssessmentStore or type(native) is not NativeStructuralStore:
                 raise TypeError("INTRADAY_WO08_PUBLICATION_DEPENDENCIES_REQUIRED")
         self.wo08, self.native = wo08, native
+        self.research = None
 
     @contextmanager
     def _sources(self, readiness=None):
@@ -60,7 +64,7 @@ class IntradayPublicationBoundary:
         # callback/assessor runs while these producer guards are held.
         with ExitStack() as stack:
             from kronos.intraday.wo09_machine_readiness import MachineReadinessRecord
-            machine = type(readiness) is MachineReadinessRecord
+            machine = type(readiness) in {MachineReadinessRecord, ExperimentalReadinessRecord}
             if machine and (self.wo08 is None or self.native is None):
                 self._deny(EligibilityReason.ELIGIBILITY_AUTHORITY_UNAVAILABLE, "readiness")
             owners = ((self.probables, self.bindings, self.wo08) if machine else
@@ -77,7 +81,7 @@ class IntradayPublicationBoundary:
 
     def _source(self, readiness, operation):
         from kronos.intraday.wo09_machine_readiness import MachineReadinessRecord
-        if type(readiness) is MachineReadinessRecord:
+        if type(readiness) in {MachineReadinessRecord, ExperimentalReadinessRecord}:
             return self._machine_source(readiness, operation)
         if self.wo08 is not None:
             self._deny(EligibilityReason.WO07F_NEW_WORK_RETIRED, operation)
@@ -162,6 +166,23 @@ class IntradayPublicationBoundary:
         assessment = self.wo08.load(readiness.wo08_identity)
         members = self.wo08.current_run()
         d = assessment.data
+        if type(readiness) is ExperimentalReadinessRecord:
+            origin = self.experimental_origin(assessment)
+            first = None if readiness.first_five_document is None else first_five_from(readiness.first_five_document)
+            projected = evaluate_experimental_readiness(assessment, observed_at=readiness.created_at,
+                origin=origin, first_five=first)[0]
+            if first is not None:
+                self.wo09.verify_first_five(readiness)
+                original = self.wo08.load(first.assessment_document['assessment_identity'])
+                if (original.data != first.assessment_document
+                        or original not in self.wo08.load_run(original.data['run_identity'])
+                        or origin_from(first.origin_document) != origin):
+                    raise ValueError('EXPERIMENTAL_FIRST_FIVE_ORIGINAL_SOURCE_INVALID')
+            elif operation != 'readiness':
+                self.wo09.verify_first_five(readiness)
+        else:
+            origin = None
+            projected = evaluate_machine_readiness(assessment, created_at=readiness.created_at)[0]
         if (result not in run.results or assessment not in members
                 or assessment.integrity != readiness.wo08_integrity
                 or d["run_integrity"] != run.integrity_identity
@@ -170,7 +191,7 @@ class IntradayPublicationBoundary:
                 or d["subject"] != result.canonical_subject_identity
                 or d["session_identity"] != result.market_session_identity
                 or d["semantic_evidence_identity"] != result.semantic_evidence_identity
-                or evaluate_machine_readiness(assessment, created_at=readiness.created_at)[0] != readiness):
+                or projected != readiness):
             raise ValueError("WO09_WO08_SOURCE_BINDING_INVALID")
         semantic = selection = native = binding = native_source = None
         if result.semantic_evidence_identity is not None:
@@ -204,11 +225,61 @@ class IntradayPublicationBoundary:
                 if (binding.binding_identity != readiness.exact_mcx_roll_lineage
                         or binding.active_binding.derivative_contract_id != readiness.exact_mcx_contract_identity):
                     self._deny(EligibilityReason.SOURCE_SUPERSEDED, operation)
-        return tuple(digest(item) for item in (pp, wp, run, result, d, semantic, selection, native, native_source, binding))
+        return tuple(digest(item) for item in (pp, wp, run, result, d, semantic, selection, native, native_source, binding, origin))
+
+    def experimental_origin(self, assessment):
+        """Resolve the owner's existing origin; this read never creates one."""
+        from kronos.intraday.wo12_research_contract import opportunity_origin
+        from kronos.intraday.probables import ProbableState
+        from datetime import datetime
+        d = assessment.data
+        if self.research is None:
+            raise ValueError('EXPERIMENTAL_OPPORTUNITY_STORE_REQUIRED')
+        origins = tuple(o for o in self.research.origins_for(d['subject'], d['session_identity'])
+            if datetime.fromisoformat(o.data['origin_at']) <= datetime.fromisoformat(d['analysis_boundary']))
+        if not origins:
+            return None
+        origin = max(origins, key=lambda o: (o.data['origin_at'], o.identity))
+        o = origin.data
+        result = self.probables.load_result(o['probable_result_identity'])
+        run = self.probables.load_run(o['probables_run_identity'])
+        expected = opportunity_origin(canonical_subject_identity=result.canonical_subject_identity,
+            market_family=d['market_family'], session_identity=result.market_session_identity,
+            origin_at=result.analysis_boundary, probable_result_identity=result.result_identity,
+            probables_run_identity=run.run_identity, reset_identity=o['reset_identity'])
+        if (origin != expected or result not in run.results
+                or result.state not in {ProbableState.LONG_PROBABLE, ProbableState.SHORT_PROBABLE}):
+            raise ValueError('EXPERIMENTAL_ORIGIN_SOURCE_INVALID')
+        if o['reset_identity'] is not None:
+            reset = self.research.load(o['reset_identity'])
+            if (reset.schema != 'WO12_OPPORTUNITY_RESET_V1'
+                    or reset.data['next_probable_result_identity'] != result.result_identity
+                    or reset.data['canonical_subject_identity'] != d['subject']
+                    or reset.data['market_session_identity'] != d['session_identity']):
+                raise ValueError('EXPERIMENTAL_ORIGIN_RESET_INVALID')
+        return origin
+
+    def verify_retained_first_five(self, assessment, origin):
+        from kronos.intraday.wo09_experimental import claim_for, claim_identity
+        if origin is None:
+            return
+        first = self.wo09.load_first_five(claim_identity(claim_for(assessment, origin)))
+        if first is None:
+            return
+        original = self.wo08.load(first.assessment_document['assessment_identity'])
+        if (original.data != first.assessment_document
+                or original not in self.wo08.load_run(original.data['run_identity'])
+                or origin_from(first.origin_document) != origin):
+            raise ValueError('EXPERIMENTAL_FIRST_FIVE_ORIGINAL_SOURCE_INVALID')
 
     def capture_wo08(self, *, assessment, created_at):
         from kronos.intraday.wo09_machine_readiness import evaluate_machine_readiness
-        readiness, _ = evaluate_machine_readiness(assessment, created_at=created_at)
+        from kronos.intraday.wo08_experimental import ExperimentalWo08Assessment
+        if type(assessment) is ExperimentalWo08Assessment:
+            origin = self.experimental_origin(assessment)
+            readiness, _ = evaluate_experimental_readiness(assessment, observed_at=created_at, origin=origin)
+        else:
+            readiness, _ = evaluate_machine_readiness(assessment, created_at=created_at)
         with self._sources(readiness):
             generations = self._source(readiness, "readiness")
             expected = self.wo09.expectation(readiness.canonical_subject_identity)
@@ -249,7 +320,16 @@ class IntradayPublicationBoundary:
                 exact_mcx_contract_identity, exact_mcx_roll_lineage, natgas_commissioning_state))
 
     def _capture(self, operation, identity):
-        with self._sources():
+        # Pick only the guard family outside locks, then reload the whole graph
+        # under those producer guards. No unlocked read grants authority.
+        if operation == 'lifecycle':
+            selected = self.futures.load(identity)
+            comparison = self.futures.load(require(selected, 'WO10_SELECTED_TRADE_HANDOFF_V1')['selection']['comparison_identity'])
+            handoff_id = require(comparison, 'WO10_SPONSOR_COMPARISON_V1')['handoff_identity']
+        else:
+            handoff_id = identity
+        preview = self.wo09.load_handoff(handoff_id)
+        with self._sources(self.wo09.load_readiness(preview.readiness_identity)):
             selected = None
             if operation == "lifecycle":
                 selected = self.futures.load(identity)
@@ -314,7 +394,9 @@ class IntradayPublicationBoundary:
             generations = self._source(expected.readiness, operation)
             if generations != expected.generations[:len(generations)]:
                 self._deny(EligibilityReason.SOURCE_SUPERSEDED, operation)
-            now = None if operation == "readiness" else self._session(expected.readiness, operation)
+            experimental = type(expected.readiness) is ExperimentalReadinessRecord
+            now = (self._session(expected.readiness, operation)
+                   if operation != 'readiness' or experimental and expected.readiness.satisfied_count is not None else None)
             with self.wo09.transaction(expected=expected.wo09) as mutation:
                 if operation == "readiness":
                     yield mutation

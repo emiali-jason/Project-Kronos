@@ -87,11 +87,12 @@ def test_production_composition_analysis_wo08_readiness_research_restart(tmp_pat
     assert len(assessments)==len(readiness)==98
     assert all(record.wo08_identity in {a.identity for a in assessments} for _,record in readiness)
     by_identity={a.identity:a for a in assessments}
-    assert all(record.created_at == datetime.fromisoformat(by_identity[record.wo08_identity].data['created_at']) for _,record in readiness)
+    assert all(record.created_at >= datetime.fromisoformat(by_identity[record.wo08_identity].data['created_at']) for _,record in readiness)
     assert ticks[0]>1
     assert all(record.satisfied_count is None and record.outstanding_count is None for _,record in readiness)
     assert all(record.readiness_state.value in {'READINESS_UNAVAILABLE','HARD_GATE'} for _,record in readiness)
-    assert all(a.data['criteria'][index]['state']=='NOT_COMMISSIONED' for a in assessments for index in range(1,5))
+    assert all(a.data['criteria'][index]['state'] in {'UNAVAILABLE','NOT_APPLICABLE'} for a in assessments for index in range(1,5))
+    assert all(a.data['methodology_version']=='0.1.0' for a in assessments)
     assert {a.data['subject'] for a in assessments if a.data['market_family']=='MCX'} == {
         'MCX-SUBJECT-'+family for family in ('GOLDM','SILVERM','COPPER','CRUDE','NATGAS')}
     natgas=next(a for a in assessments if a.data['subject']=='MCX-SUBJECT-NATGAS')
@@ -106,7 +107,7 @@ def test_production_composition_analysis_wo08_readiness_research_restart(tmp_pat
     before_research=_bytes(runtime.wo08_store.root),_bytes(runtime.wo09_store.root)
     before_calls=requests[0]
     projection=runtime.research_application.project(ensure_origins=True)
-    associations=runtime.research_store.records('WO12_WO08_ASSESSMENT_ASSOCIATION_V3')
+    associations=runtime.research_store.records('WO12_WO08_EXPERIMENTAL_ASSOCIATION_V1')
     assert len(associations)==98
     metrics={row[0]:row for row in projection.analysis}
     assert metrics['WO08 population audit assessment count'][1]==98

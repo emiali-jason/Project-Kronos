@@ -433,6 +433,7 @@ def create_intraday_runtime(
     )
     wo11_runtime = IntradayWo11RuntimeService(wo11_application)
     research_store = ResearchStore(Path(evidence_root) / "prospective-v2-wo12-research-ledger-v1")
+    publication_boundary.research = research_store
     wo12_v2_store = Wo12V2Store(Path(evidence_root) / "wo12-kr370-v2")
     wo12_v2_application = IntradayWo12V2Application(
         wo10_store=wo10_store,
@@ -559,7 +560,16 @@ def create_intraday_runtime(
     futures_application.acquisition_source = GovernedFuturesSource(
         master_store=ProviderInstrumentSnapshotStore(Path(evidence_root) / "provider-instrument-master"),
         master_identity=lambda: operation_v2.last_provider_snapshot_identity,
-        binding_store=active_binding_store, calendar=calendar, provider=access.acquire_futures_quote_lease, clock=clock)
+        binding_store=active_binding_store, calendar=calendar, provider=access.acquire_futures_quote_lease, clock=clock,
+        discovery_store=discovery_v2_store, reconciliation=reconciliation)
+    from kronos.application.intraday_experimental_watch import GovernedExperimentalWatchCoordinator, GovernedWatchInstrumentSource
+    wo09_application.experimental_watches = GovernedExperimentalWatchCoordinator(
+        wo09_application, boundary=publication_boundary,
+        factual_source=futures_application.acquisition_source, clock=clock,
+        instrument_source=GovernedWatchInstrumentSource(
+            master_store=ProviderInstrumentSnapshotStore(Path(evidence_root) / "provider-instrument-master"),
+            discovery_store=discovery_v2_store, reconciliation=reconciliation,
+            bindings=active_binding_store, clock=clock))
     from kronos.application.intraday_lifecycle import IntradayLifecycleApplication
     from kronos.application.intraday_lifecycle_timing import GovernedLifecycleTimingSource
     from kronos.intraday.wo11_lifecycle_store import LifecycleStore
@@ -599,6 +609,9 @@ def create_intraday_runtime(
         wo08_shadow=Wo08ShadowStore(Path(evidence_root)),
         clock=clock,
     )
+    # Opportunity origins belong to admitted Probables persistence. They must
+    # exist before experimental WO09 regardless of notification delivery setup.
+    probables_v2_store.opportunity_origin_listener = research_application.publish_admitted_origins
     journal_store = JournalStore(Path(evidence_root) / "prospective-v2-wo14-trading-journal-v1")
     journal_application = IntradayJournalApplication(
         research=research_store,

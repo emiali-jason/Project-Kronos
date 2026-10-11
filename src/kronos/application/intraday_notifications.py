@@ -69,7 +69,8 @@ class IntradayNotifications:
 
     def _readiness_origin(self, readiness):
         from kronos.intraday.wo09_machine_readiness import MachineReadinessRecord
-        if type(readiness) is MachineReadinessRecord:
+        from kronos.intraday.wo09_experimental import ExperimentalReadinessRecord
+        if type(readiness) in {MachineReadinessRecord, ExperimentalReadinessRecord}:
             readiness.__post_init__()
             # WO08 includes non-admitted population. Such unavailable records
             # have no opportunity origin and cannot create a notification.

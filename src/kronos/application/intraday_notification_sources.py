@@ -28,7 +28,8 @@ def ready(origin, record):
     if type(record) is MachineReadinessRecord:
         record.__post_init__()
         return None
-    if type(record) is not ReadinessRecord:
+    from kronos.intraday.wo09_experimental import ExperimentalReadinessRecord
+    if type(record) not in {ReadinessRecord, ExperimentalReadinessRecord}:
         raise ValueError("WO13_READINESS_RECORD_REQUIRED")
     record.__post_init__()
     if record.currentness is not CurrentnessState.CURRENT or record.satisfied_count not in {4,5} or record.hard_gate.value != "NONE":
@@ -38,6 +39,10 @@ def ready(origin, record):
     d = base(origin,subject=record.canonical_subject_identity,direction=record.direction,
         session=record.session_identity,source_identity=record.readiness_identity,
         source_integrity=record.integrity_identity,at=record.created_at)
+    if type(record) is ExperimentalReadinessRecord:
+        if record.opportunity_identity != origin.data['opportunity_identity']:
+            raise ValueError('WO13_EXPERIMENTAL_ORIGIN_MISMATCH')
+        d['reason'] = 'Experimental PAPER'
     d.update(family="READY_FIVE" if record.satisfied_count==5 else "READY_FOUR",
         semantic_transition="FIRST_REACHED",readiness_count=record.satisfied_count,
         criteria=", ".join(c.criterion_id.value+":"+c.state.value for c in record.criteria))

@@ -73,7 +73,18 @@ def _load_intake_graph(application, identity, *, session, now, arming=True):
     local = now.astimezone(ZoneInfo("Asia/Kolkata"))
     cutoff = min(end, local.replace(hour=23 if contract["active_mcx"] else 15, minute=0, second=0, microsecond=0))
     money = e["monetary_economics"]
-    return record("WO11_INTAKE_V1", handoff_identity=h.identity, selection_identity=s.identity,
+    from kronos.intraday.wo09_experimental import ExperimentalNextWoHandoff, AUTHORITY
+    experimental = {}
+    if type(wo09) is ExperimentalNextWoHandoff:
+        if wo09.authority != AUTHORITY:
+            raise ValueError('WO11_EXPERIMENTAL_PAPER_SCOPE_REQUIRED')
+        experimental = dict(experimental_authority=AUTHORITY,
+            experimental_method_identity=wo09.methodology_identity,
+            experimental_method_version=wo09.methodology_version,
+            experimental_method_checksum=wo09.methodology_checksum,
+            experimental_opportunity_identity=wo09.opportunity_identity,
+            experimental_first_five_identity=wo09.first_five_document['fact_identity'])
+    return record("WO11_INTAKE_V1", **experimental, handoff_identity=h.identity, selection_identity=s.identity,
         comparison_identity=c.identity, opportunity_identity=opportunity.identity,
         native_selection_identity=native.identity, native_selection=nd, plan_identity=cd["plan_identity"],
         snapshot_identity=cd["snapshot_identity"], expression_identity=cd["expression_identity"],

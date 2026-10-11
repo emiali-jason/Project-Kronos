@@ -59,8 +59,13 @@ def project_notification(record: ReadinessRecord, *, currentness: CurrentnessSta
     if type(record) is MachineReadinessRecord:
         record.__post_init__()
         return None
-    if type(record) is not ReadinessRecord:
+    from kronos.intraday.wo09_experimental import ExperimentalReadinessRecord
+    if type(record) not in {ReadinessRecord, ExperimentalReadinessRecord}:
         raise ValueError("WO09_NOTIFICATION_INPUT_INVALID")
+    record.__post_init__()
+    experimental = type(record) is ExperimentalReadinessRecord
+    if experimental and record.satisfied_count not in {4, 5}:
+        return None
     if record.attention_state is AttentionState.NONE:
         return None
     effective_currentness = record.currentness if currentness is None else currentness
@@ -81,7 +86,7 @@ def project_notification(record: ReadinessRecord, *, currentness: CurrentnessSta
         satisfied_count=record.satisfied_count, outstanding_count=record.outstanding_count,
         priority="HIGH" if record.attention_state in {AttentionState.HIGH, AttentionState.NEXT_WO_ONLY} else "NORMAL",
         state=state,
-        summary=f"{record.canonical_subject_identity} {record.readiness_state.value} {record.satisfied_count}/5",
+        summary=("Experimental PAPER · " if experimental else "") + f"{record.canonical_subject_identity} {record.readiness_state.value} {record.satisfied_count}/5",
         created_at=record.created_at if effective_at is None else effective_at,
         authority="PERSISTED_WO09_PROJECTION_ONLY_NO_READINESS_CALCULATION_OR_PROVIDER_AUTHORITY",
     )

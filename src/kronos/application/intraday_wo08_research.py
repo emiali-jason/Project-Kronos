@@ -13,7 +13,7 @@ SCHEMA = "WO12_WO08_ASSESSMENT_ASSOCIATION_V3"
 ADMITTED = {ProbableState.LONG_PROBABLE, ProbableState.SHORT_PROBABLE}
 
 
-def associate_assessments(*, assessments, shadow, probables, origins, readiness, futures, lifecycle):
+def associate_assessments(*, assessments, shadow, probables, origins, readiness, futures, lifecycle, watch_store=None):
     if assessments is None:
         return ()
     manifests = () if shadow is None else tuple(shadow.load("RUN", p.stem)
@@ -24,10 +24,24 @@ def associate_assessments(*, assessments, shadow, probables, origins, readiness,
         for p in sorted((shadow.root / "outcome").glob("*.json")))
     records = []
     retained = assessments.records()
-    by_result = {item.data["probable_result_identity"]: item for item in retained}
+    # Detached immutable payload projections are local to this research pass.
+    # Avoid decoding the complete source graph for every history/method pair.
+    data_by_identity = {item.identity: item.data for item in retained}
+    by_result = {data_by_identity[item.identity]["probable_result_identity"]: item for item in retained}
+    method_fields = ('methodology_identity', 'methodology_version', 'methodology_checksum')
+    by_method = {}
+    for item in retained:
+        method = tuple(data_by_identity[item.identity][k] for k in method_fields)
+        by_method.setdefault(method, set()).add(item.identity)
+    watch_documents = watch_history = ()
+    if watch_store is not None and any(data_by_identity[a.identity]['methodology_identity'] ==
+            'KRONOS-INTRADAY-WO08-EXPERIMENTAL-PULLBACK-PAPER' for a in retained):
+        from kronos.application.intraday_experimental_watch import ExperimentalWatchStore
+        watch_owner = ExperimentalWatchStore(watch_store)
+        watch_documents, watch_history = watch_owner.records(), watch_owner.watch_history()
     for assessment in retained:
         assessment.__post_init__()
-        d = assessment.data
+        d = data_by_identity[assessment.identity]
         run = probables.load_run(d["run_identity"])
         result = probables.load_result(d["probable_result_identity"])
         if (result not in run.results or run.integrity_identity != d["run_integrity"]
@@ -59,7 +73,7 @@ def associate_assessments(*, assessments, shadow, probables, origins, readiness,
         original_source = original_methodology = original_run_identity = None
         if original is not None:
             original.__post_init__()
-            od = original.data
+            od = data_by_identity[original.identity]
             original_result = probables.load_result(od["probable_result_identity"])
             if original_result.state not in ADMITTED:
                 raise ValueError("WO12_WO08_ORIGINAL_NOT_ADMITTED")
@@ -87,9 +101,8 @@ def associate_assessments(*, assessments, shadow, probables, origins, readiness,
                 and o.data['market_session_identity'] == d['session_identity']
                 and datetime.fromisoformat(origin.data['origin_at']) < datetime.fromisoformat(o.data['origin_at']) <= item.analysis_boundary
                 for o in origins)
-            and getattr(item, 'wo08_identity', None) in {a.identity for a in retained
-                if all(a.data[k] == v for k, v in (original_methodology or {k:d[k] for k in
-                    ('methodology_identity','methodology_version','methodology_checksum')}).items())})
+            and getattr(item, 'wo08_identity', None) in by_method[tuple(
+                (original_methodology or d)[k] for k in method_fields)])
         entry = min(episode_history, key=lambda r: (r.created_at, r.readiness_identity)) if episode_history else None
         readiness_ids = {item.readiness_identity for item in history}
         downstream = [item for schema in ("WO10_OPPORTUNITY_V1", "WO10_CONSTRUCTION_UNAVAILABLE_V1",
@@ -98,7 +111,30 @@ def associate_assessments(*, assessments, shadow, probables, origins, readiness,
         opportunity_ids = {item.identity for item in downstream if item.schema == "WO10_OPPORTUNITY_V1"}
         tracks = [item for item in lifecycle.restore()
                   if item.data["intake"]["opportunity_identity"] in opportunity_ids]
-        records.append(record(SCHEMA,
+        experimental = d["methodology_identity"] == "KRONOS-INTRADAY-WO08-EXPERIMENTAL-PULLBACK-PAPER"
+        experimental_history = {}
+        if experimental:
+            from kronos.application.intraday_experimental_watch import ExperimentalWatchStore, BINDING, HINT
+            documents = watch_documents
+            bindings = [v for v in documents if v["schema"] == BINDING
+                        and v["assessment_identity"] == assessment.identity]
+            binding_ids = {v["identity"] for v in bindings}
+            watches = watch_history
+            from kronos.intraday.wo09_readiness import artifact_bytes
+            import json
+            experimental_history = dict(
+                experimental_authority="EXPERIMENTAL_PAPER_ONLY",
+                predictive_usefulness="NOT_ESTABLISHED",
+                experimental_measurement=d.get("experimental_measurement"),
+                selective_watch_bindings=bindings,
+                selective_watch_history=[json.loads(artifact_bytes(w)) for w in watches
+                                         if w.watch_identity in {b["watch_identity"] for b in bindings}],
+                advisory_wake_hints=[v for v in documents if v["schema"] == HINT
+                                    and v["binding_identity"] in binding_ids],
+                first_five_provenance=[item.first_five_document for item in history
+                    if getattr(item, "first_five_document", None) is not None])
+        records.append(record("WO12_WO08_EXPERIMENTAL_ASSOCIATION_V1" if experimental else SCHEMA,
+            **experimental_history,
             research_authority="RESEARCH_ONLY_NO_TRADING_AUTHORITY", live_control_authority="NONE",
             assessment_identity=assessment.identity, assessment_integrity=assessment.integrity,
             methodology_identity=d["methodology_identity"], methodology_version=d["methodology_version"],
@@ -150,6 +186,11 @@ def research_metrics(associations):
     audit = [item.data for item in associations]
     # Admission is frozen at consideration, independent of later readiness/outcome.
     values = [d for d in audit if d.get("considered_at_assessment") is True]
+    def positive(assessment, criterion):
+        from kronos.intraday.wo08_experimental import METHODOLOGY, VERSION, CHECKSUM
+        experimental = (assessment.get('methodology_identity'), assessment.get('methodology_version'),
+                        assessment.get('methodology_checksum')) == (METHODOLOGY, VERSION, CHECKSUM)
+        return criterion['state'] == ('SATISFIED' if experimental else 'DETERMINISTICALLY_ESTABLISHED')
     count = len(values)
     opportunities = {d["opportunity_identity"] for d in values if d["opportunity_identity"] is not None}
     unbound = sum(d["opportunity_identity"] is None for d in values)
@@ -170,8 +211,8 @@ def research_metrics(associations):
         ("WO08 average publication latency seconds", sum(d["assessment_latency_seconds"] for d in values), count,
          sum(d["assessment_latency_seconds"] for d in values) / count if count else None,
          "Assessment publication minus exact original Analysis boundary; no acquisition is performed"),
-        ("WO08 fully established coverage", sum(all(c["state"] == "DETERMINISTICALLY_ESTABLISHED" for c in d["criteria"]) for d in values),
-         count, sum(all(c["state"] == "DETERMINISTICALLY_ESTABLISHED" for c in d["criteria"]) for d in values) / count if count else None,
+        ("WO08 fully established coverage", sum(all(positive(d, c) for c in d["criteria"]) for d in values),
+         count, sum(all(positive(d, c) for c in d["criteria"]) for d in values) / count if count else None,
          "Among considered assessments including repeats; all five propositions established; unavailable remains in denominator"),
     ]
     for market in ("NSE", "MCX"):
@@ -181,10 +222,9 @@ def research_metrics(associations):
                 result.append((f"WO08 {market} {direction or 'UNKNOWN'} assessments", len(group), count,
                     len(group) / count if count else None, "Exact retained market/direction strata"))
     for criterion in ("I1", "I2", "I3", "I4", "I5"):
-        positive = sum(next(c for c in d["criteria"] if c["criterion_id"] == criterion)["state"] ==
-                       "DETERMINISTICALLY_ESTABLISHED" for d in values)
-        result.append((f"WO08 {criterion} established rate", positive, count,
-            positive / count if count else None, "Among considered assessments including repeats; criterion contribution with no fabricated positive score"))
+        established = sum(positive(d, next(c for c in d["criteria"] if c["criterion_id"] == criterion)) for d in values)
+        result.append((f"WO08 {criterion} established rate", established, count,
+            established / count if count else None, "Among considered assessments including repeats; criterion contribution with no fabricated positive score"))
     strata = {}
     for assessment in values:
         for outcome in assessment["outcomes"]:

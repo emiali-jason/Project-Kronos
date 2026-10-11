@@ -14,6 +14,8 @@ from threading import RLock
 from uuid import uuid4
 
 from kronos.intraday.wo08_assessment import Wo08Assessment, canonical, digest, moment, VERSION, CHECKSUM
+from kronos.intraday.wo08_experimental import (ExperimentalWo08Assessment, SCHEMA as EXPERIMENTAL_SCHEMA,
+    VERSION as EXPERIMENTAL_VERSION, CHECKSUM as EXPERIMENTAL_CHECKSUM)
 from kronos.intraday.wo08_shadow_persistence import Wo08ShadowStore
 from kronos.intraday.probables_v2 import ProbablesRunV2
 from kronos.intraday.probables_v2_persistence import _from_wire, _to_wire
@@ -33,6 +35,7 @@ class Wo08AssessmentStore:
         self._io = Wo08ShadowStore(root)
         self._validated_records = OrderedDict()
         self._validated_runs = OrderedDict()
+        self._validated_populations = OrderedDict()
         self._cache_lock = RLock()
         with _LOCKS_GUARD:
             self._lock = _LOCKS.setdefault(str(self.root), RLock())
@@ -80,7 +83,8 @@ class Wo08AssessmentStore:
         with self._cache_lock:
             value = self._validated_records.get(payload)
             if value is None:
-                value = Wo08Assessment(payload)
+                value = (ExperimentalWo08Assessment(payload) if json.loads(payload).get('schema_identity') == EXPERIMENTAL_SCHEMA
+                         else Wo08Assessment(payload))
                 self._validated_records[payload] = value
                 if len(self._validated_records) > 256:
                     self._validated_records.popitem(last=False)
@@ -99,8 +103,10 @@ class Wo08AssessmentStore:
         if type(d) is not dict or set(d) != keys or canonical(d) != raw:
             raise ValueError('WO08_MANIFEST_SCHEMA_INVALID')
         core = {k: v for k, v in d.items() if k not in {'manifest_identity', 'integrity_sha256'}}
-        if (d['schema_identity'] != 'KRONOS-INTRADAY-WO08-COMPLETE-RUN-V1' or d['schema_version'] != VERSION
-                or d['methodology_checksum'] != CHECKSUM or d['integrity_sha256'] != digest(core)
+        method = (d['schema_identity'], d['schema_version'], d['methodology_checksum'])
+        allowed = {('KRONOS-INTRADAY-WO08-COMPLETE-RUN-V1', VERSION, CHECKSUM),
+                   ('KRONOS-INTRADAY-WO08-EXPERIMENTAL-COMPLETE-RUN-V1', EXPERIMENTAL_VERSION, EXPERIMENTAL_CHECKSUM)}
+        if (method not in allowed or d['integrity_sha256'] != digest(core)
                 or d['manifest_identity'] != 'WO08-MANIFEST-' + digest(core)
                 or d['run_identity'] != run_identity or d['population_total'] != 98):
             raise ValueError('WO08_MANIFEST_INTEGRITY_INVALID')
@@ -119,13 +125,27 @@ class Wo08AssessmentStore:
                 or len(d['assessment_identities']) != 98 or len(set(d['assessment_identities'])) != 98):
             raise ValueError('WO08_MANIFEST_POPULATION_INVALID')
         records = tuple(self.load(identity) for identity in d['assessment_identities'])
-        for result, record in zip(run.results, records):
-            v = record.data
-            if (v['run_identity'] != run_identity or v['run_integrity'] != run.integrity_identity
-                    or v['probable_result_identity'] != result.result_identity
-                    or v['source_document']['result'] != _to_wire(result)
-                    or v['created_at'] != d['created_at']):
-                raise ValueError('WO08_MANIFEST_MEMBER_BINDING_INVALID')
+        # Every manifest and member was read afresh above. Only the successful
+        # binding of these exact immutable bytes is reusable (ADR-0055); no
+        # pointer, missing file, generation, currentness or clock is cached.
+        population = (raw, tuple(record.payload for record in records))
+        with self._cache_lock:
+            validated = population in self._validated_populations
+            if validated:
+                self._validated_populations.move_to_end(population)
+        if not validated:
+            for result, record in zip(run.results, records):
+                v = record.data
+                if (v['run_identity'] != run_identity or v['run_integrity'] != run.integrity_identity
+                        or v['probable_result_identity'] != result.result_identity
+                        or v['source_document']['result'] != _to_wire(result)
+                        or v['created_at'] != d['created_at']
+                        or v['methodology_checksum'] != d['methodology_checksum']):
+                    raise ValueError('WO08_MANIFEST_MEMBER_BINDING_INVALID')
+            with self._cache_lock:
+                self._validated_populations[population] = True
+                if len(self._validated_populations) > 4:
+                    self._validated_populations.popitem(last=False)
         return d, records
 
     def load_run(self, run_identity):
@@ -191,7 +211,7 @@ class Wo08AssessmentStore:
     def publish(self, run, records, *, expected_pointer=_UNSPECIFIED):
         validate_run(run)
         records = tuple(records)
-        if len(records) != 98 or any(type(r) is not Wo08Assessment for r in records):
+        if len(records) != 98 or any(type(r) not in {Wo08Assessment, ExperimentalWo08Assessment} for r in records):
             raise ValueError('WO08_COMPLETE_POPULATION_REQUIRED')
         for result, record in zip(run.results, records):
             record.__post_init__()
@@ -199,12 +219,17 @@ class Wo08AssessmentStore:
             if (d['run_identity'] != run.run_identity or d['run_integrity'] != run.integrity_identity
                     or d['source_document']['result'] != _to_wire(result)):
                 raise ValueError('WO08_PUBLICATION_MEMBER_BINDING_INVALID')
+        methods = {(type(r), r.data['methodology_version'], r.data['methodology_checksum']) for r in records}
+        if len(methods) != 1:
+            raise ValueError('WO08_PUBLICATION_MIXED_METHOD_INVALID')
+        experimental = type(records[0]) is ExperimentalWo08Assessment
         times = {r.data['created_at'] for r in records}
         if len(times) != 1:
             raise ValueError('WO08_PUBLICATION_TIME_MISMATCH')
         created = times.pop()
-        core = dict(schema_identity='KRONOS-INTRADAY-WO08-COMPLETE-RUN-V1', schema_version=VERSION,
-            methodology_checksum=CHECKSUM, run_identity=run.run_identity, run_integrity=run.integrity_identity,
+        core = dict(schema_identity='KRONOS-INTRADAY-WO08-EXPERIMENTAL-COMPLETE-RUN-V1' if experimental else 'KRONOS-INTRADAY-WO08-COMPLETE-RUN-V1',
+            schema_version=EXPERIMENTAL_VERSION if experimental else VERSION,
+            methodology_checksum=EXPERIMENTAL_CHECKSUM if experimental else CHECKSUM, run_identity=run.run_identity, run_integrity=run.integrity_identity,
             run_source=_to_wire(run), assessment_identities=[r.identity for r in records],
             result_identities=[r.result_identity for r in run.results], created_at=created, population_total=98)
         manifest = dict(core, manifest_identity='WO08-MANIFEST-' + digest(core), integrity_sha256=digest(core))

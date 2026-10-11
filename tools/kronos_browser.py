@@ -357,6 +357,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             server.maintenance_admission
         )
         server.intraday_lifecycle = intraday_runtime.lifecycle_application
+        intraday_runtime.wo09_application.experimental_watches.bind_monitoring(
+            server.swing_monitoring_hub, application.authenticated_read_only_capability,
+            server.maintenance_admission)
+        server.intraday_experimental_watches = intraday_runtime.wo09_application.experimental_watches
+
         intraday_runtime.wo17_monitoring.bind_maintenance_admission(
             server.maintenance_admission
         )

@@ -31,10 +31,20 @@ def population(tmp_path, *, all_unavailable=False):
     return run, SimpleNamespace(member_evidence=mappings), native
 
 
-def publish(tmp_path, *, all_unavailable=False):
+def publish(tmp_path, *, all_unavailable=False, experimental=False):
     run, mapping, native = population(tmp_path, all_unavailable=all_unavailable)
     owner = Wo08Publication(Wo08AssessmentStore(tmp_path))
-    records = owner.publish_run(run=run, mapping=mapping, native_publication=native, published_at=run.analysis_boundary)
+    if experimental:
+        records = owner.publish_run(run=run, mapping=mapping, native_publication=native, published_at=run.analysis_boundary)
+    else:
+        # Retained pre-experiment source fixture: legacy byte validators remain
+        # independently exercised, without granting a legacy runtime selector.
+        by_mapping = {m.mapping_identity:m for m in mapping.member_evidence}
+        records = tuple(assess(run_identity=run.run_identity,run_integrity=run.integrity_identity,
+            result=r,mapping=by_mapping.get(r.source_mapping_identity),
+            native=None if r.source_mapping_identity is None else native.store.load(native.store.bound_identity(r.semantic_evidence_identity)),
+            created_at=run.analysis_boundary) for r in run.results)
+        owner.store.publish(run,records)
     return run, mapping, native, owner, records
 
 
@@ -143,7 +153,7 @@ def test_rehashed_positive_fabrication_cannot_gain_criterion_authority(tmp_path)
     d['criteria'][2]['state'] = 'DETERMINISTICALLY_ESTABLISHED'
     core = {k:v for k,v in d.items() if k not in {'assessment_identity','integrity_sha256'}}
     d.update(assessment_identity='WO08-ASSESSMENT-'+digest(core),integrity_sha256=digest(core))
-    with pytest.raises(ValueError, match='INTEGRITY_INVALID'): Wo08Assessment(canonical(d))
+    with pytest.raises(ValueError, match='INTEGRITY_INVALID'): type(records[0])(canonical(d))
 
 
 def test_full_population_required_and_symlinks_rejected(tmp_path):
@@ -277,8 +287,10 @@ def test_native_companion_symlink_is_rejected_without_authority(tmp_path):
     assert owner.store.current_pointer() is None and not owner.store.root.exists()
 
 
-def test_validation_reuse_never_hides_changed_assessment_bytes(tmp_path):
-    *_,owner,records=publish(tmp_path)
+@pytest.mark.parametrize('experimental', [False, True])
+def test_validation_reuse_never_hides_changed_assessment_bytes(tmp_path, experimental):
+    *_,owner,records=publish(tmp_path, experimental=experimental)
+    assert len(owner.store.current_run()) == 98
     original=records[0]
     assert owner.store.load(original.identity)==original
     path=owner.store._record_path(original.identity)
@@ -288,10 +300,42 @@ def test_validation_reuse_never_hides_changed_assessment_bytes(tmp_path):
     with pytest.raises(ValueError,match='INTEGRITY'):owner.store.current_run()
 
 
-def test_validation_reuse_never_hides_changed_manifest_bytes(tmp_path):
-    run,_,_,owner,_=publish(tmp_path)
+@pytest.mark.parametrize('experimental', [False, True])
+def test_validation_reuse_never_hides_changed_manifest_bytes(tmp_path, experimental):
+    run,_,_,owner,_=publish(tmp_path, experimental=experimental)
     assert len(owner.store.current_run())==98
     path=owner.store._manifest_path(run.run_identity)
     d=json.loads(path.read_bytes());d['result_identities'].reverse()
     path.write_bytes(canonical(d))
     with pytest.raises(ValueError,match='INTEGRITY'):owner.store.current_run()
+
+
+@pytest.mark.parametrize('experimental', [False, True])
+def test_complete_population_reuse_rereads_every_member_and_detects_removal(tmp_path, monkeypatch, experimental):
+    *_, owner, records = publish(tmp_path, experimental=experimental)
+    assert len(owner.store.current_run()) == 98
+    assert owner.store._validated_populations
+    original = owner.store._io._read
+    reads = []
+    def observed(path):
+        reads.append(path)
+        return original(path)
+    monkeypatch.setattr(owner.store._io, '_read', observed)
+    assert len(owner.store.current_run()) == 98
+    record_paths = {owner.store._record_path(r.identity) for r in records}
+    assert len([p for p in reads if p in record_paths]) == 98
+    owner.store._record_path(records[-1].identity).unlink()
+    with pytest.raises(FileNotFoundError):
+        owner.store.current_run()
+
+
+def test_experimental_population_reuse_does_not_hide_native_source_tamper(tmp_path):
+    *_, owner, records = publish(tmp_path, experimental=True)
+    assert len(owner.store.current_run()) == 98
+    assert owner.store._validated_populations
+    original = next(r for r in records if r.data['source_document']['native_source'] is not None)
+    changed = original.data
+    changed['source_document']['native_source']['run_identity'] += '-TAMPER'
+    owner.store._record_path(original.identity).write_bytes(canonical(changed))
+    with pytest.raises(ValueError, match='INTEGRITY|SOURCE'):
+        owner.store.current_run()

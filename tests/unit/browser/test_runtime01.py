@@ -124,6 +124,71 @@ def test_browser_status_is_inert_and_cross_product_truth_consistent(running):
     assert inventory(root)==before
 
 
+@pytest.mark.parametrize('configured', [False, True])
+def test_runtime_status_exposes_experimental_memory_only(running, monkeypatch, configured):
+    from kronos.application.intraday_experimental_watch import GovernedExperimentalWatchCoordinator
+    from kronos.intraday.wo08_experimental import METHOD
+
+    server, _, provider, calls, root = running
+
+    class ForbiddenStore:
+        def __getattr__(self, name):
+            raise AssertionError('runtime status accessed persisted store: ' + name)
+
+    # Construct the ordinary coordinator first, then prohibit every store API.
+    from tests.unit.application.test_intraday_experimental_watch import setup_watch, canonical_adapter
+    watch, _, _, _, clock, _, _, _ = setup_watch(root / 'experimental')
+    coordinator = canonical_adapter(watch, clock)
+    assert isinstance(coordinator, GovernedExperimentalWatchCoordinator)
+    monkeypatch.setattr(coordinator, 'store', ForbiddenStore())
+    monkeypatch.setattr(coordinator.wo09, 'store', ForbiddenStore())
+    coordinator.restore = Mock(side_effect=AssertionError('GET restored watches'))
+    coordinator.current_binding = Mock(side_effect=AssertionError('GET replayed sources'))
+    coordinator.capability_supplier = Mock(side_effect=AssertionError('GET acquired Provider capability')) if configured else None
+    coordinator.hub = object() if configured else None
+    coordinator.instrument_source = object() if configured else None
+    coordinator.maintenance = server.maintenance_admission if configured else None
+    coordinator.registrations = {'binding': SimpleNamespace(active=configured,
+        advisory_failure='ADVISORY_CALLBACK_FAILED' if configured else None,
+        disconnect=Mock())}
+    coordinator._queue = {'instrument': object()} if configured else {}
+    coordinator._worker_thread = object() if configured else None
+    coordinator._queue_coalesced = 7 if configured else 0
+    coordinator._queue_closed = configured
+    coordinator._queue_failure = 'WO09_ADVISORY_WORK_FAILED' if configured else None
+    server.intraday_experimental_watches = coordinator
+    before = inventory(root)
+    try:
+        for _ in range(2):
+            code, body = request(server, '/runtime/status')
+            assert code == 200
+            status = json.loads(body)['intraday_experimental_paper']
+            assert status['method'] == dict(identity=METHOD[0], version=METHOD[1], checksum=METHOD[2])
+            assert status['authority'] == 'EXPERIMENTAL_PAPER_ADVISORY_ONLY'
+            assert status['configuration'] == dict(method_available=True, watch_path_available=True,
+                persistence_configured=True, source_validation_configured=configured,
+                monitoring_configured=configured, maintenance_admission_configured=configured)
+            assert status['work'] == dict(pending=int(configured), running=configured,
+                coalesced=7 if configured else 0, closed=configured,
+                failure='WO09_ADVISORY_WORK_FAILED' if configured else None)
+            assert status['attached_observers'] == int(configured)
+            assert status['advisory_callback_failures'] == ([dict(binding_identity='binding',
+                failure='ADVISORY_CALLBACK_FAILED')] if configured else [])
+            assert status['last_failure'] == ('WO09_ADVISORY_WORK_FAILED' if configured else None)
+            assert not status['automatic_provider_acquisition'] and not status['websocket_can_promote']
+            assert 'persisted_bindings' not in status and 'pending_hints' not in status
+        assert inventory(root) == before
+        assert provider.begin_count == 0 and calls == []
+        coordinator.restore.assert_not_called()
+        coordinator.current_binding.assert_not_called()
+        if configured:
+            coordinator.capability_supplier.assert_not_called()
+    finally:
+        coordinator._queue.clear()
+        coordinator._worker_thread = None
+        del server.intraday_experimental_watches
+
+
 def test_service_loop_admits_intraday_pulse_without_executing_it_inline():
     server=object.__new__(KronosBrowserServer)
     server.maintenance_admission=MaintenanceAdmissionCoordinator()

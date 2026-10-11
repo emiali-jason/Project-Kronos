@@ -360,3 +360,20 @@ governed endpoint relative to exact original Assessment Price only. It grants no
 readiness, economic or trading authority. All-98 audit association and admitted
 assessment diagnostics are separate from the actual WO09 entrant denominator.
 WO08 remains closed/active; WO07F retirement and WO13 ownership remain intact.
+# IWO-01/02/03 prospective experimental authority — 2026-10-11
+
+The Sponsor approved `KRONOS-INTRADAY-WO08-EXPERIMENTAL-PULLBACK-PAPER / 0.1.0`
+under the IWO continuation order and design ZIP
+`4d2adb3b0800b5f9824d631a2797d380eda9c6d60842ba41b7f7f5586e706f8c`.
+[ADR-0064](adr/ADR-0064-IWO-EXPERIMENTAL-PAPER-METHOD-FIRST-FIVE-AND-WATCH.md)
+contains the exact rules and authority limits. This is experimental PAPER-only,
+with predictive usefulness NOT_ESTABLISHED; it is not empirical Slice 03 proof.
+
+First-five is a prospective retained evaluation event, never a reconstructed
+market crossing or refreshed timestamp. A retained event alone cannot authorize
+a handoff. Selective watches require exact current 4/5 with only I2 or I3
+outstanding. WebSocket hints cannot promote criteria or trigger acquisition.
+WO13 retains notification ownership, WO12 retains terminal-directional research
+semantics, LIVE stays uncommissioned and NATGAS stays HELD. Entered-position
+safety remains independent of later analytical eligibility. Engineering,
+review, release, loaded runtime and natural business acceptance are distinct.

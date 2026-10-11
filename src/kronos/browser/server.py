@@ -1148,6 +1148,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
         lifecycle = getattr(self, "intraday_lifecycle", None)
         if lifecycle is not None:
             lifecycle.shutdown()
+        experimental_watches = getattr(self, "intraday_experimental_watches", None)
+        if experimental_watches is not None:
+            experimental_watches.shutdown()
         wo17_monitoring = getattr(self, "intraday_wo17_monitoring", None)
         if wo17_monitoring is not None:
             wo17_monitoring.shutdown()
@@ -3390,6 +3393,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             lifecycle = getattr(self.server, "intraday_lifecycle", None)
             if lifecycle is not None:
                 payload["intraday_wo11_work"] = lifecycle.work_status()
+            experimental = getattr(self.server, "intraday_experimental_watches", None)
+            if experimental is not None:
+                payload["intraday_experimental_paper"] = experimental.runtime_status_document()
             wo17 = getattr(self.server, "intraday_wo17_monitoring", None)
             if wo17 is not None:
                 payload["intraday_wo17_work"] = wo17.work_status()

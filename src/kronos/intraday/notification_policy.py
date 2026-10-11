@@ -77,6 +77,8 @@ def telegram_text(details):
     validate(details)
     lines = ["KRONOS · INTRADAY", TITLES[details["family"]], details["subject"]+" · "+details["direction"],
              details["opportunity_id"]]
+    if details.get('reason') == 'Experimental PAPER':
+        lines.append('Experimental PAPER · predictive usefulness not established')
     for key in ("truth_class","lots","contract","expiry","entry","stop","target","exit","model_rr","model_points","one_lot_result","executability","risk_advisory"):
         if details.get(key) is not None:
             lines.append(key.replace("_"," ").upper()+": "+str(details[key]))

@@ -255,6 +255,13 @@ def load_decision_source(store, decision, handoff):
     p=store.root/"sources"/(d["native_source_identity"]+".json")
     if not re.fullmatch(SOURCE_PREFIX+r"[a-f0-9]{64}",d["native_source_identity"]):raise ValueError(Reason.INTEGRITY.value)
     source=json.loads(p.read_bytes())
+    return validate_decision_source(decision, source)
+
+
+def validate_decision_source(decision, source):
+    """Validate retained exact Native source without reselecting its cycle."""
+    decision.__post_init__()
+    d = decision.data
     if digest(source)!=d["source_integrity"] or SOURCE_PREFIX+digest(source)!=d["native_source_identity"]:raise ValueError(Reason.INTEGRITY.value)
     f,m,r,binding=decode_source(source)
     expected=dict(subject=r.canonical_subject_identity,direction=r.direction.value if r.direction is not None else "UNAVAILABLE",analysis_cycle=source["run_identity"],

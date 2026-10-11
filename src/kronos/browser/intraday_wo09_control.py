@@ -29,10 +29,34 @@ class IntradayWo09Projection:
         details = {}
         historical_cards = []
         historical_details = {}
+        watch_bindings = None
+        watch_hints = None
         for pointer, record in self.store.restore_current():
             requirements = self.store.load_requirements(record.readiness_identity)
             card = project_card(record, requirements, currentness=pointer.currentness)
             detail = project_analysis_details(record, requirements)
+            if record.authority == 'EXPERIMENTAL_PAPER_ONLY':
+                if watch_bindings is None:
+                    from kronos.application.intraday_experimental_watch import ExperimentalWatchStore, BINDING, HINT
+                    watch_bindings, watch_hints = {}, {}
+                    for index, document in enumerate(ExperimentalWatchStore(self.store).records()):
+                        if document['schema'] == BINDING:
+                            watch_bindings.setdefault(document['readiness_identity'], []).append(document)
+                        elif document['schema'] == HINT:
+                            watch_hints.setdefault(document['binding_identity'], []).append((index, document))
+                bindings = tuple(watch_bindings.get(record.readiness_identity, ()))
+                # Preserve persisted hint order when a readiness has multiple bindings.
+                hints = tuple(hint for _, hint in sorted(item for binding in bindings
+                    for item in watch_hints.get(binding['identity'], ())))
+                detail['F. EXPERIMENTAL OBSERVATION'] = dict(
+                    method=record.methodology_identity, version=record.methodology_version,
+                    first_five_at=None if record.first_five_of_five_at is None else record.first_five_of_five_at.isoformat(),
+                    selective_watch=bindings, advisory_wake_hints=hints,
+                    tick_authority='ADVISORY_ONLY', automatic_provider_refresh=False,
+                    currentness_scope='RETAINED_POINTER_STATE_ONLY',
+                    action_authority='Current session, source and freshness require an explicit guarded check.')
+                if hints and pointer.currentness is CurrentnessState.CURRENT:
+                    card = replace(card, next_action='Retained advisory hint — completed Analysis required')
             if self.machine_successor and record.source_authority == "WO07F":
                 # The retained pointer is evidence of its original publication, not
                 # new-work authority after retirement of the visual production path.
@@ -82,7 +106,8 @@ class Wo09SponsorCard:
 def project_card(record: ReadinessRecord, requirements: tuple[RequirementRecord, ...], *,
                  currentness: CurrentnessState | None = None) -> Wo09SponsorCard:
     from kronos.intraday.wo09_machine_readiness import MachineReadinessRecord
-    if type(record) not in {ReadinessRecord, MachineReadinessRecord} or any(type(item) is not RequirementRecord for item in requirements):
+    from kronos.intraday.wo09_experimental import ExperimentalReadinessRecord
+    if type(record) not in {ReadinessRecord, MachineReadinessRecord, ExperimentalReadinessRecord} or any(type(item) is not RequirementRecord for item in requirements):
         raise ValueError("WO09_BROWSER_PROJECTION_INPUT_INVALID")
     if {item.readiness_identity for item in requirements} != {record.readiness_identity}:
         raise ValueError("WO09_BROWSER_BINDING_INVALID")
@@ -102,7 +127,8 @@ def project_card(record: ReadinessRecord, requirements: tuple[RequirementRecord,
         probables_run_identity=record.probables_run_identity,
         analysis_boundary=record.analysis_boundary.isoformat(),
         created_at=record.created_at.isoformat(),
-        assessment_state=getattr(record, "assessment_disposition", None),
+        assessment_state=(("Experimental PAPER · " + record.assessment_disposition)
+            if type(record) is ExperimentalReadinessRecord else getattr(record, "assessment_disposition", None)),
         instrument=record.canonical_subject_identity, direction=record.direction,
         wo07f_state="HISTORICAL_ONLY" if record.wo07f_outcome is None else record.wo07f_outcome.value,
         readiness_state=record.readiness_state.value,
@@ -142,7 +168,11 @@ def project_analysis_details(record: ReadinessRecord, requirements: tuple[Requir
             },
             "B. WO09 READINESS": {"state": record.readiness_state.value,
                 "satisfied": record.satisfied_count, "outstanding": record.outstanding_count},
-            "C. AUTHORITY BOUNDARY": "Chart Analyst is not required. No trade, PAPER or broker authority.",
+            "C. AUTHORITY BOUNDARY": (
+                "Experimental PAPER only. Predictive usefulness not established. "
+                "No automatic position, LIVE or broker authority."
+                if record.authority == 'EXPERIMENTAL_PAPER_ONLY' else
+                "Chart Analyst is not required. No trade, PAPER or broker authority."),
             "D. HISTORICAL VISUAL EVIDENCE": "Retained separately; retired for new Intraday production.",
             "E. EVIDENCE LINEAGE": {"readiness_identity": record.readiness_identity,
                 "probables_run_identity": record.probables_run_identity,
@@ -209,6 +239,8 @@ def active_attention_cards(cards: tuple[Wo09SponsorCard, ...]) -> tuple[Wo09Spon
 
 def _next_action(record: ReadinessRecord) -> str:
     if record.readiness_state in {ReadinessState.BUY_NOW, ReadinessState.SELL_NOW}:
+        if record.authority == 'EXPERIMENTAL_PAPER_ONLY':
+            return 'REQUEST_GUARDED_PAPER_HANDOFF_CHECK'
         return "NEXT_WO_HANDOFF_AVAILABLE"
     if record.readiness_state is ReadinessState.NO_FOCUS:
         return "RETAIN_FOR_RESEARCH_NO_ACTIVE_ATTENTION"

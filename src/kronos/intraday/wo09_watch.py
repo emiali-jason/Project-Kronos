@@ -56,8 +56,7 @@ class Wo09Watch:
             governed_trigger=self.governed_trigger,
         )
         if (
-            self.owner_identity != OWNER_IDENTITY or self.policy_identity != POLICY_IDENTITY
-            or self.policy_version != POLICY_VERSION or self.activated_at.tzinfo is None
+            self.owner_identity != OWNER_IDENTITY or not _supported_policy(self.policy_identity, self.policy_version) or self.activated_at.tzinfo is None
             or self.last_transition_at.tzinfo is None or type(self.state) is not WatchState
             or self.watch_identity != expected_identity
             or self.integrity_identity != _identity("INTEGRITY-INTRADAY-WO09-WATCH-", values)
@@ -67,12 +66,14 @@ class Wo09Watch:
 
 def create_watch(*, readiness_identity: str, criterion_id: CriterionId, subject: str,
                  exact_contract: str | None, source_fact_identity: str,
-                 governed_trigger: str, at: datetime) -> Wo09Watch:
+                 governed_trigger: str, at: datetime,
+                 policy_identity: str = POLICY_IDENTITY,
+                 policy_version: str = POLICY_VERSION) -> Wo09Watch:
     values = dict(
         readiness_identity=readiness_identity, criterion_id=criterion_id,
         canonical_subject_identity=subject, exact_contract_identity=exact_contract,
         source_fact_identity=source_fact_identity, governed_trigger=governed_trigger,
-        policy_identity=POLICY_IDENTITY, policy_version=POLICY_VERSION,
+        policy_identity=policy_identity, policy_version=policy_version,
         owner_identity=OWNER_IDENTITY, state=WatchState.ACTIVE, activated_at=at,
         last_transition_at=at, reacquisition_identity=None,
     )
@@ -112,6 +113,14 @@ def mark_disconnect_gap(watch: Wo09Watch, *, at: datetime) -> Wo09Watch:
     if watch.state not in {WatchState.ACTIVE, WatchState.TRIGGERED}:
         return watch
     return transition_watch(watch, WatchState.STALE, at=at)
+
+
+def _supported_policy(identity, version):
+    # Explicit version dispatch; historical records retain their original hashes.
+    return (identity, version) in {
+        (POLICY_IDENTITY, POLICY_VERSION),
+        ("KRONOS-INTRADAY-WO09-EXPERIMENTAL-PAPER-READINESS", "0.1.0"),
+    }
 
 
 def _values(value: Wo09Watch) -> dict[str, object]:

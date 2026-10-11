@@ -4,7 +4,7 @@ No Provider, Review, Answer, WO07F or research authority is consumed. Exceptions
 from source validation or persistence propagate to the owning publication gate.
 """
 import json
-from kronos.intraday.wo08_assessment import assess
+from kronos.intraday.wo08_experimental import assess_experimental
 from kronos.intraday.wo08_assessment_store import validate_run
 from kronos.intraday.native_pullback_decision import load_decision_source
 from kronos.intraday.native_pullback_policy import CHECKSUM as NATIVE_CHECKSUM
@@ -50,14 +50,16 @@ class Wo08Publication:
                 or len(set(companion['selections'])) != len(expected_results)):
             raise ValueError('WO08_NATIVE_COMPANION_INCOMPLETE')
         native_by_result = {}
+        source_by_result = {}
         for result_id, identity in zip(companion['result_identities'], companion['selections']):
             native = native_publication.store.load(identity)
-            load_decision_source(native_publication.store, native, None)
+            source_by_result[result_id] = load_decision_source(native_publication.store, native, None)
             if (native.data['probable_result_identity'] != result_id or native.data['analysis_cycle'] != run.run_identity
                     or native_publication.store.bound_identity(native.data['machine_identity']) != identity):
                 raise ValueError('WO08_NATIVE_COMPANION_LINEAGE_INVALID')
             native_by_result[result_id] = native
-        records = tuple(assess(run_identity=run.run_identity, run_integrity=run.integrity_identity,
+        records = tuple(assess_experimental(run_identity=run.run_identity, run_integrity=run.integrity_identity,
             result=result, mapping=by_mapping.get(result.source_mapping_identity),
-            native=native_by_result.get(result.result_identity), created_at=published_at) for result in run.results)
+            native=native_by_result.get(result.result_identity), native_source=source_by_result.get(result.result_identity),
+            created_at=published_at) for result in run.results)
         return self.store.publish(run, records, expected_pointer=expected)

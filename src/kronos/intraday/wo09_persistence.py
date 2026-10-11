@@ -20,6 +20,12 @@ from kronos.intraday.wo09_readiness import (
 )
 from kronos.intraday.wo09_machine_readiness import MachineReadinessRecord, SCHEMA_IDENTITY as MACHINE_SCHEMA
 from kronos.intraday.wo09_watch import WatchState, Wo09Watch
+from kronos.intraday.wo09_experimental import (
+    ExperimentalReadinessRecord, ExperimentalNextWoHandoff, FirstFiveObservation,
+    SCHEMA_IDENTITY as EXPERIMENTAL_SCHEMA, HANDOFF_SCHEMA as EXPERIMENTAL_HANDOFF_SCHEMA,
+    first_five_from, claim_for, claim_identity, observe_first_five,
+    evaluate_experimental_readiness, origin_from,
+)
 from kronos.application.intraday_wo09_notifications import Wo09NotificationSource, Wo09NotificationState
 
 
@@ -121,6 +127,30 @@ class _Wo09Mutation:
             self._notices.append(self._owner._capture_notice(*notice))
         return result
 
+    def retain_experimental(self, assessment, origin, *, observed_at):
+        self._begin(assessment.data['subject'])
+        first = None
+        if origin is not None:
+            claim = claim_for(assessment, origin)
+            first = self._owner.load_first_five(claim_identity(claim))
+            if first is None and all(c['state'] == 'SATISFIED' for c in assessment.data['criteria']):
+                first = observe_first_five(assessment, origin, observed_at=observed_at)
+                self._owner._retain(self._owner.first_five / (first.claim_identity + '.json'), artifact_bytes(first))
+            if first is not None:
+                # A readable orphan may remain after an earlier failed fsync.
+                # Every explicit publication must establish durability before
+                # using that original observation as readiness authority.
+                self._owner._sync_first_five_file(first.claim_identity)
+                self._owner._sync_first_five()
+                if self._owner.load_first_five(first.claim_identity) != first:
+                    raise Wo09PersistenceError('EXPERIMENTAL_FIRST_FIVE_READBACK_MISMATCH')
+        record, requirements = evaluate_experimental_readiness(assessment, observed_at=observed_at,
+            origin=origin, first_five=first)
+        _, notice = self._owner._retain_readiness(record, requirements)
+        if notice is not None:
+            self._notices.append(self._owner._capture_notice(*notice))
+        return record, requirements
+
     def mark_currentness(self, subject, state, *, updated_at):
         self._begin(subject)
         result = self._owner._mark_currentness(subject, state, updated_at=updated_at)
@@ -141,6 +171,7 @@ class Wo09Store:
         self.current = root / "current"
         self.watches = root / "watches"
         self.notifications = root / "notifications"
+        self.first_five = root / "experimental-first-five"
 
     def _validated_pointer(self, subject):
         pointer = self.load_pointer(subject)
@@ -221,9 +252,15 @@ class Wo09Store:
         return result
 
     def _retain_readiness(self, record, requirements):
-        if type(record) not in {ReadinessRecord, MachineReadinessRecord} or len(requirements) != 5:
+        if type(record) not in {ReadinessRecord, MachineReadinessRecord, ExperimentalReadinessRecord} or len(requirements) != 5:
             raise Wo09PersistenceError("WO09_PERSISTENCE_INPUT_INVALID")
         record.__post_init__()
+        if type(record) is ExperimentalReadinessRecord:
+            self.verify_first_five(record)
+            from kronos.intraday.wo09_readiness import create_requirement
+            expected_requirements = tuple(create_requirement(record, c, record.created_at) for c in record.criteria)
+            if tuple(requirements) != expected_requirements:
+                raise Wo09PersistenceError('WO09_EXPERIMENTAL_REQUIREMENT_BINDING_INVALID')
         if tuple(item.criterion.criterion_id for item in requirements) != tuple(CriterionId):
             raise Wo09PersistenceError("WO09_REQUIREMENT_SET_INVALID")
         for requirement in requirements:
@@ -250,13 +287,14 @@ class Wo09Store:
             mutation.retain_handoff(handoff)
 
     def _retain_handoff(self, handoff):
-        if type(handoff) is not NextWoHandoff:
+        if type(handoff) not in {NextWoHandoff, ExperimentalNextWoHandoff}:
             raise Wo09PersistenceError("WO09_HANDOFF_PERSISTENCE_INPUT_INVALID")
         handoff.__post_init__()
         pointer = self._validated_pointer(handoff.canonical_subject_identity)
         if pointer is None:
             raise Wo09PersistenceError("WO09_HANDOFF_CURRENT_POINTER_REQUIRED")
         readiness = self.load_readiness(pointer.readiness_identity)
+        self.verify_first_five(readiness)
         bound = create_next_wo_handoff(readiness, created_at=handoff.created_at,
             current_readiness_identity=pointer.readiness_identity,
             current_pointer_integrity=pointer.integrity_identity,
@@ -265,6 +303,47 @@ class Wo09Store:
         if bound != handoff:
             raise Wo09PersistenceError("WO09_HANDOFF_SOURCE_BINDING_INVALID")
         self._retain(self.handoffs / f"{handoff.handoff_identity}.json", artifact_bytes(handoff))
+
+    def _sync_first_five_file(self, claim):
+        descriptor = os.open(self.first_five / (claim + '.json'), os.O_RDONLY | os.O_NOFOLLOW)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+
+    def _sync_first_five(self):
+        # The immutable observation must be durable before any readiness can
+        # refer to it, including the directory entry on its first publication.
+        for path in (self.first_five, self.root):
+            descriptor = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
+
+    def load_first_five(self, claim):
+        import re
+        if type(claim) is not str or re.fullmatch(r'INTRADAY-WO09-FIRST-FIVE-CLAIM-[A-F0-9]{64}', claim) is None:
+            raise Wo09PersistenceError('EXPERIMENTAL_FIRST_FIVE_CLAIM_INVALID')
+        try:
+            document = json.loads((self.first_five / (claim + '.json')).read_bytes())
+        except FileNotFoundError:
+            return None
+        fact = first_five_from(document)
+        if fact.claim_identity != claim:
+            raise Wo09PersistenceError('EXPERIMENTAL_FIRST_FIVE_PATH_MISMATCH')
+        return fact
+
+    def verify_first_five(self, readiness):
+        if type(readiness) is not ExperimentalReadinessRecord:
+            return
+        if readiness.first_five_document is None:
+            if readiness.satisfied_count == 5:
+                raise Wo09PersistenceError('EXPERIMENTAL_FIRST_FIVE_NOT_RETAINED')
+            return
+        first = first_five_from(readiness.first_five_document)
+        if self.load_first_five(first.claim_identity) != first:
+            raise Wo09PersistenceError('EXPERIMENTAL_FIRST_FIVE_NOT_RETAINED')
 
     def load_handoff(self, identity: str) -> NextWoHandoff:
         return _handoff(json.loads((self.handoffs / f"{identity}.json").read_text()))
@@ -280,7 +359,14 @@ class Wo09Store:
             item = _watch(json.loads(path.read_text()))
             if readiness_identity is None or item.readiness_identity == readiness_identity:
                 prior = latest.get(item.watch_identity)
-                if prior is None or (item.last_transition_at, item.integrity_identity) > (prior.last_transition_at, prior.integrity_identity):
+                def order(watch):
+                    if (watch.policy_identity, watch.policy_version) == (
+                            'KRONOS-INTRADAY-WO09-EXPERIMENTAL-PAPER-READINESS', '0.1.0'):
+                        terminal_rank = {WatchState.ACTIVE: 0, WatchState.TRIGGERED: 1,
+                                         WatchState.INACTIVE: 2, WatchState.STALE: 3}[watch.state]
+                        return watch.last_transition_at, terminal_rank, watch.integrity_identity
+                    return watch.last_transition_at, 0, watch.integrity_identity
+                if prior is None or order(item) > order(prior):
                     latest[item.watch_identity] = item
         return tuple(sorted(latest.values(), key=lambda item: item.watch_identity))
 
@@ -323,7 +409,11 @@ class Wo09Store:
         return pointer
 
     def load_readiness(self, identity: str) -> ReadinessRecord:
-        return _readiness(json.loads((self.readiness / f"{identity}.json").read_text()))
+        record = _readiness(json.loads((self.readiness / f"{identity}.json").read_text()))
+        if record.readiness_identity != identity:
+            raise Wo09PersistenceError('WO09_READINESS_PATH_MISMATCH')
+        self.verify_first_five(record)
+        return record
 
     def load_requirements(self, readiness_identity: str) -> tuple[RequirementRecord, ...]:
         values = []
@@ -397,8 +487,9 @@ def _criterion(value: dict[str, object]) -> CriterionSnapshot:
 
 def _readiness(value: dict[str, object]) -> ReadinessRecord:
     data = dict(value)
+    experimental = data.get("schema_identity") == EXPERIMENTAL_SCHEMA
     machine = data.get("schema_identity") == MACHINE_SCHEMA
-    if not machine:
+    if not machine and not experimental:
         data["wo07f_outcome"] = VisualReconciliationOutcome(data["wo07f_outcome"])
     data.update(
         criteria=tuple(_criterion(item) for item in data["criteria"]),
@@ -409,6 +500,9 @@ def _readiness(value: dict[str, object]) -> ReadinessRecord:
         machine_evidence_identities=tuple(data["machine_evidence_identities"]),
         source_provenance=tuple(data["source_provenance"]),
     )
+    if experimental:
+        data['assessment_published_at'] = datetime.fromisoformat(data['assessment_published_at'])
+        return ExperimentalReadinessRecord(**data)
     return MachineReadinessRecord(**data) if machine else ReadinessRecord(**data)
 
 
@@ -429,9 +523,10 @@ def _pointer(value: dict[str, object]) -> CurrentPointer:
 
 def _handoff(value: dict[str, object]) -> NextWoHandoff:
     data = dict(value)
+    experimental = data.get("schema_identity") == EXPERIMENTAL_HANDOFF_SCHEMA
     data.update(
         currentness=CurrentnessState(data["currentness"]),
-        wo07f_outcome=VisualReconciliationOutcome(data["wo07f_outcome"]),
+        wo07f_outcome=None if experimental else VisualReconciliationOutcome(data["wo07f_outcome"]),
         criteria=tuple(_criterion(item) for item in data["criteria"]),
         hard_gate=HardGate(data["hard_gate"]),
         readiness_state=ReadinessState(data["readiness_state"]),
@@ -443,7 +538,7 @@ def _handoff(value: dict[str, object]) -> NextWoHandoff:
         ),
         machine_evidence_identities=tuple(data["machine_evidence_identities"]),
     )
-    return NextWoHandoff(**data)
+    return ExperimentalNextWoHandoff(**data) if experimental else NextWoHandoff(**data)
 
 
 def _watch(value: dict[str, object]) -> Wo09Watch:

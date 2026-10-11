@@ -20,6 +20,58 @@ TWO = InstrumentRecord("KITE", "NSE", "NSE", "TWO", "TWO", "EQ", None)
 NOW = datetime(2026, 8, 21, 8, 0, tzinfo=UTC)
 
 
+def test_passive_subscription_gap_is_permanent_even_when_socket_survives():
+    hub,capability=SharedSwingMonitoringHub(),Capability()
+    def attach(instrument):
+        registration=hub.open(capability,Consumer())
+        registration.subscribe((instrument,));registration.connect()
+        return registration
+    first,duplicate,other=attach(ONE),attach(ONE),attach(TWO)
+    hub.on_connection_state(MonitoringConnectionState.CONNECTED)
+    consumer=Consumer()
+    observer=hub.observe_existing(capability,consumer,(ONE,))
+    first.disconnect()
+    assert observer.active and consumer.states==[]
+    assert hub.subscription_reference_count(ONE)==1
+    duplicate.disconnect()
+    assert not observer.active and consumer.states==[MonitoringConnectionState.DISCONNECTED]
+    replacement=attach(ONE)
+    assert replacement.active and other.active and not observer.active
+    hub.on_market_tick(tick(ONE))
+    assert consumer.ticks==[] and len(capability.sessions)==1
+    assert capability.sessions[0].connections==1
+    fresh_consumer=Consumer()
+    fresh_observer=hub.observe_existing(capability,fresh_consumer,(ONE,))
+    hub.on_market_tick(tick(ONE))
+    assert len(fresh_consumer.ticks)==1 and consumer.ticks==[]
+    replacement.disconnect();other.disconnect()
+    assert not fresh_observer.active and capability.sessions[0].disconnections==1
+    assert fresh_consumer.states==[MonitoringConnectionState.DISCONNECTED]
+
+
+def test_final_socket_retirement_invalidates_passive_and_stale_callback_cannot_fence_new_observer():
+    hub,capability=SharedSwingMonitoringHub(),Capability()
+    def attach():
+        registration=hub.open(capability,Consumer())
+        registration.subscribe((ONE,));registration.connect()
+        hub.on_connection_state(MonitoringConnectionState.CONNECTED)
+        return registration
+    old_owner=attach()
+    old_consumer=Consumer()
+    old_observer=hub.observe_existing(capability,old_consumer,(ONE,))
+    old_session=capability.sessions[0]
+    old_owner.disconnect()
+    assert not old_observer.active and old_consumer.states==[MonitoringConnectionState.DISCONNECTED]
+    new_owner=attach()
+    new_consumer=Consumer()
+    new_observer=hub.observe_existing(capability,new_consumer,(ONE,))
+    old_session.consumer.on_connection_state(MonitoringConnectionState.DISCONNECTED)
+    old_session.consumer.on_market_tick(tick(ONE))
+    assert new_observer.active and new_consumer.states==[] and new_consumer.ticks==[]
+    assert not old_observer.active
+    new_owner.disconnect()
+
+
 @pytest.mark.parametrize('old_product,new_product', [('SWING','SWING'), ('SWING','INTRADAY'), ('INTRADAY','SWING')])
 def test_detach_inflight_unsubscribe_reconciles_new_owner_without_duplicate_subscription(old_product,new_product):
     entered, release = Event(), Event()

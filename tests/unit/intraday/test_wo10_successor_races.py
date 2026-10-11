@@ -232,3 +232,42 @@ def test_comparison_pointer_fault_retains_truth_without_success(tmp_path,monkeyp
     assert store.load(comparison.identity)==comparison and calls==[]
     assert (store.current(comparison.data['subject']) is None)==(phase=='before')
     assert store._deferred_notices=={}
+
+
+@pytest.mark.parametrize('outcome', ['success', 'provider_failure', 'before_quote_failure', 'source_race'])
+def test_composed_quote_lease_is_released_on_every_construction_exit(tmp_path, outcome):
+    from tests.unit.application.test_intraday_discovery_operation import _configured_shared
+    from tests.unit.provider.test_shared_provider_runtime import _authenticate
+    from kronos.provider.runtime import ReadOnlyProviderOperation
+    app, kw, inputs, authority = wired(tmp_path)
+    shared, provider, _, _ = _configured_shared()
+    _authenticate(shared)
+    requests = []
+    def full_quotes(*args, **kwargs):
+        requests.append(kwargs['request_identity'])
+        if outcome == 'provider_failure':
+            raise ValueError('ISOLATED_QUOTE_FAILURE')
+        return kw['provider'].full_quotes(*args, **kwargs)
+    provider.capability.full_quotes = full_quotes
+    handoff = kw['adapter'].wo09
+    def acquire(h, p):
+        lease = shared.acquire_lease(consumer_identity='INTRADAY_WO10_FUTURES',
+            operations=frozenset({ReadOnlyProviderOperation.QUOTE}))
+        assert shared.active_lease_count == 1
+        value = dict(inputs, provider=lease)
+        if outcome == 'before_quote_failure':
+            value['authority_source'] = None
+        if outcome == 'source_race':
+            app.wo09.mark_currentness(h.canonical_subject_identity, CurrentnessState.REASSESSMENT_DUE,
+                updated_at=NOW + timedelta(seconds=1), expected=app.wo09.expectation(h.canonical_subject_identity))
+        return value
+    app.acquisition_source = acquire
+    if outcome == 'source_race':
+        with pytest.raises(ValueError):
+            app.construct_current(handoff_identity=handoff.handoff_identity, request_identity='LEASE-EXIT')
+    else:
+        result = app.construct_current(handoff_identity=handoff.handoff_identity, request_identity='LEASE-EXIT')
+        assert result.schema == ('WO10_SPONSOR_COMPARISON_V1' if outcome == 'success'
+                                  else 'WO10_CONSTRUCTION_UNAVAILABLE_V1')
+    assert shared.active_lease_count == 0
+    assert len(requests) == (1 if outcome in {'success', 'provider_failure'} else 0)

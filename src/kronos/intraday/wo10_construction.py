@@ -7,6 +7,11 @@ from kronos.intraday.wo09_readiness import (
     CriterionId, CriterionState, HardGate, POLICY_IDENTITY, POLICY_VERSION, POLICY_CHECKSUM,
 )
 from kronos.intraday.wo09_persistence import CurrentPointer
+from kronos.intraday.wo09_experimental import (
+    ExperimentalNextWoHandoff, ExperimentalReadinessRecord,
+    POLICY_IDENTITY as EXPERIMENTAL_POLICY, POLICY_VERSION as EXPERIMENTAL_VERSION,
+    POLICY_CHECKSUM as EXPERIMENTAL_CHECKSUM, AUTHORITY as EXPERIMENTAL_AUTHORITY,
+)
 from kronos.intraday.historical_semantic import SemanticDirection
 from kronos.intraday.universe import IntradayMarketFamily
 from kronos.intraday.wo13_handoff import Wo13SetupFamily
@@ -14,7 +19,8 @@ from kronos.intraday.wo10_futures_contract import record, digest, fresh, PROGRAM
 
 
 def validate_intake(handoff, readiness, pointer, *, now, session_identity):
-    if (type(handoff) is not NextWoHandoff or type(readiness) is not ReadinessRecord
+    experimental = type(handoff) is ExperimentalNextWoHandoff and type(readiness) is ExperimentalReadinessRecord
+    if (not experimental and (type(handoff) is not NextWoHandoff or type(readiness) is not ReadinessRecord)
             or type(pointer) is not CurrentPointer):
         raise ValueError("WO10_EXACT_WO09_TYPES_REQUIRED")
     for value in (handoff, readiness, pointer):
@@ -38,7 +44,8 @@ def validate_intake(handoff, readiness, pointer, *, now, session_identity):
             or readiness.direction != ("LONG" if readiness.readiness_state is ReadinessState.BUY_NOW else "SHORT")
             or readiness.session_identity != session_identity
             or (readiness.policy_identity, readiness.policy_version, readiness.policy_checksum)
-               != (POLICY_IDENTITY, POLICY_VERSION, POLICY_CHECKSUM)):
+               != ((EXPERIMENTAL_POLICY, EXPERIMENTAL_VERSION, EXPERIMENTAL_CHECKSUM) if experimental else
+                   (POLICY_IDENTITY, POLICY_VERSION, POLICY_CHECKSUM))):
         raise ValueError("WO10_WO09_NOT_EXACT_CURRENT_FIVE_OF_FIVE")
     names = ("policy_identity", "policy_version", "policy_checksum", "canonical_subject_identity",
              "market_family", "direction", "exact_mcx_contract_identity", "exact_mcx_roll_lineage",
@@ -49,6 +56,12 @@ def validate_intake(handoff, readiness, pointer, *, now, session_identity):
             or handoff.readiness_integrity != readiness.integrity_identity
             or any(getattr(handoff, n) != getattr(readiness, n) for n in names)):
         raise ValueError("WO10_HANDOFF_LINEAGE_MISMATCH")
+    if experimental:
+        if (handoff.authority != EXPERIMENTAL_AUTHORITY or readiness.authority != EXPERIMENTAL_AUTHORITY
+                or any(getattr(handoff, name) != getattr(readiness, name) for name in
+                    ('methodology_identity', 'methodology_version', 'methodology_checksum',
+                     'wo08_identity', 'wo08_integrity', 'opportunity_identity', 'first_five_document'))):
+            raise ValueError('WO10_EXPERIMENTAL_PAPER_SCOPE_REQUIRED')
     if (handoff.first_five_of_five_at is None
             or handoff.first_five_of_five_at > readiness.created_at
             or not fresh(handoff.first_five_of_five_at, now, 300)
@@ -93,7 +106,7 @@ class Wo10ConstructionAdapter:
                 and native["roll_lineage"]==self.wo09.exact_mcx_roll_lineage
                 and self.setup_family is Wo13SetupFamily.INTRADAY_PULLBACK_CONTINUATION)
             if not native_bound:raise ValueError("WO10_NATIVE_SELECTION_INVALID")
-        if (type(self.wo09) is not NextWoHandoff or self.programme_identity != PROGRAMME
+        if (type(self.wo09) not in {NextWoHandoff, ExperimentalNextWoHandoff} or self.programme_identity != PROGRAMME
                 or not native_bound and self.setup_evidence_identity not in self.wo09.machine_evidence_identities
                 or self.canonical_subject_identity != self.wo09.canonical_subject_identity
                 or self.inherited_direction.value != self.wo09.direction

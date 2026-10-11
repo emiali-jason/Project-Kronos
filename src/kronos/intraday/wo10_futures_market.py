@@ -7,6 +7,7 @@ from kronos.provider.instrument_master import ProviderInstrumentSnapshot, Provid
 from kronos.provider.contracts.full_quote import FullQuote
 from kronos.instrument.runtime import RuntimeInstrument, ProviderBindingStatus, InstrumentFreshness
 from kronos.instrument.active_derivative import ActiveDerivativeBindingArtifact
+from kronos.intraday.wo10_reconciled_underlying import ReconciledNseUnderlying
 from kronos.intraday.wo14 import Wo14InstrumentEconomics
 from kronos.market.schedule import MarketSessionFact, MarketSessionState
 from kronos.intraday.wo10_futures_contract import record, require, number, moment, fresh, normalize
@@ -75,21 +76,24 @@ def select_future(master, handoff, session, *, now, underlying=None, active_mcx=
                 monetary_reason = None
         active = active_mcx
     else:
-        if type(underlying) is not RuntimeInstrument:
-            raise ValueError("WO10_CANONICAL_UNDERLYING_REQUIRED")
-        underlying.__post_init__()
-        if (underlying.canonical.canonical_instrument_id != subject
-                or underlying.canonical_freshness is not InstrumentFreshness.CURRENT
-                or underlying.binding_status is not ProviderBindingStatus.BOUND
-                or not underlying.canonical.source_boundary <= now <= underlying.canonical.valid_through
-                or not underlying.provider_binding.source_boundary <= now <= underlying.provider_binding.valid_through):
-            raise ValueError("WO10_UNDERLYING_BINDING_INVALID")
-        binding = underlying.provider_binding
-        rows = [x for x in master.records if x.provider_instrument_token == binding.provider_instrument_token
-                and x.provider == binding.provider and x.trading_symbol == binding.provider_symbol and x.exchange == "NSE"]
-        if len(rows) != 1:
-            raise ValueError("WO10_UNDERLYING_MASTER_CONFLICT")
-        under_record = rows[0]
+        if type(underlying) is ReconciledNseUnderlying:
+            under_record = underlying.resolve(master, handoff, now)
+        else:
+            if type(underlying) is not RuntimeInstrument:
+                raise ValueError("WO10_CANONICAL_UNDERLYING_REQUIRED")
+            underlying.__post_init__()
+            if (underlying.canonical.canonical_instrument_id != subject
+                    or underlying.canonical_freshness is not InstrumentFreshness.CURRENT
+                    or underlying.binding_status is not ProviderBindingStatus.BOUND
+                    or not underlying.canonical.source_boundary <= now <= underlying.canonical.valid_through
+                    or not underlying.provider_binding.source_boundary <= now <= underlying.provider_binding.valid_through):
+                raise ValueError("WO10_UNDERLYING_BINDING_INVALID")
+            binding = underlying.provider_binding
+            rows = [x for x in master.records if x.provider_instrument_token == binding.provider_instrument_token
+                    and x.provider == binding.provider and x.trading_symbol == binding.provider_symbol and x.exchange == "NSE"]
+            if len(rows) != 1:
+                raise ValueError("WO10_UNDERLYING_MASTER_CONFLICT")
+            under_record = rows[0]
         # Index future family names are exact commissioned catalogue identities.
         family = {"NSE-INDEX-NIFTY": "NIFTY", "NSE-INDEX-BANKNIFTY": "BANKNIFTY"}.get(subject, under_record.trading_symbol)
         candidates = [x for x in master.records if x.exchange == "NFO" and x.segment == "NFO-FUT"

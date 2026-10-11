@@ -92,8 +92,10 @@ class IntradayFuturesApplication:
             return self._unavailable(handoff, request_identity, "WO10_ACQUISITION_COMPOSITION_UNAVAILABLE", plan=plan,
                                      state="FUTURE_SNAPSHOT_UNAVAILABLE")
         self._guard(); self._intake(handoff, self.clock())
+        provider_lease = None
         try:
             inputs = self.acquisition_source(handoff, plan)
+            provider_lease = inputs.get("provider")
             if not callable(inputs.get("authority_source")):
                 raise ValueError("WO10_CURRENT_MARKET_AUTHORITY_UNAVAILABLE")
             comparison = self.evaluate(request_identity=request_identity, adapter=adapter, geometry_evidence=evidence,
@@ -103,6 +105,14 @@ class IntradayFuturesApplication:
         except (ValueError, OSError, KeyError, TypeError) as error:
             reason = str(error) if isinstance(error, ValueError) else "WO10_ACQUISITION_INPUT_UNAVAILABLE"
             return self._unavailable(handoff, request_identity, reason, plan=plan, state="FUTURE_SNAPSHOT_UNAVAILABLE")
+        finally:
+            # The acquisition source transfers its explicit quote lease to this
+            # construction attempt. Release on success, pre-quote rejection,
+            # source races and Provider failure; direct evaluate inputs remain
+            # caller-owned and no arbitrary supplied provider is closed.
+            from kronos.provider.runtime import ReadOnlyProviderLease
+            if type(provider_lease) is ReadOnlyProviderLease:
+                provider_lease.release()
         self.store.retain(record("WO10_CONSTRUCTION_OPERATION_V1", request_identity=request_identity,
             handoff_identity=handoff_identity, native_selection_identity=selection.identity,
             native_selection_integrity=selection.integrity, target_population_identity=selection.data["target_population_identity"],

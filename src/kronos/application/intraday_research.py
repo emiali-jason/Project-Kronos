@@ -261,7 +261,7 @@ class IntradayResearchApplication:
         from kronos.application.intraday_wo08_research import associate_assessments, research_metrics
         associations = associate_assessments(assessments=self.wo08, shadow=self.wo08_shadow,
             probables=self.probables, origins=origins, readiness=readiness_history,
-            futures=self.futures, lifecycle=self.lifecycle)
+            futures=self.futures, lifecycle=self.lifecycle, watch_store=self.wo09)
         all_associations = associations
         associations = tuple(item for item in associations if
             datetime.fromisoformat(item.data["analysis_boundary"]).astimezone(IST).strftime("%Y_%m") == month)
