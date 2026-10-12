@@ -399,14 +399,14 @@ class IntradayBrowserRoutes:
     ) -> BrowserRouteResponse | None:
         if self._wo08_projection is not None:
             from kronos.browser.intraday_wo08 import (
-                WO08_STATUS_ROUTE, HISTORY_ROUTE, HISTORY_ARTIFACT_ROUTE, render_machine_review,
+                WO08_STATUS_ROUTE, HISTORY_ROUTE, HISTORY_ARTIFACT_ROUTE, render_machine_review, render_sponsor_opportunities,
             )
             if request.path == REVIEW_V2_STATUS_ROUTE:
                 from kronos.browser.intraday_wo08 import RETIREMENT_REASON
                 return BrowserRouteResponse(json.dumps({"state": "HISTORICAL_ONLY",
                     "new_work_authority": "RETIRED", "reason": RETIREMENT_REASON,
                     "historical_evidence_route": HISTORY_ROUTE}), content_type="application/json; charset=utf-8")
-            if request.path in {WO08_STATUS_ROUTE, "/intraday/review", HISTORY_ROUTE, HISTORY_ARTIFACT_ROUTE}:
+            if request.path in {WO08_STATUS_ROUTE, "/intraday", "/intraday/review", HISTORY_ROUTE, HISTORY_ARTIFACT_ROUTE}:
                 try:
                     if request.path == HISTORY_ROUTE:
                         if request.query or self._visual_history is None:
@@ -422,8 +422,20 @@ class IntradayBrowserRoutes:
                             raise ValueError("WO08_STATUS_REQUEST_INVALID")
                         return BrowserRouteResponse(json.dumps(document, default=str),
                             content_type="application/json; charset=utf-8")
+                    readiness = {} if self._wo09_projection is None else self._wo09_projection.status_document()
+                    if request.path == "/intraday":
+                        control = self._probables_v2_control
+                        latest = None if control is None else control.latest_evaluable_run()
+                        refresh = None if control is None else control.status_document(latest_evaluable_run=latest)
+                        if refresh is not None and refresh.get("current_analysis_identity") != document["current_probables_run_identity"]:
+                            raise ValueError("WO08_PAGE_SOURCE_CHANGED")
+                        if document != self._wo08_projection.status_document():
+                            raise ValueError("WO08_PAGE_SOURCE_CHANGED")
+                        return BrowserRouteResponse(render_sponsor_opportunities(snapshot_provider(), document, readiness,
+                            market_availability=() if control is None else control.market_availability(),
+                            refresh_status=refresh, latest_evaluable_run=latest))
                     return BrowserRouteResponse(render_machine_review(snapshot_provider(), document,
-                        {} if self._wo09_projection is None else self._wo09_projection.status_document(),
+                        readiness,
                         candidate=request.query.get("candidate", [None])[0]))
                 except (ValueError, OSError, ReviewError) as error:
                     return BrowserRouteResponse(json.dumps({"outcome": "UNAVAILABLE",

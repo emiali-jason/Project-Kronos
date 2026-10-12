@@ -119,8 +119,8 @@ _MACHINE_REVIEW_CSS = """
 """
 
 
-def _machine_table(rows, readiness, *, candidate=None, retained=False):
-    from kronos.intraday.sponsor_presentation import security_name, waiting_for, CRITERION_NAMES, criterion_explanation
+def _machine_table(rows, readiness, *, candidate=None, retained=False, current_assessments=()):
+    from kronos.intraday.sponsor_presentation import security_name, waiting_for, CRITERION_NAMES, criterion_explanation, opportunity_label
     details = readiness.get('analysis_details', {})
     body = []
     for row in rows:
@@ -142,10 +142,12 @@ def _machine_table(rows, readiness, *, candidate=None, retained=False):
         label = ('5/5 Now' if state in {'BUY_NOW', 'SELL_NOW'} else '4/5 Ready' if state in {'BUY_READY', 'SELL_READY'} else
                  'Awaiting assessment evidence' if state == 'READINESS_UNAVAILABLE' else
                  'Not admitted' if row.get('failure_reason') == 'PROBABLES_NOT_ADMITTED' else 'Under consideration')
+        if not retained and opportunity_label(card) is not None:
+            label = opportunity_label(card)
         bindings = observation.get('selective_watch', ())
         watch = 'RETAINED WATCH' if bindings else 'NOT_RETAINED'
         monitoring = observation.get('monitoring') or dict(state='UNAVAILABLE', reason='Authoritative monitoring state is unavailable.')
-        if retained:
+        if retained and row['identity'] not in current_assessments:
             monitoring = dict(state='INACTIVE', reason='Retained evidence is not a current opportunity.')
         first = observation.get('first_five_at')
         reason = row.get('failure_reason') or row['disposition']
@@ -156,7 +158,7 @@ def _machine_table(rows, readiness, *, candidate=None, retained=False):
         body.append('<tr id="review-candidate-' + identity + '"' + focus + '><td><strong>'
             + escape(security_name(row['subject'])) + '</strong><span class="sub">' + escape(row['market_family'])
             + ('' if contract is None else ' · ' + escape(contract)) + '</span></td><td>'
-            + escape(str(row.get('direction') or 'Unavailable')) + '</td><td>' + escape(score)
+            + escape(str(row.get('direction') or 'Unavailable')) + '</td><td>' + escape(score.replace(' / ', '/'))
             + '</td><td><strong>' + escape(label) + '</strong></td><td>' + escape(waiting_for(row['criteria']))
             + '</td><td><strong>' + escape(monitoring['state']) + '</strong><span class="sub">' + escape(monitoring['reason'])
             + ('' if not monitoring.get('since') else '<span class="sub">Since · ' + escape(monitoring['since']) + '</span>')
@@ -185,45 +187,61 @@ def _machine_table(rows, readiness, *, candidate=None, retained=False):
         + '</tr></thead><tbody>' + ''.join(body) + '</tbody></table>')
 
 
-def render_machine_review(snapshot, status, readiness, *, candidate=None):
-    from kronos.browser.views import render_browser_page
-    from kronos.browser.intraday_views import _INTRADAY_CSS, _intraday_tabs, _readiness_body
+def _opportunity_body(status, readiness, *, candidate=None):
+    from kronos.browser.intraday_views import _readiness_body
+    from kronos.intraday.sponsor_presentation import opportunity_label
     rows = status['assessments']
     operational = readiness.get('operational_summary')
-    current_ids = None if operational is None else set(operational.current_readiness)
+    current_ids = (None if operational is None or operational.ready is None or operational.now is None
+                   else set(operational.current_readiness))
     current_assessments = {readiness.get('analysis_details', {}).get(identity, {}).get('A. MACHINE WO08 ASSESSMENT', {}).get('identity')
         for identity in current_ids or ()}
-    current, other = [], []
+    current, considered, other = [], [], []
+    cards = {readiness.get("analysis_details", {}).get(card.readiness_identity, {}).get(
+        "A. MACHINE WO08 ASSESSMENT", {}).get("identity"): card
+        for card in readiness.get("cards", ()) if card.source_authority == "WO08"}
     for row in rows:
         eligible = status['currentness'] == 'SOURCE_LINEAGE_CURRENT' and current_ids is not None and row['identity'] in current_assessments
-        (current if eligible and row.get('probables_state') in {'LONG_PROBABLE','SHORT_PROBABLE'} else other).append(row)
+        admitted_current = eligible and row.get('probables_state') in {'LONG_PROBABLE', 'SHORT_PROBABLE'}
+        if admitted_current:
+            considered.append(row)
+        (current if admitted_current and opportunity_label(cards.get(row['identity'])) is not None else other).append(row)
     from collections import Counter
     from kronos.intraday.sponsor_presentation import exclusion_reason
     admitted = [row for row in rows if row.get('probables_state') in {'LONG_PROBABLE', 'SHORT_PROBABLE'}]
     unavailable = [row for row in rows if row.get('probables_state') not in {'LONG_PROBABLE', 'SHORT_PROBABLE'}
                    and 'UNAVAILABLE' in str(row.get('probables_state', ''))]
     not_admitted = len(rows) - len(admitted) - len(unavailable)
-    funnel = '<div class="facts" aria-label="Analysis funnel">' + ''.join(
+    labels = [opportunity_label(cards[row['identity']]) for row in current]
+    known = operational is not None and operational.ready is not None and operational.now is not None
+    funnel = '<div class="facts attention-funnel" aria-label="Sponsor opportunity funnel">' + ''.join(
+        '<div><span>' + label + '</span><strong>' + (str(labels.count(label)) if known else '—')
+        + '</strong></div>' for label in ('NEAR READY', 'READY', 'NOW')) + '</div>'
+    funnel += '<details><summary>Analysis accounting · ' + str(len(rows)) + ' analysed</summary>'
+    funnel += '<div class="facts" aria-label="Analysis funnel">' + ''.join(
         '<div><span>' + label + '</span><strong>' + str(value) + '</strong></div>' for label, value in (
-            ('Analysed', len(rows)), ('Considered', len(current)),
+            ('Analysed', len(rows)), ('Considered', len(considered)),
             ('Ready', '—' if operational is None or operational.ready is None else operational.ready),
             ('Now', '—' if operational is None or operational.now is None else operational.now),
-            ('Not Admitted', not_admitted), ('Unavailable', len(unavailable)))) + '</div>'
+            ('Not Admitted', not_admitted), ('Unavailable', len(unavailable)))) + '</div></details>'
     reasons = Counter(row.get('failure_reason') or row.get('disposition', 'UNAVAILABLE') for row in other)
     reason_summary = '<ul>' + ''.join('<li>' + escape(exclusion_reason(reason)) + ' · ' + str(count)
         + '<details><summary>Technical details</summary>' + escape(reason) + '</details></li>'
         for reason, count in sorted(reasons.items())) + '</ul>'
     method = next((row for row in current), next(iter(rows), None))
     method_text = ('KRONOS-INTRADAY-WO08-EXPERIMENTAL-PULLBACK-PAPER / 0.1.0' if method is None else str(method['methodology_identity']) + ' / ' + str(method['methodology_version']))
-    scope = 'Session eligibility not assessed' if operational is None else operational.state.replace('_', ' ')
-    body = (_intraday_tabs(False, active='review') + '<section class="machine-review">'
+    scope = ('Current opportunity eligibility unavailable' if operational is None or operational.ready is None
+             else 'Current session verified' if operational.state == 'CURRENT_SESSION_VERIFIED'
+             else 'No current session opportunities')
+    body = ('<section class="machine-review">'
         + funnel + '<div class="method"><span class="chip paper">EXPERIMENTAL PAPER</span><span class="chip">'
         + escape(scope) + '</span><details><summary>Method · Technical details</summary>' + escape(method_text) + '</details></div>'
         + (_machine_table(current, readiness, candidate=candidate) if current else
-            '<div class="empty"><strong>NO CURRENT MACHINE ASSESSMENT</strong><p>Run Analysis to evaluate current opportunities.</p></div>')
-        + ('<details><summary>Not Admitted / Unavailable / Retained · ' + str(len(other)) + '</summary><p class="secondary">'
-            + 'Complete population accountability, including non-admitted, superseded or session-unverified evidence.</p>' + reason_summary
-            + _machine_table(other, readiness, candidate=candidate, retained=True) + '</details>' if other else '')
+            '<div class="empty"><strong>No current NEAR READY, READY or NOW opportunities.</strong><p>Retained evidence remains available in Diagnostics. Only current governed 3/5, 4/5 and 5/5 assessments appear here.</p></div>')
+        + ('<details id="intraday-diagnostics"><summary>Diagnostics / Full Analysis · ' + str(len(other)) + '</summary><p class="secondary">'
+            + 'Complete population accountability. Lower scores, hard-gated, unavailable and historical evidence remain readable here. Not Admitted / Unavailable / Retained.</p>' + reason_summary
+            + _machine_table(other, readiness, candidate=candidate, retained=True,
+                current_assessments={row['identity'] for row in considered}) + '</details>' if other else '')
         + '<details><summary>Method, status and authority</summary><div class="secondary">'
         + '<p>Source lineage · ' + escape(status['currentness']) + '. Source lineage alone does not establish current session eligibility.</p>'
         + '<p>WO08 supplies I1–I5. WO09 owns readiness. Chart Analyst is not required for new Intraday work. '
@@ -238,9 +256,38 @@ def render_machine_review(snapshot, status, readiness, *, candidate=None):
         + (_readiness_body(dict(active_attention=(), historical_cards=readiness.get('historical_cards', ()),
             historical_analysis_details=readiness.get('historical_analysis_details', {}))) if readiness.get('historical_cards') else '')
         + '</details></section>')
-    return render_browser_page(title='Intraday — Machine Review', subtitle='Current considered opportunities and complete Analysis accountability',
-        snapshot=snapshot, active_nav='Intraday', active_tab='Review', body=body,
+    return body
+
+
+def render_machine_review(snapshot, status, readiness, *, candidate=None):
+    from kronos.browser.views import render_browser_page
+    from kronos.browser.intraday_views import _INTRADAY_CSS, _intraday_tabs
+    return render_browser_page(title='Intraday — Machine Review', subtitle='Current opportunity detail and complete retained Analysis evidence',
+        snapshot=snapshot, active_nav='Intraday', active_tab='Review',
+        body=_intraday_tabs(False, active='review') + _opportunity_body(status, readiness, candidate=candidate),
         extra_styles=_INTRADAY_CSS + _MACHINE_REVIEW_CSS)
+
+
+def render_sponsor_opportunities(snapshot, status, readiness, *, market_availability=(), refresh_status=None, latest_evaluable_run=None):
+    from kronos.browser.views import render_browser_page
+    from kronos.browser.intraday_views import (_INTRADAY_CSS, _INTRADAY_STATISTICS_CSS, _intraday_tabs,
+        _render_market_availability, _status_time)
+    enabled = (snapshot.provider_state.value == 'CONNECTED'
+        and (not market_availability or any(item.available for item in market_availability)))
+    control = refresh_status or {}
+    attempt = control.get('last_refresh_attempt') or {}
+    boundary = None if latest_evaluable_run is None else latest_evaluable_run.analysis_boundary.isoformat()
+    retained_date = _status_time(boundary)
+    freshness = ('<details><summary>Analysis history · last retained successful boundary ' + escape(retained_date)
+        + '</summary><p>Last refresh attempt · ' + escape(_status_time(attempt.get('attempted_at')))
+        + ' · ' + escape(str(attempt.get('outcome') or 'Not yet run')) + '</p>'
+        + '<p>Retained Analysis is evidence of its original boundary. Current opportunity eligibility is checked separately.</p></details>')
+    body = (_intraday_tabs(enabled, statistics=True) + _render_market_availability(market_availability)
+        + freshness + _opportunity_body(status, readiness))
+    return render_browser_page(title='Intraday Opportunities', subtitle='Near Ready · Ready · Now — current governed PAPER opportunities',
+        snapshot=snapshot, active_nav='Intraday', active_tab='Opportunities', body=body,
+        extra_styles=_INTRADAY_CSS + _INTRADAY_STATISTICS_CSS + _MACHINE_REVIEW_CSS)
+
 
 
 class _HistoricalLegacyStore(IntradayReviewStore):

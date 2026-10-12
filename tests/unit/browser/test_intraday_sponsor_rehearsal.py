@@ -55,8 +55,10 @@ def test_retained_98_source_graph_and_sponsor_surfaces(tmp_path,monkeypatch):
         options = {}
         if i == 0: options['five_rows']=[(108,102,106)]*25+[(115,110,113),(117,114,116)]
         elif i == 1: options['daily']=(116,85,100.5)  # lawful I3-only outstanding
-        elif i == 3:
-            options.update(five_rows=[(108,102,106)]*25+[(115,110,113),(117,114,116)],daily=(116,85,100.5))  # I2 + I3 outstanding
+        elif i in (3,4):
+            options.update(five_rows=[(108,102,106)]*25+[(115,110,113),(117,114,116)],daily=(118,92,105))  # I2 + I3 outstanding
+        elif i == 5:
+            options.update(five_rows=[(108,102,106)]*25+[(115,110,113),(117,114,116)],daily=(116,85,100.5))
         elif i >= 11: options['rows']=[(110,100,105)]*9  # no directional 15M qualification
         _,f,m,original,_,_=experimental_fixture('SHORT',subject=subject,
             session=domain008_session(calendar,subject,now).schedule.session_id,member='MEMBER'+str(i),**options)
@@ -120,7 +122,7 @@ def test_retained_98_source_graph_and_sponsor_surfaces(tmp_path,monkeypatch):
     if destination:(Path(destination)/'machine-review-production-shaped.html').write_text(html)
     assert 'Analysed</span><strong>98' in html and 'Considered</span><strong>11' in html, doc['operational_summary']
     assert 'Not Admitted</span><strong>80' in html and 'Unavailable</span><strong>7' in html
-    assert '3 / 5' in html and '4/5 Ready' in html and '5/5 Now' in html
+    assert '3/5' in html and 'READY' in html and 'NOW' in html and '5/5' in html
     base=project_sponsor_dashboard(_snapshot(),None,(),NotificationWorkspaceSnapshot(()))
     pages={'machine-review-production-shaped':html,'dashboard-production-shaped':render_dashboard(_snapshot(),replace(base,intraday=summary()))}
     after={str(p.relative_to(tmp_path)):sha256(p.read_bytes()).hexdigest() for p in tmp_path.rglob('*.json')}
@@ -156,6 +158,7 @@ def test_retained_98_source_graph_and_sponsor_surfaces(tmp_path,monkeypatch):
     import kronos.intraday.wo09_experimental as experimental_module
     import kronos.intraday.wo09_machine_readiness as machine_module
     calls=[]
+    http_routes=[]
     def forbidden(*args,**kwargs):
         calls.append('FORBIDDEN_PROVIDER_OR_EVALUATOR_CALL')
         raise AssertionError('status GET invoked Provider synchronization or readiness evaluation')
@@ -182,6 +185,7 @@ def test_retained_98_source_graph_and_sponsor_surfaces(tmp_path,monkeypatch):
             guard.setattr(SharedAuthenticatedProviderRuntime,'_SharedAuthenticatedProviderRuntime__synchronize_locked',forbidden)
             guard.setattr(SharedAuthenticatedProviderRuntime,'_SharedAuthenticatedProviderRuntime__revoke_locked',forbidden)
             def get(route):
+                http_routes.append(route)
                 from http.client import HTTPConnection
                 connection=HTTPConnection('127.0.0.1',server.server_port,timeout=30)
                 connection.request('GET',route)
@@ -190,10 +194,10 @@ def test_retained_98_source_graph_and_sponsor_surfaces(tmp_path,monkeypatch):
                 connection.close()
                 assert response.status==200,(route,response.status)
                 return page
-            for route in ('/dashboard','/intraday/review','/intraday/wo09',
+            for route in ('/dashboard','/intraday','/intraday/review','/intraday/wo09',
                           '/notifications/intraday','/notifications/status?product=INTRADAY')*2:
                 page=get(route)
-                if route in {'/dashboard','/intraday/review','/notifications/intraday'}:
+                if route in {'/dashboard','/intraday','/intraday/review','/notifications/intraday'}:
                     assert 'ACTIVE' in page and 'UNAVAILABLE' in page
             assert watch.monitoring_projection(bajaj.readiness_identity)['state']=='ACTIVE'
             assert watch.runtime_status_document()['attached_observers']==1
@@ -261,7 +265,7 @@ def test_retained_98_source_graph_and_sponsor_surfaces(tmp_path,monkeypatch):
         (out/'rehearsal.json').write_text(json.dumps(dict(population=98,considered=11,not_admitted=80,unavailable=7,
             now=summary().now,ready=summary().ready,states=['ACTIVE','INACTIVE','UNAVAILABLE'],
             telegram_intercepted=len(messages),real_telegram=0,provider_acquisition=0,historical_source_bytes_unchanged=before==after,
-            actual_shared_provider_lease=True,inert_http_gets=31,provider_status_sync_revoke_calls=len(calls),
+            actual_shared_provider_lease=True,inert_http_gets=len(http_routes),provider_status_sync_revoke_calls=len(calls),
             native_source_fail_closed_cases=native_failures,
             expired_and_unavailable_gets_preserve_lease_and_owners=True),indent=2))
     assert not capability.active  # unchanged action-time expiry/revocation

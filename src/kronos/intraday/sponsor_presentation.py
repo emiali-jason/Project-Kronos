@@ -3,6 +3,24 @@ CRITERION_NAMES = {'I1': 'Direction Support', 'I2': 'Follow-through',
                    'I3': 'Path Clearance', 'I4': 'Structural Quality', 'I5': 'Extension'}
 
 
+def opportunity_label(card):
+    """INT-D attention vocabulary over an already validated WO09 card.
+
+    A score alone never overrides a hard gate or unavailable readiness.
+    This is presentation only; it neither evaluates criteria nor grants work.
+    """
+    if card is None or card.source_authority != 'WO08' or card.monitorability_state != 'CURRENT':
+        return None
+    if card.score == '3 / 5' and card.readiness_state == 'NEAR_READY':
+        return 'NEAR READY'
+    prefix = {'LONG': 'BUY', 'SHORT': 'SELL'}.get(card.direction)
+    if prefix and card.score == '4 / 5' and card.readiness_state == prefix + '_READY':
+        return 'READY'
+    if prefix and card.score == '5 / 5' and card.readiness_state == prefix + '_NOW':
+        return 'NOW'
+    return None
+
+
 def security_name(subject):
     for prefix in ('NSE-EQ-', 'NSE-INDEX-', 'NSE-', 'MCX-SUBJECT-'):
         if subject.startswith(prefix):

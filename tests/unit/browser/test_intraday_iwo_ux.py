@@ -128,7 +128,7 @@ def presentation_fixture(tmp_path):
 def test_compact_machine_details_history_and_paper_authority(tmp_path):
     status, readiness = presentation_fixture(tmp_path)
     html = render_machine_review(_snapshot(),status,readiness)
-    for value in ('I1','I2','I3','I4','I5','5/5 Now','4/5 Ready','Assessment Price · UNAVAILABLE',
+    for value in ('I1','I2','I3','I4','I5','NOW','READY','5/5','4/5','Assessment Price · UNAVAILABLE',
                   'First-five','I2 — Follow-through','RETAINED WATCH','NOT_RETAINED','Criterion details','SATISFIED','OUTSTANDING','UNAVAILABLE',
                   'Historical Chart Analyst Evidence','Question Packs, Answers and WO07F','EXPERIMENTAL PAPER','0.1.0','Method and evidence'):
         assert value in html
@@ -144,9 +144,9 @@ def test_machine_without_session_authority_keeps_rows_secondary(tmp_path):
     status, readiness = presentation_fixture(tmp_path)
     readiness.pop('operational_summary')
     html = render_machine_review(_snapshot(),status,readiness)
-    assert 'NO CURRENT MACHINE ASSESSMENT' in html
-    assert 'Not Admitted / Unavailable / Retained · 3' in html
-    assert 'Session eligibility not assessed' in html
+    assert 'No current NEAR READY, READY or NOW opportunities.' in html
+    assert 'Diagnostics / Full Analysis · 3' in html
+    assert 'Current opportunity eligibility unavailable' in html
 
 
 def test_dashboard_aligns_density_preserves_swing_and_navigation():
