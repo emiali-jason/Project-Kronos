@@ -1717,15 +1717,25 @@ def recovery_orchestration_probe(tmp_path_factory):
     source = original.replace('int main(void) {', 'int unused_application_main(void) {')
     source += r'''
 static const char *fault;
+static int history_mode=0;
 static int calls_assess=0,calls_continuity=0,calls_binding=0,calls_verify=0,calls_package=0;
 static int shutdowns=0,starts=0,reservations=0;
 static int step(const char *name,int result) {printf("%s\n",name);return fault&&strcmp(fault,name)==0?0:result;}
-static int fake_control(pid_t *pid,char *token) {*pid=12985;memset(token,'d',64);token[64]=0;return step("control",1);}
+static int fake_control(pid_t *pid,char *token) {*pid=history_mode?18089:12985;memset(token,'d',64);token[64]=0;return step("control",1);}
 static int fake_authority(RecoveryAuthorization *a) {
-    memset(a,0,sizeof(*a));a->pid=12985;strcpy(a->predecessor,RECOVERY_PREDECESSOR);
+    memset(a,0,sizeof(*a));a->historical=history_mode;a->pid=history_mode?18089:12985;
+    strcpy(a->predecessor,history_mode?RECOVERY_HISTORY_PREDECESSOR:RECOVERY_PREDECESSOR);
     memset(a->package,'b',64);memset(a->rollback_identity,'c',64);strcpy(a->rollback,"/disposable/rollback.app");
-    snprintf(a->relation,sizeof(a->relation),"%s/Library/Application Support/KRONOS/evidence/intraday-v1/live-shadow-v1/epochs-v1/WO06H-SUCCESSOR_COMPATIBILITY-4f6aac6c3a9f59fe2e19b788fb6266fec1a239358e71f2abc9f9c9ac4c0731ef.json",getenv("HOME"));
-    a->valid_from=RECOVERY_START_US;a->valid_until=RECOVERY_END_US;
+    /* Independent fixture identities: never derive the expected filename from the production selector. */
+    const char *legacy="4f6aac6c3a9f59fe2e19b788fb6266fec1a239358e71f2abc9f9c9ac4c0731ef";
+    const char *historical="1a9a7b8b997447716f1b6f11b02fbcccf88fda2644b4a2af23604dbf5f293976";
+    int selected=strcmp(fault,"relation_swapped")==0?!history_mode:history_mode;
+    snprintf(a->relation,sizeof(a->relation),"%s/Library/Application Support/KRONOS/evidence/intraday-v1/live-shadow-v1/epochs-v1/WO06H-SUCCESSOR_COMPATIBILITY-%s.json",getenv("HOME"),selected?historical:legacy);
+    if(!strcmp(fault,"relation_elsewhere"))strcpy(a->relation,"/disposable/other/relation.json");
+    if(!strcmp(fault,"relation_suffix"))strcat(a->relation,".other");
+    if(!strcmp(fault,"relation_parent"))snprintf(a->relation,sizeof(a->relation),"%s/Library/Application Support/KRONOS/evidence/intraday-v1/live-shadow-v1/epochs-v1/../epochs-v1/WO06H-SUCCESSOR_COMPATIBILITY-%s.json",getenv("HOME"),selected?historical:legacy);
+    a->valid_from=history_mode?RECOVERY_END_US:RECOVERY_START_US;
+    a->valid_until=history_mode?RECOVERY_END_US+RECOVERY_HISTORY_MAX_VALIDITY_US:RECOVERY_END_US;
     return step("authorization",1);
 }
 static int fake_package(char *out) {calls_package++;memset(out,calls_package==1?'b':'c',64);out[64]=0;return step(calls_package==1?"installed":"rollback",1);}
@@ -1763,7 +1773,7 @@ static BackendStartResult fake_start(void) {
 #define recovery_attempt_matches(a,generation) step("attempt_readback",1)
 #define kill(pid,signal) fake_kill()
 #define recovery_listener_scan(pid,absent) step("listener_absent",1)
-#define recovery_now_us() (RECOVERY_START_US+1)
+#define recovery_now_us() (history_mode?RECOVERY_END_US+1:RECOVERY_START_US+1)
 #define start_backend(repository,python,entry,path,pid,token,generation,revision) fake_start()
 #define open_workspace() (step("open",1),0)
 #define show_restart_blocked() (step("blocked",1),1)
@@ -1777,7 +1787,7 @@ static BackendStartResult fake_start(void) {
     source += original.split('int main(void) {', 1)[1].join(['int exercise_main(void) {', ''])
     source += r'''
 int main(int argc,char **argv) {
-    if(argc!=2)return 2;fault=argv[1];
+    if(argc!=3)return 2;fault=argv[1];history_mode=!strcmp(argv[2],"v2");
     setenv("KRONOS_LAUNCH_MODE",RECOVERY_CLASS,1);
     setenv("KRONOS_RECOVERY_ATTEMPT","aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",1);
     setenv("KRONOS_REPLACEMENT_REVISION","bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",1);
@@ -1788,11 +1798,14 @@ int main(int argc,char **argv) {
     return executable
 
 
-@pytest.mark.parametrize("fault", ["none", "authorization", "installed", "rollback", "assess_initial", "continuity_before",
+@pytest.mark.parametrize("version", ["v1", "v2"])
+@pytest.mark.parametrize("fault", ["none", "canonical", "source", "target", "control",
+    "relation_swapped", "relation_elsewhere", "relation_suffix", "relation_parent",
+    "authorization", "installed", "rollback", "assess_initial", "continuity_before",
     "assess_final", "bindings_before", "reserve", "shutdown", "exit", "handoff_initial", "continuity_after",
     "bindings_after", "attempt_readback", "handoff_final", "listener_absent", "child_exit", "timeout", "internal"])
-def test_actual_recovery_main_orders_one_use_drain_and_one_successor(recovery_orchestration_probe, fault):
-    lines = subprocess.check_output([str(recovery_orchestration_probe), fault], text=True).splitlines()
+def test_actual_recovery_main_orders_one_use_drain_and_one_successor(recovery_orchestration_probe, fault, version):
+    lines = subprocess.check_output([str(recovery_orchestration_probe), fault, version], text=True).splitlines()
     result, reservations, shutdowns, starts = map(int, lines[-1].split()[1:])
     assert starts <= 1 and shutdowns <= 1 and reservations <= 1
     if fault == "none":
@@ -1803,6 +1816,9 @@ def test_actual_recovery_main_orders_one_use_drain_and_one_successor(recovery_or
     else:
         assert result == 1 and "open" not in lines
         assert starts == (1 if fault in ("child_exit", "timeout", "internal") else 0)
+        if fault in ("canonical", "source", "target", "control", "relation_swapped", "relation_elsewhere", "relation_suffix", "relation_parent"):
+            assert reservations == shutdowns == starts == 0
+            assert "installed" not in lines
         if fault in ("authorization", "installed", "rollback", "assess_initial", "continuity_before", "assess_final", "bindings_before", "reserve"):
             assert shutdowns == 0
 

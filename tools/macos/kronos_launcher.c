@@ -1689,7 +1689,9 @@ int main(void) {
         if (snprintf(root,sizeof(root),"%s/Library/Application Support/KRONOS/runtime/failed-active-recovery-v1",home)>=(int)sizeof(root) ||
             !recovery_control_record(control_path,&backend_pid,token) ||
             !recovery_load_authorization(root,recovery_attempt,control_path,backend_pid,target_revision,recovery_now_us(),&recovery_authority) ||
-            snprintf(relation,sizeof(relation),"%s/Library/Application Support/KRONOS/evidence/intraday-v1/live-shadow-v1/epochs-v1/WO06H-SUCCESSOR_COMPATIBILITY-4f6aac6c3a9f59fe2e19b788fb6266fec1a239358e71f2abc9f9c9ac4c0731ef.json",home)>=(int)sizeof(relation) ||
+            snprintf(relation,sizeof(relation),"%s/Library/Application Support/KRONOS/evidence/intraday-v1/live-shadow-v1/epochs-v1/WO06H-SUCCESSOR_COMPATIBILITY-%s.json",home,
+                recovery_authority.historical ? "1a9a7b8b997447716f1b6f11b02fbcccf88fda2644b4a2af23604dbf5f293976" :
+                    "4f6aac6c3a9f59fe2e19b788fb6266fec1a239358e71f2abc9f9c9ac4c0731ef")>=(int)sizeof(relation) ||
             strcmp(recovery_authority.relation,relation) ||
             !recovery_package_identity(repository,python,canonical_bundle,installed) || strcmp(installed,recovery_authority.package) ||
             !recovery_package_identity(repository,python,recovery_authority.rollback,rollback) || strcmp(rollback,recovery_authority.rollback_identity) ||
