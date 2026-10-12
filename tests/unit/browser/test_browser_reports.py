@@ -512,8 +512,9 @@ def test_reports_browser_route_and_filtered_exports_are_read_only(tmp_path) -> N
         response = connection.getresponse()
         body = response.read()
         connection.close()
-        assert response.status == 200
-        assert len(_xlsx_rows(body)) == 1
+        # INT-E: an absent Intraday Books owner is unavailable, never a valid empty book.
+        assert response.status == 503
+        assert b"unavailable" in body
         assert workflow.journal_snapshot().records == ()
     finally:
         server.shutdown(); thread.join(timeout=2); server.server_close()

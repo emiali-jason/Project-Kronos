@@ -152,7 +152,7 @@ def test_opportunities_control_is_compact_mobile_safe_and_get_is_inert() -> None
     assert response is not None and response.status.value == 200
     assert type(response.body) is str
     assert "STATISTICS / EXCEL" in response.body
-    assert 'href="/reports/export.xlsx?product=INTRADAY"' in response.body
+    assert 'href="/intraday/statistics"' in response.body
     assert response.body.count("intraday-statistics-export\"") == 1
     navigation = response.body.split(
         '<nav class="tabs intraday-tabs" aria-label="Intraday workflow">', 1

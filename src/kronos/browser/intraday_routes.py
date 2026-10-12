@@ -451,11 +451,15 @@ class IntradayBrowserRoutes:
             except (ReviewError, OSError, ValueError):
                 return BrowserRouteResponse("Exact current chart preview unavailable.",
                     status=HTTPStatus.NOT_FOUND, content_type="text/plain; charset=utf-8")
-        if request.path == RESEARCH_ROUTE:
-            if self._research_control is None or request.query:
+        if request.path in {RESEARCH_ROUTE, "/intraday/statistics"}:
+            if self._research_control is None or set(request.query) - {"month"} or any(len(v) != 1 for v in request.query.values()):
                 return BrowserRouteResponse("Not found.", status=HTTPStatus.NOT_FOUND,
                                             content_type="text/plain; charset=utf-8")
-            return BrowserRouteResponse(render_research(snapshot_provider(), self._research_control.status_document()))
+            try:
+                document = self._research_control.status_document(request.query.get("month", [None])[0])
+                return BrowserRouteResponse(render_research(snapshot_provider(), document, statistics=request.path.endswith("statistics")))
+            except (ValueError, OSError, KeyError, TypeError):
+                return BrowserRouteResponse("Monthly research evidence unavailable.", status=HTTPStatus.SERVICE_UNAVAILABLE)
         if request.path == RESEARCH_OPEN_ROUTE:
             if self._research_control is None or set(request.query) != {"month"} or len(request.query["month"]) != 1:
                 return BrowserRouteResponse("Not found.", status=HTTPStatus.NOT_FOUND,
@@ -470,6 +474,7 @@ class IntradayBrowserRoutes:
         if (
             request.path == INTRADAY_STATISTICS_EXPORT_ROUTE
             and "view" not in request.query  # WO16 explicit factual view uses shared Reports.
+            and "section" not in request.query  # INT-E research sections use their owning filtered export.
             and request.query.get("product") == ["INTRADAY"]
         ):
             if set(request.query) != {"product"}:

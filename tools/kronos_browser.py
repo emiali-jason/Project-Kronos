@@ -394,6 +394,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             lifecycle=intraday_runtime.lifecycle_application,
         )
         server.intraday_books.bind()
+        server.intraday_research_application = intraday_runtime.research_application
         intraday_runtime.wo17_monitoring.set_shared_monitoring_hub(
             server.swing_monitoring_hub
         )

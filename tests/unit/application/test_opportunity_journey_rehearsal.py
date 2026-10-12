@@ -89,6 +89,24 @@ def test_experimental_journey_workbook_from_ordinary_analysis(tmp_path,monkeypat
     from kronos.browser.intraday_research import export_research_workbook,validate_research_workbook
     workbook=export_research_workbook(projection)
     validate_research_workbook(workbook,projection)
+    # INT-E adds presentation only over this same canonical retained lifecycle.
+    from dataclasses import replace
+    from kronos.application.intraday_sponsor_reporting import sponsor_sheets
+    sponsor = replace(projection, workbook_version='2.4.0')
+    sponsor_workbook = export_research_workbook(sponsor)
+    validate_research_workbook(sponsor_workbook, sponsor)
+    sheets = {name: (columns, values) for name, columns, values in sponsor_sheets(sponsor)}
+    assert len(sheets['PAPER Positions'][1]) == len(sheets['Observations'][1]) == 1
+    assert len(sheets['Opportunity Journey'][1]) == len(projection.journey)
+    from kronos.application.intraday_sponsor_reporting import filtered_sheet
+    assert len(filtered_sheet(sponsor,'Opportunity Journey',truth='PAPER_POSITION',completion='INCOMPLETE')[2]) == 1
+    assert len(filtered_sheet(sponsor,'Opportunity Journey',truth='PAPER_OBSERVATION',completion='INCOMPLETE')[2]) == 1
+    from kronos.application.intraday_research import TRACK_COLUMNS
+    assert all(t[TRACK_COLUMNS.index('monitoring_complete')] is False for t in sponsor.tracks)
+    assert not filtered_sheet(sponsor,'Opportunity Journey',completion='COMPLETE')[2]
+    assert source_before == {str(p):sha256(p.read_bytes()).hexdigest() for p in (tmp_path/'evidence').rglob('*') if p.is_file()}
+    if request.config.option.xmlpath:
+        (Path(request.config.option.xmlpath).parent/f'INT_E_Sponsor_{direction}.xlsx').write_bytes(sponsor_workbook)
     from tests.unit.application.test_opportunity_journey import assert_journey_readback
     assert_journey_readback(workbook,projection.journey)
     if request.config.option.xmlpath:

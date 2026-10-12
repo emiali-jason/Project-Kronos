@@ -59,7 +59,7 @@ def test_legacy_receipt_exact_byte_recovery_and_new_upgrade(tmp_path):
     assert len([n for n in ZipFile(BytesIO(original)).namelist() if n.startswith('xl/tables/table')])==6
     upgraded=app.update(operation_identity='UPGRADE')
     assert upgraded.outcome=='PUBLISHED'
-    assert app.store.current_receipt(projection.year_month).data['schema_version']=='2.3.0'
+    assert app.store.current_receipt(projection.year_month).data['schema_version']=='2.4.0'
     assert app.store.load(receipt.identity)==receipt
     assert app.update(operation_identity='REPEAT').outcome=='ALREADY_UP_TO_DATE'
 
@@ -153,7 +153,7 @@ def test_availability_status_is_lightweight_and_does_not_publish(tmp_path,monkey
     def forbidden(**kwargs):raise AssertionError('status must not project or publish')
     monkeypatch.setattr(app,'project',forbidden)
     status=app.status_document()
-    assert status['available_workbook_version']=='2.3.0'
+    assert status['available_workbook_version']=='2.4.0'
     assert status['opportunity_journey_version']=='1.0.0'
     assert status['chronology_authority']=='RETAINED_GOVERNED_WO11_MODEL_EVENTS_ONLY'
     assert not app.store.root.exists() and not app.publication_root.exists()

@@ -3225,7 +3225,7 @@ def _intraday_tabs(
     disabled = "" if refresh_enabled else " disabled"
     statistics_control = (
         '<a class="intraday-statistics-export" '
-        'href="/reports/export.xlsx?product=INTRADAY" download>'
+        'href="/intraday/statistics">'
         'STATISTICS / EXCEL</a><a class="intraday-research-link" '
         'href="/intraday/research">RESEARCH / ANALYSIS DETAILS</a>'
         if statistics else ""

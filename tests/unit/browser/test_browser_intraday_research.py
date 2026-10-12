@@ -41,7 +41,7 @@ def test_explicit_update_then_verified_open(tmp_path) -> None:
     assert "OPEN MONTHLY EXCEL" in page.body
     opened = routes.handle_get(BrowserGetRequest(RESEARCH_OPEN_ROUTE, {"month": ["2026_08"]}), _ready)
     assert opened.status.value == 200
-    assert opened.filename == "KRONOS_Intraday_Research_2026_08.xlsx"
+    assert opened.filename == "2026-08 — August.xlsx"
     assert opened.body == application.open_current("2026_08")[1]
 
 

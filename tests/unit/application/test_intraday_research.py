@@ -134,8 +134,8 @@ def test_six_sheet_workbook_has_tables_formulas_and_no_active_content(tmp_path) 
 def test_atomic_monthly_publication_receipt_readback_and_idempotency(tmp_path) -> None:
     application, _ = _application(tmp_path)
     result = application.update(operation_identity="SPONSOR-UPDATE-001")
-    assert result.workbook_path.name == "KRONOS_Intraday_Research_2026_08.xlsx"
-    assert result.workbook_path.parent == tmp_path / "Statistics" / "Intraday"
+    assert result.workbook_path.name == "2026-08 — August.xlsx"
+    assert result.workbook_path.parent == tmp_path / "Statistics" / "Intraday" / "2026"
     assert result.idempotent is False
     assert application.open_current("2026_08")[1] == result.workbook_path.read_bytes()
     assert not list((tmp_path / "research" / "staging").glob("*"))

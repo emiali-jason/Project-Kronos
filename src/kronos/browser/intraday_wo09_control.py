@@ -33,8 +33,10 @@ class IntradayWo09Projection:
         historical_details = {}
         watch_bindings = None
         watch_hints = None
-        for pointer, record in self.store.restore_current():
-            requirements = self.store.load_requirements(record.readiness_identity)
+        population = self.store.restore_current()
+        requirements_by_readiness = self.store.load_requirement_population() if population else {}
+        for pointer, record in population:
+            requirements = requirements_by_readiness.get(record.readiness_identity, ())
             card = project_card(record, requirements, currentness=pointer.currentness)
             detail = project_analysis_details(record, requirements)
             if record.authority == 'EXPERIMENTAL_PAPER_ONLY':

@@ -27,6 +27,7 @@ from kronos.intraday.wo09_experimental import (
     evaluate_experimental_readiness, origin_from,
 )
 from kronos.application.intraday_wo09_notifications import Wo09NotificationSource, Wo09NotificationState
+from kronos.common.validated_reuse import ValidatedBytesReuse
 
 
 DEFAULT_ROOT = Path.home() / "Library" / "Application Support" / "KRONOS" / "evidence" / "intraday" / "wo09-readiness-v1"
@@ -172,6 +173,7 @@ class Wo09Store:
         self.watches = root / "watches"
         self.notifications = root / "notifications"
         self.first_five = root / "experimental-first-five"
+        self._read_reuse = ValidatedBytesReuse(max_entries=4096)
 
     def _validated_pointer(self, subject):
         pointer = self.load_pointer(subject)
@@ -409,19 +411,27 @@ class Wo09Store:
         return pointer
 
     def load_readiness(self, identity: str) -> ReadinessRecord:
-        record = _readiness(json.loads((self.readiness / f"{identity}.json").read_text()))
+        path = self.readiness / f"{identity}.json"
+        record = self._read_reuse.load(path, path.read_bytes(),
+            (_readiness, ReadinessRecord, MachineReadinessRecord, ExperimentalReadinessRecord),
+            _decode_readiness)
         if record.readiness_identity != identity:
             raise Wo09PersistenceError('WO09_READINESS_PATH_MISMATCH')
         self.verify_first_five(record)
         return record
 
     def load_requirements(self, readiness_identity: str) -> tuple[RequirementRecord, ...]:
-        values = []
+        return self.load_requirement_population().get(readiness_identity, ())
+
+    def load_requirement_population(self) -> dict[str, tuple[RequirementRecord, ...]]:
+        """One fresh validated population, shared only inside this projection."""
+        values = {}
         for path in sorted(self.requirements.glob("*.json")):
-            item = _requirement(json.loads(path.read_text()))
-            if item.readiness_identity == readiness_identity:
-                values.append(item)
-        return tuple(sorted(values, key=lambda item: item.criterion.criterion_id.value))
+            item = self._read_reuse.load(path, path.read_bytes(),
+                (_requirement, RequirementRecord, CriterionSnapshot), _decode_requirement)
+            values.setdefault(item.readiness_identity, []).append(item)
+        return {key: tuple(sorted(rows, key=lambda item: item.criterion.criterion_id.value))
+                for key, rows in values.items()}
 
     def load_pointer(self, subject: str) -> CurrentPointer | None:
         path = self.current / f"{_safe(subject)}.json"
@@ -566,3 +576,11 @@ def _identity(prefix: str, value: object) -> str:
 
 
 __all__ = ["CurrentPointer", "Wo09PersistenceError", "Wo09Store", "create_pointer"]
+
+
+def _decode_readiness(payload):
+    return _readiness(json.loads(payload))
+
+
+def _decode_requirement(payload):
+    return _requirement(json.loads(payload))

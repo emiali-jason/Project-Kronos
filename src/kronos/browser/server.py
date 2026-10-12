@@ -2957,13 +2957,17 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 return
             books = getattr(self.server, "intraday_books", None)
             try:
-                rows = () if product == "SWING" or books is None else books.portfolio(
+                if books is None:
+                    raise ValueError("INTRADAY_BOOK_SOURCE_UNAVAILABLE")
+                rows = books.portfolio(
                     search=search, direction=direction, monitoring=monitoring)
             except (ValueError, KeyError, TypeError, OSError):
                 self._text(HTTPStatus.SERVICE_UNAVAILABLE, "Intraday exposure source unavailable.")
                 return
             self._html(render_portfolio(snapshot, rows, product=product, search=search,
-                                        direction=direction, monitoring=monitoring))
+                                        direction=direction, monitoring=monitoring,
+                intraday_observations=tuple(r.data for r in books.snapshot() if r.data["truth_class"] == "PAPER_OBSERVATION" and not r.data["terminal"]),
+                intraday_attention=None if self.server.intraday_dashboard_summary is None else self.server.intraday_dashboard_summary()))
             return
         if path in {
             "/reports",
@@ -2974,6 +2978,38 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             query_values = parse_qs(
                 urlsplit(self.path).query, keep_blank_values=True
             )
+            if query_values.get("product") == ["INTRADAY"] and "section" in query_values:
+                from kronos.browser.intraday_sponsor_reports import SECTIONS, render_report, report_sheet, export_sheet, render_unavailable, ReportFilterError, validate_filters
+                allowed = {"product", "section", "month", "from", "to", "search", "direction", "status", "truth", "completion"}
+                section = query_values["section"][0]
+                if set(query_values) - allowed or any(len(v) != 1 for v in query_values.values()) or section not in SECTIONS:
+                    self._text(HTTPStatus.BAD_REQUEST, "Reports filter is invalid.")
+                    return
+                try:
+                    validate_filters(query_values)
+                except ReportFilterError:
+                    self._text(HTTPStatus.BAD_REQUEST, "Reports filter is invalid.")
+                    return
+                owner = getattr(self.server, "intraday_research_application", None)
+                if owner is None:
+                    self._text(HTTPStatus.SERVICE_UNAVAILABLE, "Intraday research source unavailable.")
+                    return
+                try:
+                    if path == "/reports":
+                        self._html(render_report(snapshot, owner, section, query_values))
+                    else:
+                        projection, sheet = report_sheet(owner, section, query_values)
+                        suffix = path.rsplit(".", 1)[-1]
+                        mime = {"json": "application/json", "csv": "text/csv", "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}[suffix]
+                        self._respond(HTTPStatus.OK, export_sheet(sheet, suffix), mime, filename="KRONOS_INTRADAY_" + section + "_" + projection.year_month + "." + suffix)
+                except ReportFilterError:
+                    self._text(HTTPStatus.BAD_REQUEST, "Reports filter is invalid.")
+                except (ValueError, OSError, KeyError, TypeError):
+                    if path == "/reports":
+                        self._respond(HTTPStatus.SERVICE_UNAVAILABLE, render_unavailable(snapshot).encode(), "text/html; charset=utf-8")
+                    else:
+                        self._text(HTTPStatus.SERVICE_UNAVAILABLE, "Intraday retained research evidence unavailable.")
+                return
             allowed = {
                 "product", "view", "from", "to", "quick", "search",
                 "direction", "status", "page", "record", "exit_reason", "completeness",
@@ -3034,7 +3070,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 from kronos.browser.reports import project_intraday_reports
                 books = getattr(self.server, "intraday_books", None)
                 try:
-                    rows = () if books is None else books.snapshot()
+                    if books is None:
+                        raise ValueError("INTRADAY_BOOK_SOURCE_UNAVAILABLE")
+                    rows = books.snapshot()
                     projection = project_intraday_reports(rows, reports_query)
                 except (ValueError, OSError, KeyError, TypeError):
                     self._text(HTTPStatus.SERVICE_UNAVAILABLE, "Intraday factual source unavailable.")

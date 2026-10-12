@@ -17,6 +17,7 @@ from kronos.application.intraday_research import (
 )
 from kronos.intraday.wo12_research_contract import SHEETS, WORKBOOK_VERSION, JOURNEY_WORKBOOK_VERSION
 from kronos.application.intraday_opportunity_journey import JOURNEY_COLUMNS
+from kronos.application.intraday_sponsor_reporting import VERSION, sponsor_sheets
 
 
 RESEARCH_ROUTE = "/intraday/research"
@@ -46,17 +47,23 @@ def _definitions(projection):
         if projection.journey:
             raise ValueError("WO12_LEGACY_JOURNEY_NOT_SUPPORTED")
         return _SHEET_DEFINITIONS
-    if projection.workbook_version != JOURNEY_WORKBOOK_VERSION:
+    if projection.workbook_version not in {JOURNEY_WORKBOOK_VERSION, VERSION}:
         raise ValueError("WO12_WORKBOOK_VERSION_UNSUPPORTED")
     widths = tuple(45 if c.endswith('Contract') else 34 if c.endswith(' At') else 46 if 'Identity' in c or 'References' in c
         else 48 if c in {'Original Reasons', 'Chronology Coverage', 'Measurement Authority'}
         else 28 if c == 'Opportunity ID' else 24 for c in JOURNEY_COLUMNS)
-    return _SHEET_DEFINITIONS + (("Opportunity_Journey", JOURNEY_COLUMNS, widths),)
+    legacy = _SHEET_DEFINITIONS + (("Opportunity_Journey", JOURNEY_COLUMNS, widths),)
+    if projection.workbook_version == VERSION:
+        return legacy + tuple((name, columns, (48, 90) if name == "Monthly Summary" else tuple(38 if "Reason" in c else 28 for c in columns))
+            for name, columns, rows in sponsor_sheets(projection))
+    return legacy
 
 
 def _payloads(projection):
     rows = (projection.opportunities, projection.tracks, projection.events,
         projection.analysis, projection.data_quality, projection.metadata)
+    if projection.workbook_version == VERSION:
+        return rows + (projection.journey,) + tuple(s[2] for s in sponsor_sheets(projection))
     return rows + (projection.journey,) if projection.workbook_version == JOURNEY_WORKBOOK_VERSION else rows
 
 
@@ -74,10 +81,10 @@ def export_research_workbook(projection: ResearchProjection) -> bytes:
         _write(archive, "docProps/app.xml", _app_properties(names))
         _write(archive, "xl/workbook.xml", _workbook(names))
         _write(archive, "xl/_rels/workbook.xml.rels", _workbook_relationships(len(names)))
-        _write(archive, "xl/styles.xml", _journey_styles() if len(names) == 7 else _styles())
+        _write(archive, "xl/styles.xml", _sponsor_styles() if len(names) > 7 else _journey_styles() if len(names) == 7 else _styles())
         for index, ((name, columns, widths), rows) in enumerate(zip(definitions, payloads, strict=True), start=1):
             all_rows = (columns, *rows)
-            _write(archive, f"xl/worksheets/sheet{index}.xml", _sheet(all_rows, widths, table_id=index, journey=index == 7))
+            _write(archive, f"xl/worksheets/sheet{index}.xml", _sheet(all_rows, widths, table_id=index, journey=index == 7, sponsor=index > 7))
             _write(archive, f"xl/worksheets/_rels/sheet{index}.xml.rels", _sheet_relationship(index))
             _write(archive, f"xl/tables/table{index}.xml", _table(index, name, columns, len(all_rows)))
     result = output.getvalue()
@@ -93,12 +100,92 @@ def validate_research_workbook(payload: bytes, projection: ResearchProjection) -
     _validate_package(payload, projection)
 
 
+def read_published_projection(application, month):
+    from xml.etree.ElementTree import ParseError
+    from zipfile import BadZipFile
+    try:
+        return _read_published_projection(application, month)
+    except (ParseError, BadZipFile, UnicodeError) as error:
+        raise ValueError('WO12_RESEARCH_WORKBOOK_PACKAGE_INVALID') from error
+
+
+def _read_published_projection(application, month):
+    """Read the exact receipted package, never compose or update research on GET."""
+    from xml.etree import ElementTree as ET
+    path, payload, receipt_identity = application.open_current(month)
+    _validate_package(payload)
+    receipt = application.store.current_receipt(month)
+    if receipt is None or receipt.identity != receipt_identity:
+        raise ValueError('WO12_PUBLICATION_CHANGED_DURING_READ')
+    data = receipt.data
+    version = data['schema_version']
+    if version not in {WORKBOOK_VERSION, JOURNEY_WORKBOOK_VERSION, VERSION}:
+        raise ValueError('WO12_WORKBOOK_VERSION_UNSUPPORTED')
+    ns = {'s': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
+    # These seven sheet IDs are stable across the three presentation versions.
+    definitions = _SHEET_DEFINITIONS + (() if version == WORKBOOK_VERSION else
+        (("Opportunity_Journey", JOURNEY_COLUMNS, ()),))
+    populations = []
+    with ZipFile(BytesIO(payload)) as archive:
+        if archive.testzip() is not None:
+            raise ValueError('WO12_RESEARCH_WORKBOOK_PACKAGE_INVALID')
+        for index, (name, columns, _) in enumerate(definitions, 1):
+            tree = ET.fromstring(archive.read(f'xl/worksheets/sheet{index}.xml'))
+            rows = []
+            for row in tree.findall('s:sheetData/s:row', ns):
+                values = []
+                for cell in row.findall('s:c', ns):
+                    text = cell.find('s:is/s:t', ns)
+                    number = cell.find('s:v', ns)
+                    if text is not None:
+                        value = text.text or ''
+                    elif number is None or number.text is None:
+                        value = None
+                    elif cell.get('t') == 'b':
+                        value = number.text == '1'
+                    else:
+                        try:
+                            value = Decimal(number.text)
+                            if value == value.to_integral_value():
+                                value = int(value)
+                        except Exception:
+                            value = number.text
+                    values.append(value)
+                if len(values) != len(columns):
+                    raise ValueError('WO12_RESEARCH_WORKBOOK_COLUMNS_INVALID')
+                rows.append(tuple(values))
+            if not rows or rows[0] != columns:
+                raise ValueError('WO12_RESEARCH_WORKBOOK_COLUMNS_INVALID')
+            populations.append(tuple(rows[1:]))
+    if version == WORKBOOK_VERSION:
+        populations.append(())
+    if application.store.current_receipt(month) != receipt:
+        raise ValueError('WO12_PUBLICATION_CHANGED_DURING_READ')
+    return ResearchProjection(month, datetime.fromisoformat(data['research_boundary']),
+        data['projection_identity'], *populations, workbook_version=version)
+
+
 class IntradayResearchControl:
     def __init__(self, application) -> None:
         self.application = application
 
-    def status_document(self):
-        return self.application.status_document()
+    def status_document(self, month=None):
+        from kronos.application.intraday_sponsor_reporting import summary_document
+        status = self.application.status_document()
+        status['update_month'] = status['current_month']
+        selected = month or status['current_month']
+        import re
+        if not re.fullmatch(r'[0-9]{4}_(0[1-9]|1[0-2])', selected):
+            raise ValueError('WO12_RESEARCH_MONTH_INVALID')
+        receipt = self.application.store.current_receipt(selected)
+        status.update(current_month=selected, receipt_identity=None if receipt is None else receipt.identity,
+            workbook_verified=False if receipt is None else self.application._receipt_verified(receipt),
+            workbook_path=None if receipt is None else receipt.data["workbook_path"],
+            last_update=None if receipt is None else receipt.data["published_at"],
+            sponsor_summary=None)
+        if status['workbook_verified']:
+            status['sponsor_summary'] = summary_document(read_published_projection(self.application, selected))
+        return status
 
     def update_document(self, payload):
         try:
@@ -114,17 +201,24 @@ class IntradayResearchControl:
             return {"outcome": "REJECTED", "reason": reason, "idempotent": False}
 
 
-def render_research(snapshot, status):
+def render_research(snapshot, status, *, statistics=False):
     from kronos.browser.intraday_views import _INTRADAY_CSS, _intraday_tabs
     from kronos.browser.views import render_browser_page
     receipt = status["receipt_identity"]
     open_control = (f'<a class="button" href="{RESEARCH_OPEN_ROUTE}?month={escape(status["current_month"])}">OPEN MONTHLY EXCEL</a>'
                     if receipt and status["workbook_verified"] else "<span>Monthly workbook not yet verified.</span>")
-    body = (_intraday_tabs(False, active="opportunities") + "<h2>RESEARCH / ANALYSIS DETAILS</h2>"
+    metrics = (status.get("sponsor_summary") or {}).get("metrics", {})
+    summary = "<dl>" + "".join("<dt>" + escape(k) + "</dt><dd>" + escape(str(v)) + "</dd>" for k, v in metrics.items()) + "</dl>"
+    body = (_intraday_tabs(False, active="opportunities") + ("<h2>MONTHLY STATISTICS / EXCEL</h2>" if statistics else "<h2>RESEARCH — PREDICTION PERFORMANCE</h2>")
+            + "<p>What KRONOS found and did; how the original predicted direction performed at the session endpoint.</p>"
+            + "<p>Selected month: " + escape(status["current_month"].replace("_", "-")) + "; last successful publication: " + escape(str(status.get("last_update") or "Not yet published")) + "</p>"
+            + '<form method="get"><label>Month (YYYY_MM)<input name="month" value="' + escape(status["current_month"]) + '"></label><button>View</button></form>'
+            + summary + "<p>Metrics use the last verified WO12 monthly publication. Missing publication is unavailable, not zero. UPDATE RESEARCH explicitly refreshes retained evidence.</p>"
             "<p>Monthly local research ledger. Research authority only; no trading authority.</p>"
             f"<p>Canonical folder: <code>{escape(status['publication_root'])}</code></p>"
             '<form id="research-update"><button>UPDATE RESEARCH</button><output></output></form>'
-            f"<p>{open_control}</p><details><summary>Technical Evidence</summary>"
+            + '<p>Update publishes the current month (' + escape(status.get('update_month', status['current_month']).replace('_', '-')) + ') and retained earlier outcomes. Month selection above is for viewing.</p>'
+            f'<p>{open_control}</p><p><a href="/reports/export.xlsx?product=INTRADAY">RAW TECHNICAL SNAPSHOT</a></p><details><summary>Technical Evidence</summary>'
             f"<pre>{escape(json.dumps(status, indent=2))}</pre></details>" + _SCRIPT)
     return render_browser_page(title="Intraday — Research", subtitle="Local monthly research publication",
                                snapshot=snapshot, active_nav="Intraday", active_tab="", body=body,
@@ -146,16 +240,23 @@ def _write(archive, name, value):
     archive.writestr(info, value.encode("utf-8"))
 
 
-def _sheet(rows, widths, *, table_id, journey=False):
+def _sheet(rows, widths, *, table_id, journey=False, sponsor=False):
     if not rows or any(len(row) != len(rows[0]) for row in rows) or len(widths) != len(rows[0]):
         raise ValueError("WO12_WORKBOOK_COLUMNS_INVALID")
     xml_rows = []
     for row_index, row in enumerate(rows, 1):
         cells = "".join(_cell(f"{_column(column)}{row_index}", value, header=row_index == 1)
                         for column, value in enumerate(row, 1))
-        if journey and row_index == 1:
+        if (journey or sponsor) and row_index == 1:
             cells = cells.replace(' s="1"', ' s="2"')
-        height = ' ht="32" customHeight="1"' if journey and row_index == 1 else ""
+        if sponsor and row_index > 1:
+            import re
+            cells = re.sub(r'<c r="([^"]+)"', r'<c r="\1" s="3"', cells)
+        height = ' ht="32" customHeight="1"' if (journey or sponsor) and row_index == 1 else ""
+        if sponsor and row_index > 1:
+            from math import ceil
+            lines = max(ceil(len(str(v)) / max(1, width - 2)) for v, width in zip(row, widths))
+            height = f' ht="{max(24, lines * 16)}" customHeight="1"'
         xml_rows.append(f'<row r="{row_index}"{height}>{cells}</row>')
     end = f"{_column(len(rows[0]))}{len(rows)}"
     cols = "".join(f'<col min="{index}" max="{index}" width="{width}" customWidth="1"/>'
@@ -189,7 +290,7 @@ def _cell(reference, value, *, header):
 
 def _table(index, name, columns, row_count):
     end = f"{_column(len(columns))}{row_count}"
-    table_name = "DataQuality" if name == "Data_Quality" else name
+    table_name = "DataQuality" if name == "Data_Quality" else name.replace(" ", "")
     entries = "".join(f'<tableColumn id="{column}" name={quoteattr(title)}/>' for column, title in enumerate(columns, 1))
     return ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             '<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
@@ -224,7 +325,7 @@ def _package_relationships():
 
 
 def _workbook(names=SHEETS):
-    sheets = "".join(f'<sheet name="{name}" sheetId="{index}" r:id="rId{index}"/>' for index, name in enumerate(names, 1))
+    sheets = "".join(f'<sheet name="{name}" sheetId="{index}" r:id="rId{index}"/>' for index, name in (list(enumerate(names, 1))[7:] + list(enumerate(names, 1))[:7] if len(names) > 7 else enumerate(names, 1)))
     return ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
             f'<sheets>{sheets}</sheets><calcPr calcId="191029" calcMode="auto" fullCalcOnLoad="1"/></workbook>')
 
@@ -248,6 +349,11 @@ def _journey_styles():
     # Keep legacy styles byte-identical; only the new header uses added style 2.
     return _styles().replace('<cellXfs count="2">', '<cellXfs count="3">').replace(
         '</cellXfs>', '<xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1" applyAlignment="1"><alignment wrapText="1" vertical="center"/></xf></cellXfs>')
+
+
+def _sponsor_styles():
+    return _journey_styles().replace('<cellXfs count="3">', '<cellXfs count="4">').replace(
+        '</cellXfs>', '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment wrapText="1" vertical="top"/></xf></cellXfs>')
 
 
 def _core_properties(created):

@@ -2927,6 +2927,8 @@ def render_reports(
         "GOVERNED DATE UNAVAILABLE" if projection.governed_current_trading_date is None
         else projection.governed_current_trading_date.strftime("%d %b %Y").upper()
     )
+    if query.product is ReportProduct.INTRADAY:
+        governed = "SELECTED RETAINED DATES" if query.from_date or query.to_date else "ALL RETAINED DATES"
     header = (
         '<div class="reports-head"><div class="reports-products">' + product_tabs
         + '</div><span class="reports-date">' + governed + '</span>'
@@ -2967,7 +2969,8 @@ def render_reports(
         'DAILY P/L · EFFECTIVENESS: UNAVAILABLE — NOT GOVERNED IN SWING V1.</p>'
     )
     if query.product is ReportProduct.INTRADAY:
-        unsupported = ('<p>Factual one-lot model records. Observation is counterfactual, not exposure. '
+        from kronos.browser.intraday_sponsor_reports import navigation
+        unsupported = navigation() + ('<p>Factual one-lot model records. Observation is counterfactual, not exposure. '
                        'Trading mode: Paper. Paper positions are simulated one-lot positions; observations are simulated outcomes without exposure. '
                        'Live trading is not enabled.</p><details><summary>Technical details</summary>'
                        'Research authority remains WO-12. LIVE_POSITION_NOT_COMMISSIONED_V1.</details>')
@@ -7507,8 +7510,10 @@ __all__ = [
 
 def _intraday_report_row(item, projection):
     import json
+    from dataclasses import replace
+    from kronos.intraday.sponsor_presentation import security_name
     data = json.loads(item.intraday_facts)
-    rendered = _report_row(item, projection)
+    rendered = _report_row(replace(item, instrument=security_name(item.instrument)), projection)
     return rendered.replace('</strong></a></td>', '</strong><br>' + escape(data["opportunity_id"])
         + '</a></td>', 1)
 
@@ -7739,7 +7744,8 @@ def _render_swing_portfolio(snapshot, tabs, projection, *, search, direction, mo
 
 
 def render_portfolio(snapshot, rows=(), *, product="SWING", search="", direction="", monitoring="",
-                     market="", family="", mode="", state="", swing_projection=None):
+                     market="", family="", mode="", state="", swing_projection=None,
+                     intraday_observations=(), intraday_attention=None):
     """Shared destination; consumes compact exposure only, with no action form."""
     tabs = '<div class="reports-head"><div class="reports-products">' + ''.join(
         '<a class="button ' + ('active' if product == value else '') + '" href="/portfolio?product='
@@ -7769,13 +7775,16 @@ def render_portfolio(snapshot, rows=(), *, product="SWING", search="", direction
                 ("Observed at", observed["observed_at"]), ("Model points", metrics.get("points")),
                 ("Gross one-lot model result", metrics.get("gross_model_result")),
                 ("Retained gap count", (data["observation"] or {}).get("gap_count")))
-            cards.append('<section class="journal-detail"><h2>' + escape(data["subject"]) + '</h2><div class="journal-detail-grid">'
+            from kronos.intraday.sponsor_presentation import security_name
+            cards.append('<section class="journal-detail"><h2>' + escape(security_name(data["subject"])) + '</h2><div class="journal-detail-grid">'
                 + ''.join('<div><span>' + escape(label) + '</span><strong>' + escape('UNAVAILABLE' if value is None else str(value))
                           + '</strong></div>' for label, value in facts)
                 + '</div><details><summary>Technical evidence</summary><p>Track: ' + escape(data["track_identity"])
                 + '</p><p>Opportunity identity: ' + escape(data["opportunity_identity"]) + '</p><p>Source: '
                 + escape((data["observation"] or {}).get("source_lifecycle_identity") or 'UNAVAILABLE') + '</p></details></section>')
-        body = ('<p>Entered PAPER model exposure only. Observations are not exposure. LIVE is not commissioned.</p>'
+        from kronos.browser.intraday_sponsor_reports import render_portfolio_context
+        context = render_portfolio_context(intraday_attention, intraday_observations, search=search, direction=direction)
+        body = (context + '<p>Entered PAPER model exposure only. Observations are not exposure. LIVE is not commissioned.</p>'
                 + '<div class="reports-layout"><div class="reports-main">'
                 + (''.join(cards) if cards else '<div class="workflow-empty">NO ACTIVE INTRADAY PAPER POSITIONS</div>')
                 + '</div>' + filters + '</div>')
