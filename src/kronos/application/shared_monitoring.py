@@ -769,6 +769,29 @@ class _SharedRegistration:
             )
 
     @property
+    def read_only_active(self) -> bool:
+        """Observed attachment only; never use a synchronizing capability accessor.
+
+        Unknown capability implementations cannot establish inert authority.
+        This does not change action-time validation or reconnect any owner.
+        """
+        capability = self._capability
+        if capability is None or getattr(capability, "read_only_active", False) is not True:
+            return False
+        with self._hub._lock:
+            return (self._hub._registrations.get(id(self)) is self
+                and self._hub._session is not None
+                and self._hub._capability is capability
+                and self._hub._connection_state is MonitoringConnectionState.CONNECTED
+                and bool(self._instruments)
+                and self._instruments.issubset(self._hub._subscribed)
+                and (self._observed_session is self._hub._session_generation if self._passive
+                     else self._connected)
+                and all(self._hub._by_instrument.get(i) if self._passive
+                        else id(self) in self._hub._by_instrument.get(i, ())
+                        for i in self._instruments))
+
+    @property
     def connection_state(self) -> MonitoringConnectionState | None:
         """Only the shared session's observed callback state can be CONNECTED."""
         active = self.active

@@ -2610,9 +2610,12 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             product = parse_qs(urlsplit(self.path).query).get("product", ["SWING"])[0]
             centre = (self.server.notification_centre.snapshot(product="INTRADAY") if product == "INTRADAY"
                       else self.server.swing_notification_status())
-            indicators = {} if product == "INTRADAY" else self.server.swing_notification_indicators(centre)
+            service = getattr(self.server, "intraday_notifications", None)
+            indicators = {r.notification_identity: service.indicator(json.loads(r.intraday_details))
+                          if service is not None and r.intraday_details else "UNAVAILABLE"
+                          for r in centre.records} if product == "INTRADAY" else self.server.swing_notification_indicators(centre)
             self._json({
-                "revision": centre.revision if product == "INTRADAY" else notification_revision(centre, indicators),
+                "revision": notification_revision(centre, indicators),
                 "count": len(centre.visible),
                 "live": centre.live_count,
                 "expired": centre.expired_count,
@@ -2705,8 +2708,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 operational=operational,
                 notice=notice,
                 intraday_indicators=indicators,
-                swing_revision=(None if selected is NotificationProduct.INTRADAY
-                    else notification_revision(centre, indicators)),
+                swing_revision=notification_revision(centre, indicators),
             ))
             return
         details_match = _ANALYSIS_DETAILS_ROUTE.fullmatch(path)

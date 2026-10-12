@@ -754,6 +754,18 @@ class SharedAuthenticatedProviderRuntime:
             raise ValueError("SHARED_PROVIDER_RUNTIME_CLOCK_INVALID")
         return value
 
+    def _lease_read_only_active(self, lease_identity: str) -> bool:
+        """Retained membership/expiry evidence; never synchronize or grant use."""
+        with self.__deadline_state_locked() as deadline_available:
+            try:
+                now = self.__now()
+            except ValueError:
+                return False
+            return (deadline_available and lease_identity in self.__leases
+                and self.__capability is not None
+                and self.__lifecycle is SharedProviderRuntimeLifecycle.ACTIVE
+                and (self.__valid_through is None or now < self.__valid_through))
+
     def _lease_active(self, lease_identity: str) -> bool:
         with self.__deadline_state_locked() as deadline_available:
             self.__synchronize_locked(deadline_available)
@@ -896,6 +908,12 @@ class ReadOnlyProviderLease:
             and not self.__revoked
             and self.__parent._lease_active(self.__lease_identity)
         )
+
+    @property
+    def read_only_active(self) -> bool:
+        """Inert retained lease evidence; operation-time active checks are separate."""
+        return (not self.__released and not self.__revoked
+            and self.__parent._lease_read_only_active(self.__lease_identity))
 
     def release(self) -> None:
         if self.__released:

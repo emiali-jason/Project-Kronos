@@ -16,7 +16,7 @@ WO09_PRODUCT_ROUTE = "/intraday/wo09"
 class IntradayWo09Projection:
     """Read persisted authority only; no evaluation path is exposed to Browser."""
 
-    def __init__(self, store: Wo09Store, *, machine_successor: bool = False, operational_summary=None) -> None:
+    def __init__(self, store: Wo09Store, *, machine_successor: bool = False, operational_summary=None, monitoring_projection=None) -> None:
         if type(store) is not Wo09Store:
             raise ValueError("WO09_BROWSER_STORE_INVALID")
         if type(machine_successor) is not bool:
@@ -24,6 +24,7 @@ class IntradayWo09Projection:
         self.store = store
         self.machine_successor = machine_successor
         self.operational_summary = operational_summary
+        self.monitoring_projection = monitoring_projection
 
     def status_document(self) -> dict[str, object]:
         cards = []
@@ -53,6 +54,7 @@ class IntradayWo09Projection:
                     method=record.methodology_identity, version=record.methodology_version,
                     first_five_at=None if record.first_five_of_five_at is None else record.first_five_of_five_at.isoformat(),
                     selective_watch=bindings, advisory_wake_hints=hints,
+                    monitoring=None if self.monitoring_projection is None else self.monitoring_projection(record.readiness_identity),
                     tick_authority='ADVISORY_ONLY', automatic_provider_refresh=False,
                     currentness_scope='RETAINED_POINTER_STATE_ONLY',
                     action_authority='Current session, source and freshness require an explicit guarded check.')

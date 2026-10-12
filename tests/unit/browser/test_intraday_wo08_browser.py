@@ -65,7 +65,7 @@ def test_machine_review_is_current_inert_and_has_no_visual_actions(tmp_path):
     response = routes.handle_get(BrowserGetRequest('/intraday/review', {}), _snapshot)
     assert response.status.value == 200
     assert 'Intraday — Machine Review' in response.body and 'NOT_COMMISSIONED' in response.body
-    assert 'Other / retained assessments' in response.body
+    assert 'Not Admitted / Unavailable / Retained' in response.body
     assert 'Chart Analyst is not required' in response.body
     assert 'LOAD FRESH REVIEW' not in response.body and 'action="/intraday/review/' not in response.body
     assert 'CREATE ALL REVIEW PDF' not in response.body

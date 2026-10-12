@@ -227,9 +227,74 @@ class IntradayPublicationBoundary:
                     self._deny(EligibilityReason.SOURCE_SUPERSEDED, operation)
         return tuple(digest(item) for item in (pp, wp, run, result, d, semantic, selection, native, native_source, binding, origin))
 
+    def retained_monitoring_source(self, readiness):
+        """Compare retained source identities without reassessing readiness on GET."""
+        operation = 'readiness'
+        pp = self.probables.load_current()
+        wp = self.wo08.current_pointer()
+        if pp is None or wp is None:
+            self._deny(EligibilityReason.SOURCE_LINEAGE_NOT_ESTABLISHED, operation)
+        if pp.run_identity != readiness.probables_run_identity or wp['run_identity'] != pp.run_identity:
+            self._deny(EligibilityReason.SOURCE_SUPERSEDED, operation)
+        run = self.probables.load_current_run()
+        result = self.probables.load_result(readiness.probable_result_identity)
+        assessment = self.wo08.load(readiness.wo08_identity)
+        d = assessment.data
+        if (run is None or result not in run.results or assessment not in self.wo08.current_run()
+                or assessment.integrity != readiness.wo08_integrity
+                or d['run_integrity'] != run.integrity_identity
+                or d['probable_result_identity'] != result.result_identity
+                or d['probable_result_integrity'] != result.integrity_identity
+                or d['subject'] != readiness.canonical_subject_identity
+                or d['subject'] != result.canonical_subject_identity
+                or d['session_identity'] != readiness.session_identity
+                or d['session_identity'] != result.market_session_identity
+                or d['semantic_evidence_identity'] != result.semantic_evidence_identity):
+            raise ValueError('WO09_WATCH_RETAINED_SOURCE_BINDING_INVALID')
+        origin = self.experimental_origin(assessment)
+        if origin is None or readiness.origin_document is None or origin_from(readiness.origin_document) != origin:
+            raise ValueError('WO09_WATCH_RETAINED_ORIGIN_BINDING_INVALID')
+        if readiness.first_five_document is not None:
+            try:
+                self.wo09.verify_first_five(readiness)
+            except RuntimeError as error:
+                raise ValueError('WO09_WATCH_RETAINED_FIRST_FIVE_UNAVAILABLE') from error
+            first = first_five_from(readiness.first_five_document)
+            original = self.wo08.load(first.assessment_document['assessment_identity'])
+            if (original.data != first.assessment_document
+                    or original not in self.wo08.load_run(original.data['run_identity'])
+                    or origin_from(first.origin_document) != origin):
+                raise ValueError('WO09_WATCH_RETAINED_FIRST_FIVE_SOURCE_INVALID')
+        if d.get('native_decision_identity') is not None:
+            from kronos.intraday.native_pullback_decision import load_decision_source
+            native = self.native.load(d['native_decision_identity'])
+            native_source = load_decision_source(self.native, native, None)
+            nd = native.data
+            if (native.integrity != d['native_decision_integrity']
+                    or native_source != d['source_document']['native_source']
+                    or nd['analysis_cycle'] != run.run_identity
+                    or nd['probable_result_identity'] != result.result_identity
+                    or nd['machine_identity'] != result.semantic_evidence_identity
+                    or nd['machine_integrity'] != d['semantic_evidence_integrity']):
+                raise ValueError('WO09_WATCH_RETAINED_NATIVE_BINDING_INVALID')
+            current = self.native.bound_identity(d['semantic_evidence_identity'])
+            if current is None:
+                self._deny(EligibilityReason.SOURCE_LINEAGE_NOT_ESTABLISHED, operation)
+            if current != native.identity:
+                self._deny(EligibilityReason.SOURCE_SUPERSEDED, operation)
+        if readiness.market_family == 'MCX':
+            binding = self.bindings.load_current(canonical_subject_id=readiness.canonical_subject_identity)
+            if binding is None:
+                self._deny(EligibilityReason.SOURCE_LINEAGE_NOT_ESTABLISHED, operation)
+            if (binding.binding_identity != readiness.exact_mcx_roll_lineage
+                    or binding.active_binding.derivative_contract_id != readiness.exact_mcx_contract_identity):
+                self._deny(EligibilityReason.SOURCE_SUPERSEDED, operation)
+        if pp != self.probables.load_current() or wp != self.wo08.current_pointer():
+            raise ValueError('WO09_WATCH_RETAINED_SOURCE_CHANGED')
+
     def experimental_origin(self, assessment):
         """Resolve the owner's existing origin; this read never creates one."""
-        from kronos.intraday.wo12_research_contract import opportunity_origin
+        from kronos.intraday.wo12_research_contract import opportunity_origin, opportunity_id
         from kronos.intraday.probables import ProbableState
         from datetime import datetime
         d = assessment.data
@@ -246,7 +311,9 @@ class IntradayPublicationBoundary:
         expected = opportunity_origin(canonical_subject_identity=result.canonical_subject_identity,
             market_family=d['market_family'], session_identity=result.market_session_identity,
             origin_at=result.analysis_boundary, probable_result_identity=result.result_identity,
-            probables_run_identity=run.run_identity, reset_identity=o['reset_identity'])
+            probables_run_identity=run.run_identity, reset_identity=o['reset_identity'],
+            legacy_symbol=o['opportunity_id'] == opportunity_id(result.canonical_subject_identity,
+                result.analysis_boundary, legacy_symbol=True))
         if (origin != expected or result not in run.results
                 or result.state not in {ProbableState.LONG_PROBABLE, ProbableState.SHORT_PROBABLE}):
             raise ValueError('EXPERIMENTAL_ORIGIN_SOURCE_INVALID')

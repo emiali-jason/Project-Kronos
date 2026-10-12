@@ -120,6 +120,7 @@ _MACHINE_REVIEW_CSS = """
 
 
 def _machine_table(rows, readiness, *, candidate=None, retained=False):
+    from kronos.intraday.sponsor_presentation import security_name, waiting_for, CRITERION_NAMES, criterion_explanation
     details = readiness.get('analysis_details', {})
     body = []
     for row in rows:
@@ -128,26 +129,24 @@ def _machine_table(rows, readiness, *, candidate=None, retained=False):
             and details.get(item.readiness_identity, {}).get('A. MACHINE WO08 ASSESSMENT', {}).get('identity') == row['identity']), None)
         observation = {} if card is None else details.get(card.readiness_identity, {}).get('F. EXPERIMENTAL OBSERVATION', {})
         states = {c.get('criterion_id', c.get('criterion')): c for c in row['criteria']}
-        cells, explanations = [], []
-        labels = {'SATISFIED': ('Yes', 'yes'), 'DETERMINISTICALLY_ESTABLISHED': ('Yes', 'yes'),
-            'OUTSTANDING': ('Gap', 'no'), 'DETERMINISTICALLY_NEGATIVE': ('No', 'no'),
-            'UNAVAILABLE': ('N/A', 'unknown'), 'NOT_COMMISSIONED': ('N/C', 'unknown')}
+        explanations = []
         for which in ('I1', 'I2', 'I3', 'I4', 'I5'):
             c = states.get(which, {'state': 'MISSING', 'reason_codes': ['CRITERION_NOT_RETAINED']})
-            state = c['state']
-            label, css = labels.get(state, (state, 'unknown'))
-            reason = ', '.join(c.get('reason_codes', ())) or c.get('rule', state)
-            cells.append('<td class="' + css + '" title="' + escape(state, quote=True) + '">' + escape(label) + '</td>')
-            explanations.append('<div class="criterion-detail"><strong>' + which + ' · ' + escape(state)
-                + '</strong><p>' + escape(reason) + '</p><span class="sub">Current · '
-                + escape(str('UNAVAILABLE' if c.get('current_value') is None else c['current_value'])) + '</span></div>')
+            explanations.append('<div class="criterion-detail"><strong>' + which + ' — ' + CRITERION_NAMES[which]
+                + '</strong><p>' + escape(criterion_explanation(which, row.get('direction'))) + '</p><span class="sub">'
+                + escape(c['state']) + ' · ' + escape(', '.join(c.get('reason_codes', ())) or c.get('rule', c['state']))
+                + '</span><pre>' + escape(json.dumps(c.get('evidence', {}), indent=2, default=str)) + '</pre></div>')
         missing = ', '.join(k for k, c in states.items() if c['state'] not in {'SATISFIED', 'DETERMINISTICALLY_ESTABLISHED'}) or 'NONE'
-        score = 'NOT_PUBLISHED' if card is None else card.score
+        score = 'Unavailable' if card is None else card.score
         state = 'NOT_YET_PUBLISHED' if card is None else card.readiness_state
-        label = ('READY_FIVE · 5/5 NOW' if state in {'BUY_NOW', 'SELL_NOW'} else
-                 'READY_FOUR · 4/5 READY' if state in {'BUY_READY', 'SELL_READY'} else state)
+        label = ('5/5 Now' if state in {'BUY_NOW', 'SELL_NOW'} else '4/5 Ready' if state in {'BUY_READY', 'SELL_READY'} else
+                 'Awaiting assessment evidence' if state == 'READINESS_UNAVAILABLE' else
+                 'Not admitted' if row.get('failure_reason') == 'PROBABLES_NOT_ADMITTED' else 'Under consideration')
         bindings = observation.get('selective_watch', ())
         watch = 'RETAINED WATCH' if bindings else 'NOT_RETAINED'
+        monitoring = observation.get('monitoring') or dict(state='UNAVAILABLE', reason='Authoritative monitoring state is unavailable.')
+        if retained:
+            monitoring = dict(state='INACTIVE', reason='Retained evidence is not a current opportunity.')
         first = observation.get('first_five_at')
         reason = row.get('failure_reason') or row['disposition']
         contract = row.get('exact_mcx_contract_identity')
@@ -155,31 +154,34 @@ def _machine_table(rows, readiness, *, candidate=None, retained=False):
         identity = escape(row['probable_result_identity'], quote=True)
         focus = ' tabindex="-1"' if candidate == row['probable_result_identity'] else ''
         body.append('<tr id="review-candidate-' + identity + '"' + focus + '><td><strong>'
-            + escape(row['subject']) + '</strong><span class="sub">' + escape(row['market_family'])
-            + ('' if contract is None else ' · ' + escape(contract)) + '</span><span class="sub">Assessment Price · ' + escape(price) + '</span></td><td>'
-            + escape(str(row.get('direction') or 'UNAVAILABLE')) + '</td><td>' + escape(score)
-            + '</td>' + ''.join(cells) + '<td><strong>' + escape(label) + '</strong><span class="sub">'
-            + escape('RETAINED · NOT CURRENT' if retained else state) + '</span><span class="sub">First-five · ' + escape(str(first or 'NOT_RETAINED')) + '</span></td><td>'
-            + escape(watch) + '<span class="sub">Missing · ' + escape(missing) + '</span></td></tr>')
-        facts = [('Method / version', str(row['methodology_identity']) + ' / ' + str(row['methodology_version'])),
+            + escape(security_name(row['subject'])) + '</strong><span class="sub">' + escape(row['market_family'])
+            + ('' if contract is None else ' · ' + escape(contract)) + '</span></td><td>'
+            + escape(str(row.get('direction') or 'Unavailable')) + '</td><td>' + escape(score)
+            + '</td><td><strong>' + escape(label) + '</strong></td><td>' + escape(waiting_for(row['criteria']))
+            + '</td><td><strong>' + escape(monitoring['state']) + '</strong><span class="sub">' + escape(monitoring['reason'])
+            + ('' if not monitoring.get('since') else '<span class="sub">Since · ' + escape(monitoring['since']) + '</span>')
+            + '</span></td><td>Assessment Price · ' + escape(price) + '</td></tr>')
+        facts = [('Machine security', row['subject']), ('Method / version', str(row['methodology_identity']) + ' / ' + str(row['methodology_version'])),
             ('Assessment Price · this admission', price + ' · ' + str(row.get('assessment_price_time') or 'time unavailable')),
             ('Price authority / source', str(row.get('assessment_price_authority') or 'PRICE_NOT_RETAINED') + ' · ' + str(row.get('assessment_price_source') or 'UNAVAILABLE')),
             ('First-five', 'NOT_RETAINED' if first is None else str(first)),
             ('Analysis boundary', row['analysis_boundary']), ('Session', row['session_identity']),
-            ('WO09 pointer state', 'NOT_PUBLISHED' if card is None else card.monitorability_state)]
-        body.append('<tr class="row-detail"><td colspan="10"><details><summary>Criterion details · '
+            ('WO09 state', state), ('Watch evidence', watch), ('Missing', missing)]
+        levels = row.get('experimental_watch_levels') or {}
+        level_text = '; '.join(k + ': ' + str(v) for k, v in levels.items() if v is not None)
+        body.append('<tr class="row-detail"><td colspan="7"><details><summary>Criterion details · waiting for '
+            + escape(waiting_for(row['criteria'])) + '</summary><p>Only a separately authorized ordinary Analysis can reassess completed evidence. '
+            + 'WebSocket observations are advisory only; they cannot establish 5/5 or trigger Analysis.</p>'
+            + ('<p>Retained advisory levels · ' + escape(level_text) + '. These are not completed-candle confirmation.</p>' if level_text else '')
+            + '<div class="criteria-detail">' + ''.join(explanations) + '</div><details><summary>Technical details · '
             + escape(reason) + '</summary><div class="facts">' + ''.join('<div><span>' + escape(k)
-            + '</span>' + escape(str(v)) + '</div>' for k, v in facts) + '</div><div class="criteria-detail">'
-            + ''.join(explanations) + '</div><p class="secondary">Selective watch · ' + escape(watch)
-            + '. Retained evidence only; current watch delivery is not asserted. '
+            + '</span>' + escape(str(v)) + '</div>' for k, v in facts) + '</div><p>'
             + ('Advisory wake hint retained — awaiting completed Analysis.' if observation.get('advisory_wake_hints') else '')
             + '</p><details><summary>Method and evidence</summary><pre>'
             + escape(json.dumps(dict(assessment=row, wo09=None if card is None else details.get(card.readiness_identity)), indent=2, default=str))
-            + '</pre></details></details></td></tr>')
-    return ('<table aria-label="WO08 machine assessments"><thead><tr><th class="security" scope="col">Security / market</th>'
-        + '<th class="direction" scope="col">Direction</th><th class="score" scope="col">Score</th>'
-        + ''.join('<th class="criterion" scope="col">' + c + '</th>' for c in ('I1','I2','I3','I4','I5'))
-        + '<th class="status" scope="col">WO09 status</th><th class="watch" scope="col">Watch / missing</th>'
+            + '</pre></details></details></details></td></tr>')
+    return ('<table aria-label="WO08 machine assessments"><thead><tr>'
+        + ''.join('<th scope="col">' + c + '</th>' for c in ('Security', 'Direction', 'Score', 'Status', 'Waiting for', 'Monitoring', 'Assessment Price'))
         + '</tr></thead><tbody>' + ''.join(body) + '</tbody></table>')
 
 
@@ -195,16 +197,32 @@ def render_machine_review(snapshot, status, readiness, *, candidate=None):
     for row in rows:
         eligible = status['currentness'] == 'SOURCE_LINEAGE_CURRENT' and current_ids is not None and row['identity'] in current_assessments
         (current if eligible and row.get('probables_state') in {'LONG_PROBABLE','SHORT_PROBABLE'} else other).append(row)
+    from collections import Counter
+    from kronos.intraday.sponsor_presentation import exclusion_reason
+    admitted = [row for row in rows if row.get('probables_state') in {'LONG_PROBABLE', 'SHORT_PROBABLE'}]
+    unavailable = [row for row in rows if row.get('probables_state') not in {'LONG_PROBABLE', 'SHORT_PROBABLE'}
+                   and 'UNAVAILABLE' in str(row.get('probables_state', ''))]
+    not_admitted = len(rows) - len(admitted) - len(unavailable)
+    funnel = '<div class="facts" aria-label="Analysis funnel">' + ''.join(
+        '<div><span>' + label + '</span><strong>' + str(value) + '</strong></div>' for label, value in (
+            ('Analysed', len(rows)), ('Considered', len(current)),
+            ('Ready', '—' if operational is None or operational.ready is None else operational.ready),
+            ('Now', '—' if operational is None or operational.now is None else operational.now),
+            ('Not Admitted', not_admitted), ('Unavailable', len(unavailable)))) + '</div>'
+    reasons = Counter(row.get('failure_reason') or row.get('disposition', 'UNAVAILABLE') for row in other)
+    reason_summary = '<ul>' + ''.join('<li>' + escape(exclusion_reason(reason)) + ' · ' + str(count)
+        + '<details><summary>Technical details</summary>' + escape(reason) + '</details></li>'
+        for reason, count in sorted(reasons.items())) + '</ul>'
     method = next((row for row in current), next(iter(rows), None))
     method_text = ('KRONOS-INTRADAY-WO08-EXPERIMENTAL-PULLBACK-PAPER / 0.1.0' if method is None else str(method['methodology_identity']) + ' / ' + str(method['methodology_version']))
     scope = 'Session eligibility not assessed' if operational is None else operational.state.replace('_', ' ')
     body = (_intraday_tabs(False, active='review') + '<section class="machine-review">'
-        + '<div class="method"><span class="chip paper">EXPERIMENTAL PAPER</span><span>' + escape(method_text)
-        + '</span><span class="chip">' + escape(scope) + '</span></div>'
+        + funnel + '<div class="method"><span class="chip paper">EXPERIMENTAL PAPER</span><span class="chip">'
+        + escape(scope) + '</span><details><summary>Method · Technical details</summary>' + escape(method_text) + '</details></div>'
         + (_machine_table(current, readiness, candidate=candidate) if current else
             '<div class="empty"><strong>NO CURRENT MACHINE ASSESSMENT</strong><p>Run Analysis to evaluate current opportunities.</p></div>')
-        + ('<details><summary>Other / retained assessments · ' + str(len(other)) + '</summary><p class="secondary">'
-            + 'Non-admitted, superseded or session-unverified evidence; not current opportunities.</p>'
+        + ('<details><summary>Not Admitted / Unavailable / Retained · ' + str(len(other)) + '</summary><p class="secondary">'
+            + 'Complete population accountability, including non-admitted, superseded or session-unverified evidence.</p>' + reason_summary
             + _machine_table(other, readiness, candidate=candidate, retained=True) + '</details>' if other else '')
         + '<details><summary>Method, status and authority</summary><div class="secondary">'
         + '<p>Source lineage · ' + escape(status['currentness']) + '. Source lineage alone does not establish current session eligibility.</p>'
@@ -220,7 +238,7 @@ def render_machine_review(snapshot, status, readiness, *, candidate=None):
         + (_readiness_body(dict(active_attention=(), historical_cards=readiness.get('historical_cards', ()),
             historical_analysis_details=readiness.get('historical_analysis_details', {}))) if readiness.get('historical_cards') else '')
         + '</details></section>')
-    return render_browser_page(title='Intraday — Machine Review', subtitle='Current machine assessment · WO08 / WO09',
+    return render_browser_page(title='Intraday — Machine Review', subtitle='Current considered opportunities and complete Analysis accountability',
         snapshot=snapshot, active_nav='Intraday', active_tab='Review', body=body,
         extra_styles=_INTRADAY_CSS + _MACHINE_REVIEW_CSS)
 

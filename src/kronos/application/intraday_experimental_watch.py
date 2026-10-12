@@ -399,6 +399,7 @@ class GovernedExperimentalWatchCoordinator(IntradayExperimentalWatchCoordinator)
         self.instrument_source = instrument_source
         self.hub = self.capability_supplier = self.maintenance = None
         self.registrations = {}
+        self.registration_failures = {}
         self.last_failure = None
         self._interrupted = False
         self._interruption_generation = 0
@@ -544,12 +545,14 @@ class GovernedExperimentalWatchCoordinator(IntradayExperimentalWatchCoordinator)
                     if not registration.active:
                         self.on_subscription_lost(identity)
                     self.last_failure = None
+                    self.registration_failures.pop(identity, None)
                 except (ValueError, RuntimeError) as error:
                     with self._queue_lock:
                         self._queue_instruments.pop(identity, None)
                     # Persistence remains usable by ordinary Analysis. Missing
                     # lawful subscriptions do not authorize new Provider work.
                     self.last_failure = str(error)
+                    self.registration_failures[identity] = str(error)
         return bindings
 
     def before_analysis(self, successor):
@@ -839,6 +842,86 @@ class GovernedExperimentalWatchCoordinator(IntradayExperimentalWatchCoordinator)
             registration.disconnect()
         self.registrations.clear()
 
+    def monitoring_projection(self, readiness_identity):
+        """Read exact retained binding and live registration; never activate anything."""
+        def result(state, reason, code, **facts):
+            return dict(state=state, reason=reason, reason_code=code, **facts)
+        try:
+            record = self.wo09.store.load_readiness(readiness_identity)
+            if not watch_eligible(record, at=self.clock()):
+                if watch_eligible(record):
+                    return result('INACTIVE', 'The original first-five freshness window has expired.', 'ORIGINAL_FIRST_FIVE_FRESHNESS_EXPIRED')
+                return result('INACTIVE', 'This assessment does not require a selective I2/I3 watch.', 'SELECTIVE_WATCH_NOT_APPLICABLE')
+            pointer = self.wo09.store.load_pointer(record.canonical_subject_identity)
+            if pointer is None:
+                return result('UNAVAILABLE', 'The current assessment pointer is unavailable.', 'READINESS_POINTER_UNAVAILABLE')
+            pointed = self.wo09.store.load_readiness(pointer.readiness_identity)
+            if (pointer.canonical_subject_identity != record.canonical_subject_identity
+                    or pointed.canonical_subject_identity != pointer.canonical_subject_identity
+                    or pointed.integrity_identity != pointer.readiness_integrity
+                    or (pointer.readiness_identity == readiness_identity
+                        and pointer.readiness_integrity != record.integrity_identity)):
+                return result('UNAVAILABLE', 'The current assessment pointer does not match retained evidence.', 'READINESS_POINTER_BINDING_INVALID')
+            if (pointer.readiness_identity != readiness_identity
+                    or pointer.currentness is not CurrentnessState.CURRENT):
+                return result('INACTIVE', 'The assessment has been superseded or requires reassessment.', 'READINESS_NOT_CURRENT')
+            durable_watches = self.wo09.store.load_watches(readiness_identity)
+            if not durable_watches:
+                return result('UNAVAILABLE', 'The durable watch record is unavailable.', 'WATCH_RECORD_UNAVAILABLE')
+            bindings = [b for b in self.store.records(BINDING) if b['readiness_identity'] == readiness_identity]
+            if not bindings:
+                return result('UNAVAILABLE', 'Eligible watch has no retained binding yet.', 'WATCH_BINDING_NOT_RETAINED')
+            if len(bindings) != 1:
+                return result('UNAVAILABLE', 'Watch binding is ambiguous.', 'WATCH_BINDING_AMBIGUOUS')
+            binding = bindings[0]
+            facts = dict(binding_identity=binding['identity'], criterion=binding['missing_criterion'],
+                since=binding['watch_started_at'], instrument=binding['subject'],
+                contract=binding['exact_contract_identity'])
+            if self.clock() >= datetime.fromisoformat(binding['expires_at']):
+                return result('INACTIVE', 'The governed watch session has expired.', 'WATCH_SESSION_EXPIRED', **facts)
+            if self._interrupted or binding['identity'] in self._binding_interruptions:
+                return result('UNAVAILABLE', 'Monitoring continuity was interrupted; ordinary Analysis must revalidate the watch.', 'WATCH_MONITORING_INTERRUPTED', **facts)
+            from kronos.intraday.evidence_currentness import NewWorkNotEligible
+            try:
+                with self.boundary._sources(record):
+                    self.boundary.retained_monitoring_source(record)
+                    self.boundary._session(record, 'readiness')
+            except NewWorkNotEligible as error:
+                unavailable = error.reason.value not in {'SOURCE_SUPERSEDED', 'HISTORICAL_SESSION', 'WO07F_NEW_WORK_RETIRED'}
+                return result('UNAVAILABLE' if unavailable else 'INACTIVE',
+                    'Source/session authority is unavailable.' if unavailable else 'The assessment is no longer current for this session.',
+                    error.reason.value, **facts)
+            except ValueError as error:
+                if str(error) == 'WO10_SESSION_NOT_OPEN':
+                    return result('INACTIVE', 'The governed market session is closed.', 'WO10_SESSION_NOT_OPEN', **facts)
+                raise
+            expiry, instrument = self._session_instrument(record)
+            if (binding['expires_at'] != expiry.isoformat() or binding['instrument'] != _instrument(instrument)
+                    or binding['generation'] != record.generation
+                    or binding['readiness_integrity'] != record.integrity_identity
+                    or binding['opportunity_identity'] != record.opportunity_identity):
+                return result('UNAVAILABLE', 'Exact current watch binding could not be established.', 'WATCH_BINDING_MISMATCH', **facts)
+            watches = [w for w in self.wo09.store.load_watches() if w.watch_identity == binding['watch_identity']]
+            if not watches:
+                return result('UNAVAILABLE', 'The durable watch record is unavailable.', 'WATCH_RECORD_UNAVAILABLE', **facts)
+            if len(watches) != 1:
+                return result('UNAVAILABLE', 'The durable watch record is ambiguous.', 'WATCH_RECORD_AMBIGUOUS', **facts)
+            if watches[0].state is not WatchState.ACTIVE:
+                return result('INACTIVE', 'The retained watch is no longer running.', 'WATCH_NOT_ACTIVE', **facts)
+            if pointer != self.wo09.store.load_pointer(record.canonical_subject_identity):
+                return result('UNAVAILABLE', 'The current assessment pointer changed during the read.', 'READINESS_POINTER_CHANGED', **facts)
+            registration = self.registrations.get(binding['identity'])
+            if registration is not None and registration.read_only_active:
+                return result('ACTIVE', 'Observer attached to an existing lawful subscription.', 'EXISTING_SUBSCRIPTION_OBSERVER_ATTACHED', **facts)
+            code = self.registration_failures.get(binding['identity'])
+            if code == 'SHARED_MONITORING_EXISTING_SUBSCRIPTION_REQUIRED':
+                return result('UNAVAILABLE', 'Watch retained; no existing lawful market subscription is available. This watch cannot open a connection.', code, **facts)
+            if self.hub is not None and self.hub.status_document()['subscription_count'] == 0:
+                return result('UNAVAILABLE', 'Watch retained; no existing lawful market subscription is available. This watch cannot open a connection.', 'SHARED_MONITORING_EXISTING_SUBSCRIPTION_REQUIRED', **facts)
+            return result('UNAVAILABLE', 'Watch retained, but its required observer is not attached.', code or 'WATCH_OBSERVER_NOT_ATTACHED', **facts)
+        except (ValueError, OSError, KeyError, TypeError):
+            return result('UNAVAILABLE', 'Authoritative watch evidence could not be established.', 'WATCH_AUTHORITY_UNAVAILABLE')
+
     def runtime_status_document(self):
         """In-memory configuration and worker state, never persisted eligibility."""
         from kronos.intraday.wo08_experimental import METHOD
@@ -849,7 +932,7 @@ class GovernedExperimentalWatchCoordinator(IntradayExperimentalWatchCoordinator)
         failures = []
         attached = 0
         for identity, registration in registrations:
-            attached += bool(registration.active)
+            attached += bool(registration.read_only_active)
             failure = registration.advisory_failure
             if failure is not None:
                 failures.append(dict(binding_identity=identity, failure=failure))

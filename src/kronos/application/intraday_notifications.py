@@ -26,12 +26,13 @@ class IntradayNotifications:
     KINDS = {"PROBABLES", "READINESS", "CURRENTNESS", "COMPARISON", "UNAVAILABLE", "TRACK"}
 
     def __init__(self, *, centre, research, wo09, futures, lifecycle, telegram=None,
-                 background=True, expected_checkpoint=None):
+                 background=True, expected_checkpoint=None, monitoring_projection=None):
         if (expected_checkpoint is not None
                 and not _valid_notification_checkpoint(expected_checkpoint)):
             raise ValueError("WO13_EXPECTED_CHECKPOINT_INVALID")
         self.centre, self.research, self.wo09 = centre, research, wo09
         self.futures, self.lifecycle, self.telegram = futures, lifecycle, telegram
+        self.monitoring_projection = monitoring_projection
         self.root = centre._store.root / "intraday-source-references-v1"
         self._lock = RLock()
         self._executor = ThreadPoolExecutor(max_workers=1,thread_name_prefix="kronos-notification") if background else None
@@ -254,7 +255,7 @@ class IntradayNotifications:
         # never causes an automatic duplicate message on restoration.
         self.centre.record_delivery(item.notification_identity,"ATTEMPTING")
         try:
-            result=self.telegram.send(telegram_text(detail))
+            result=self.telegram.send(telegram_text(detail, monitoring=self.indicator(detail)))
             state="SENT" if result.state.value=="SENT" else "FAILED"
         except Exception:state="FAILED"
         self.centre.record_delivery(item.notification_identity,state)
@@ -315,8 +316,12 @@ class IntradayNotifications:
             "AVAILABLE":"LIVE","INTERRUPTED":"INTERRUPTED","UNATTACHED":"IDLE"}.get(d["monitoring"],"UNAVAILABLE")
 
     def indicator(self, details):
-        return sources.monitoring_indicator(details,self.owner_states,
+        from kronos.intraday.sponsor_presentation import monitoring_text, lifecycle_monitoring
+        if details['family'] in {'READY_FOUR', 'READY_FIVE'} and self.monitoring_projection is not None:
+            return monitoring_text(self.monitoring_projection(details['source_identity']))
+        state = sources.monitoring_indicator(details,self.owner_states,
             terminal=details.get("track_identity") in self.terminal_tracks)
+        return ' · '.join(lifecycle_monitoring(state))
 
     def close(self, *, wait=True):
         if self._executor is not None:self._executor.shutdown(wait=wait)

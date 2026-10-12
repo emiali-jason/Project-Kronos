@@ -73,10 +73,15 @@ def semantic_identity(details):
     return "INTRADAY-WO13-" + sha256(json.dumps(material,separators=(",", ":")).encode()).hexdigest()
 
 
-def telegram_text(details):
+def telegram_text(details, *, monitoring=None):
     validate(details)
-    lines = ["KRONOS · INTRADAY", TITLES[details["family"]], details["subject"]+" · "+details["direction"],
+    from kronos.intraday.sponsor_presentation import security_name, waiting_for
+    lines = ["KRONOS · INTRADAY", TITLES[details["family"]], security_name(details["subject"])+" · "+details["direction"],
              details["opportunity_id"]]
+    if details['family'] in {'READY_FOUR', 'READY_FIVE'}:
+        lines.append('Waiting for: ' + waiting_for(details.get('criteria', '')))
+        lines.append('Monitoring: ' + (monitoring or 'UNAVAILABLE · Authoritative monitoring state is unavailable.'))
+        lines.append('Reassessment requires a separately authorized ordinary Analysis.')
     if details.get('reason') == 'Experimental PAPER':
         lines.append('Experimental PAPER · predictive usefulness not established')
     for key in ("truth_class","lots","contract","expiry","entry","stop","target","exit","model_rr","model_points","one_lot_result","executability","risk_advisory"):

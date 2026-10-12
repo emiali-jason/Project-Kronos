@@ -128,15 +128,16 @@ def presentation_fixture(tmp_path):
 def test_compact_machine_details_history_and_paper_authority(tmp_path):
     status, readiness = presentation_fixture(tmp_path)
     html = render_machine_review(_snapshot(),status,readiness)
-    for value in ('I1','I2','I3','I4','I5','READY_FIVE · 5/5 NOW','READY_FOUR · 4/5 READY','Assessment Price · UNAVAILABLE',
-                  'First-five','Missing · I2','RETAINED WATCH','NOT_RETAINED','Criterion details','SATISFIED','OUTSTANDING','UNAVAILABLE',
+    for value in ('I1','I2','I3','I4','I5','5/5 Now','4/5 Ready','Assessment Price · UNAVAILABLE',
+                  'First-five','I2 — Follow-through','RETAINED WATCH','NOT_RETAINED','Criterion details','SATISFIED','OUTSTANDING','UNAVAILABLE',
                   'Historical Chart Analyst Evidence','Question Packs, Answers and WO07F','EXPERIMENTAL PAPER','0.1.0','Method and evidence'):
         assert value in html
     assert '<details open' not in html
     assert 'MACHINE WO08 ASSESSMENT</strong>' not in html
     assert 'font-size:22px' in html and '.main:has(.machine-review)' in html
     assert 'Assessment Price · 116' not in html  # Never substitute experimental P.
-    assert '<th class="criterion" scope="col">I5</th>' in html
+    assert '<th scope="col">Waiting for</th>' in html
+    assert '<th scope="col">Monitoring</th>' in html
 
 
 def test_machine_without_session_authority_keeps_rows_secondary(tmp_path):
@@ -144,7 +145,7 @@ def test_machine_without_session_authority_keeps_rows_secondary(tmp_path):
     readiness.pop('operational_summary')
     html = render_machine_review(_snapshot(),status,readiness)
     assert 'NO CURRENT MACHINE ASSESSMENT' in html
-    assert 'Other / retained assessments · 3' in html
+    assert 'Not Admitted / Unavailable / Retained · 3' in html
     assert 'Session eligibility not assessed' in html
 
 

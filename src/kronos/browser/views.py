@@ -458,12 +458,20 @@ def _dashboard_intraday_card(summary) -> str:
     values = (("NOW", summary.now), ("READY", summary.ready))
     counts = ''.join('<div class="strategy-count"><span>' + label + '</span><strong>'
         + (str(value) if value is not None else '—') + '</strong></div>' for label, value in values)
+    opportunities = []
+    for item in summary.opportunities:
+        monitoring = item.get('monitoring') or dict(state='UNAVAILABLE', reason='Authoritative monitoring state is unavailable.')
+        opportunities.append('<div class="strategy-group"><strong>' + escape(item['security'] + ' · ' + item['direction'])
+            + '</strong><span>' + escape(item['status']) + '</span><small>Waiting for: ' + escape(item['waiting'])
+            + '<br>Monitoring: ' + escape(monitoring['state']) + '<br>' + escape(monitoring['reason'])
+            + ('' if not item.get('contract') else '<br>' + escape(item['contract'])) + '</small></div>')
     return ('<article class="strategy-card intraday"><h3>INTRADAY</h3>'
         + '<div class="strategy-counts">' + counts + '</div>'
-        + '<div class="strategy-groups"><div class="strategy-group"><span>WO09 · EXPERIMENTAL PAPER</span>'
-        + '<small>READY_FIVE · 5/5 NOW<br>READY_FOUR · 4/5 READY<br>Readiness only · handoff checked separately</small></div></div>'
+        + '<div class="strategy-groups">' + ''.join(opportunities) + '</div>'
         + '<p class="strategy-empty">' + ('No current READY/NOW opportunities.' if summary.now == summary.ready == 0
             else 'Current session verified.' if available else 'Current authority unavailable.') + '</p>'
+        + '<details><summary>Technical details</summary>Experimental PAPER · readiness only; handoff checked separately. '
+        + 'READY_FIVE · 5/5 NOW; READY_FOUR · 4/5 READY.</details>'
         + '<div class="strategy-footer"><a href="/intraday">VIEW INTRADAY →</a></div></article>')
 
 
@@ -2960,7 +2968,9 @@ def render_reports(
     )
     if query.product is ReportProduct.INTRADAY:
         unsupported = ('<p>Factual one-lot model records. Observation is counterfactual, not exposure. '
-                       'Research authority remains WO-12. LIVE_POSITION_NOT_COMMISSIONED_V1.</p>')
+                       'Trading mode: Paper. Paper positions are simulated one-lot positions; observations are simulated outcomes without exposure. '
+                       'Live trading is not enabled.</p><details><summary>Technical details</summary>'
+                       'Research authority remains WO-12. LIVE_POSITION_NOT_COMMISSIONED_V1.</details>')
     detail = next(
         (item for item in projection.records if item.record_identity == selected_record_id
          or (query.product is ReportProduct.SWING and selected_record_id not in {None, "UNAVAILABLE", "OPTIONAL_MISSING", "NOT_APPLICABLE"}
@@ -6181,9 +6191,10 @@ def render_settings(
     proof = ""
     if monitoring.state is LiveMonitoringTestState.PASS:
         proof = (
-            '<div class="configuration-note"><strong>LIVE MONITORING: PASS</strong><br>'
+            '<div class="configuration-note"><strong>LIVE PRICES: RECEIVED</strong><br>'
             f'Instrument: {escape(monitoring.instrument or "—")}<br>'
-            'Provider: KITE<br>Market data received: YES<br>DOMAIN-002: ACCEPTED<br>'
+            'Market data received: YES<br>Last test received live prices; this does not establish an active opportunity watch.<br>'
+            '<details><summary>Technical details</summary>LIVE MONITORING: PASS<br>Provider: KITE<br>DOMAIN-002: ACCEPTED</details>'
             f'Observed at: {escape(monitoring.observed_at.isoformat() if monitoring.observed_at else "—")}</div>'
         )
     elif monitoring.state is LiveMonitoringTestState.CONNECTED_NO_DATA:
@@ -6218,9 +6229,9 @@ def render_settings(
     calendar_section = (
         '<section class="configuration settings-card settings-calendar">'
         '<div class="configuration-head"><div><h2>MARKET CALENDAR</h2>'
-        '<small>DOMAIN-008 Market Calendar</small></div></div>'
+        '<small>Exchange trading sessions and calendar coverage</small></div></div>'
         f'{calendar_rows or "<p class=configuration-note>Calendar health unavailable.</p>"}'
-        '</section>'
+        '<details><summary>Technical details</summary>DOMAIN-008 Market Calendar</details></section>'
     )
     diagnostics_section = (
         '<section class="configuration settings-card settings-engineering engineering-diagnostics" id="engineering-diagnostics">'
@@ -6352,7 +6363,7 @@ def render_settings(
             snapshot.provider_state.value, provider_tone, wrap_text=True
         )
         + '</div>'
-        '<div class="configuration-state"><span>Live monitoring</span>'
+        '<div class="configuration-state"><span>Live prices · last test</span>'
         + _settings_status(monitoring.state.value, monitoring_tone)
         + '</div>'
         '<div class="configuration-actions">' + kite_controls + '</div>'
@@ -6370,7 +6381,7 @@ def render_settings(
             chart_analyst_status.value, chart_analyst_tone, connection=True
         )
         + '</div>'
-        '<div class="configuration-state"><span>Chart Analyst V2</span>'
+        '<div class="configuration-state"><span>Chart Analyst</span>'
         + _settings_status(activation_status.value, activation_tone)
         + '</div>'
         '<div class="configuration-actions">'
@@ -6393,11 +6404,13 @@ def render_settings(
         '<div><h2>SYSTEM &amp; SECURITY</h2><small>Bounded factual runtime authority</small></div>'
         '<span class="read-only-badge">READ ONLY</span></div><div class="settings-security-grid">'
         '<div><span>MODE</span><strong>LOCAL · READ ONLY</strong></div>'
-        '<div><span>PROVIDER CAPABILITY</span><strong>INSIDE THIS PROCESS</strong></div>'
-        '<div><span>ORDER CAPABILITY</span><strong>NONE</strong></div>'
+        '<div><span>MARKET DATA</span><strong>READ ONLY</strong></div>'
+        '<div><span>BROKER ORDERS</span><strong>NOT ENABLED</strong></div>'
         '<div><span>DATA VISIBILITY</span><strong>LOCAL ONLY</strong></div>'
         '<div><span>CREDENTIAL STORAGE</span><strong>KEYCHAIN / SECURE BOUNDARY</strong></div>'
-        '</div></section>'
+        '</div><details><summary>Technical details</summary>'
+        '<div><span>PROVIDER CAPABILITY</span><strong>INSIDE THIS PROCESS</strong></div>'
+        '<div><span>ORDER CAPABILITY</span><strong>NONE</strong></div></details></section>'
     )
     body = (
         '<div class="settings-control-centre">' + kite_section + telegram_section
@@ -6637,6 +6650,20 @@ def _render_intraday_notifications(snapshot: BrowserWorkspaceSnapshot) -> str:
 def _operational_notification_row(item: SponsorNotificationRecord, monitoring: str | None = None) -> str:
     time = item.updated_at.astimezone(_KOLKATA).strftime("%H:%M")
     subject = item.instrument or "SYSTEM"
+    message = item.summary
+    technical = ''
+    if item.product == 'INTRADAY' and item.intraday_details:
+        import json
+        from kronos.intraday.sponsor_presentation import security_name, waiting_for
+        from kronos.intraday.notification_policy import TITLES
+        detail = json.loads(item.intraday_details)
+        subject = security_name(detail['subject']) + ' · ' + detail['direction']
+        message = TITLES[detail['family']]
+        if detail['family'] in {'READY_FOUR', 'READY_FIVE'}:
+            message += ' · Waiting for: ' + waiting_for(detail.get('criteria', ''))
+        if detail.get('contract'):
+            message += ' · ' + detail['contract']
+        technical = '<pre>' + escape(json.dumps(detail, indent=2)) + '</pre>'
     monitoring_badge = '' if monitoring is None else '<span class="notification-monitoring">MONITORING · '+escape(monitoring)+'</span>'
     next_reminder = (
         '' if item.next_reminder_at is None else
@@ -6682,7 +6709,7 @@ def _operational_notification_row(item: SponsorNotificationRecord, monitoring: s
         + item.state.value + '</span><span class="notification-centre-time">' + time + '</span>'
         '<span class="notification-centre-subject">' + escape(subject) + '</span>'
         '<span class="notification-centre-message" title="' + escape(item.summary) + '">'
-        + escape(item.summary) + '</span><span class="notification-centre-next">'
+        + escape(message) + '</span><span class="notification-centre-next">'
         + escape(next_reminder) + monitoring_badge
         + (('<span>TELEGRAM · ' + escape(item.telegram_delivery) + '</span>')
            if item.product == "SWING" and item.telegram_delivery else '')
@@ -6690,7 +6717,7 @@ def _operational_notification_row(item: SponsorNotificationRecord, monitoring: s
         + ''.join(actions) + '</span><details class="notification-centre-detail">'
         '<summary>' + ('PRESENTATION HISTORY · ' if item.product == "SWING" else 'GOVERNED EVIDENCE · ')
         + escape(item.notification_type.replace('_', ' '))
-        + '</summary><ul>' + history + '</ul></details></article>'
+        + '</summary><ul>' + history + '</ul>' + technical + '</details></article>'
     )
 
 

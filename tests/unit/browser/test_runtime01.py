@@ -148,7 +148,7 @@ def test_runtime_status_exposes_experimental_memory_only(running, monkeypatch, c
     coordinator.hub = object() if configured else None
     coordinator.instrument_source = object() if configured else None
     coordinator.maintenance = server.maintenance_admission if configured else None
-    coordinator.registrations = {'binding': SimpleNamespace(active=configured,
+    coordinator.registrations = {'binding': SimpleNamespace(read_only_active=configured,
         advisory_failure='ADVISORY_CALLBACK_FAILED' if configured else None,
         disconnect=Mock())}
     coordinator._queue = {'instrument': object()} if configured else {}

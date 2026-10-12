@@ -146,7 +146,7 @@ def require(value: ResearchRecord, schema: str) -> dict[str, object]:
     return value.data
 
 
-def opportunity_id(canonical_subject_identity: str, origin_at: datetime) -> str:
+def opportunity_id(canonical_subject_identity: str, origin_at: datetime, *, legacy_symbol=False) -> str:
     """Return the permanent Sponsor-readable ID from governed origin time."""
     from zoneinfo import ZoneInfo
 
@@ -155,6 +155,11 @@ def opportunity_id(canonical_subject_identity: str, origin_at: datetime) -> str:
     if origin_at.tzinfo is None or origin_at.utcoffset() is None:
         raise ValueError("WO12_AWARE_TIMESTAMP_REQUIRED")
     symbol = canonical_subject_identity.rsplit("-", 1)[-1]
+    if not legacy_symbol:
+        for prefix in ('NSE-EQ-', 'NSE-INDEX-', 'NSE-', 'MCX-SUBJECT-'):
+            if canonical_subject_identity.startswith(prefix):
+                symbol = canonical_subject_identity[len(prefix):].replace('-', '_')
+                break
     if not symbol or any(character not in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_&" for character in symbol):
         raise ValueError("WO12_SPONSOR_SYMBOL_INVALID")
     return f"{symbol}-{origin_at.astimezone(ZoneInfo('Asia/Kolkata')).strftime('%Y%m%d-%H%M%S')}"
@@ -163,8 +168,8 @@ def opportunity_id(canonical_subject_identity: str, origin_at: datetime) -> str:
 def opportunity_origin(*, canonical_subject_identity: str, market_family: str,
                        session_identity: str, origin_at: datetime,
                        probable_result_identity: str, probables_run_identity: str,
-                       reset_identity: str | None = None) -> ResearchRecord:
-    sponsor_id = opportunity_id(canonical_subject_identity, origin_at)
+                       reset_identity: str | None = None, legacy_symbol=False) -> ResearchRecord:
+    sponsor_id = opportunity_id(canonical_subject_identity, origin_at, legacy_symbol=legacy_symbol)
     machine_material = {
         "programme_identity": PROGRAMME_IDENTITY,
         "product": "INTRADAY",

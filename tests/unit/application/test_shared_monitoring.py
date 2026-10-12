@@ -361,6 +361,9 @@ class Session:
 
 class Capability:
     active = True
+    @property
+    def read_only_active(self):
+        return self.active
 
     def __init__(self) -> None:
         self.sessions = []

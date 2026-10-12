@@ -159,7 +159,7 @@ def canonical_adapter(watch,clock):
     from types import SimpleNamespace
     from kronos.application.intraday_experimental_watch import GovernedExperimentalWatchCoordinator
     boundary=SimpleNamespace(_sources=lambda r:nullcontext(),_source=lambda r,op:None,
-        _session=lambda r,op:None)
+        _session=lambda r,op:None,retained_monitoring_source=lambda r:None)
     return GovernedExperimentalWatchCoordinator(watch.wo09,boundary=boundary,
         factual_source=None,clock=lambda:clock[0])
 
@@ -315,6 +315,7 @@ def test_advisory_callback_error_surfaces_in_canonical_status(tmp_path):
     adapter=canonical_adapter(watch,clock)
     class Failed:
         active=True
+        read_only_active=True
         advisory_failure='ADVISORY_CALLBACK_FAILED'
     adapter.registrations[bindings[0]['identity']]=Failed()
     status=adapter.status_document()

@@ -211,9 +211,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     from kronos.browser.dashboard import project_intraday_dashboard
     def intraday_dashboard_summary():
         return project_intraday_dashboard(intraday_runtime.wo09_store,
-            intraday_runtime.wo09_application.eligibility)
+            intraday_runtime.wo09_application.eligibility,
+            monitoring_projection=intraday_runtime.wo09_application.experimental_watches.monitoring_projection)
     intraday_wo09_projection = IntradayWo09Projection(intraday_runtime.wo09_store,
-        machine_successor=True, operational_summary=intraday_dashboard_summary)
+        machine_successor=True, operational_summary=intraday_dashboard_summary,
+        monitoring_projection=intraday_runtime.wo09_application.experimental_watches.monitoring_projection)
     def futures_guard():
         governance.require_operations()
         return True
@@ -378,7 +380,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             centre=server.notification_centre, research=intraday_runtime.research_application,
             wo09=intraday_runtime.wo09_store, futures=intraday_runtime.futures_application.store,
             lifecycle=intraday_runtime.lifecycle_application.store, telegram=server.telegram,
-            expected_checkpoint=expected_notification_checkpoint)
+            expected_checkpoint=expected_notification_checkpoint,
+            monitoring_projection=server.intraday_experimental_watches.monitoring_projection)
         server.intraday_notifications.bind_maintenance_admission(
             server.maintenance_admission
         )

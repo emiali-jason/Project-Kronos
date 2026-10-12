@@ -67,9 +67,10 @@ class IntradayDashboardSummary:
     state: str = "CURRENT_AUTHORITY_UNAVAILABLE"
     current_readiness: tuple[str, ...] = ()
     watching_disposition: str = "DEFERRED_NOT_AUTHORITATIVE"
+    opportunities: tuple[dict, ...] = ()
 
 
-def project_intraday_dashboard(store, boundary=None) -> IntradayDashboardSummary:
+def project_intraday_dashboard(store, boundary=None, *, monitoring_projection=None) -> IntradayDashboardSummary:
     """Read exact WO09 authority under existing source/session owner checks.
 
     Counts are persisted readiness classifications, never assessed/browser rows.
@@ -91,6 +92,7 @@ def project_intraday_dashboard(store, boundary=None) -> IntradayDashboardSummary
         machine_preview = next((record for _, record in before if record.source_authority == 'WO08'), None)
         with (nullcontext() if machine_preview is None else owner._sources(machine_preview)):
             current = []
+            opportunities = []
             now = ready = 0
             current_population = None
             for pointer, record in before:
@@ -160,11 +162,18 @@ def project_intraday_dashboard(store, boundary=None) -> IntradayDashboardSummary
                         continue
                     raise
                 current.append(record.readiness_identity)
+                if record.readiness_state in {ReadinessState.BUY_NOW, ReadinessState.SELL_NOW, ReadinessState.BUY_READY, ReadinessState.SELL_READY}:
+                    from kronos.intraday.sponsor_presentation import security_name, waiting_for
+                    opportunities.append(dict(security=security_name(record.canonical_subject_identity),
+                        subject=record.canonical_subject_identity, direction=record.direction,
+                        status='Now' if record.satisfied_count == 5 else 'Ready',
+                        waiting=waiting_for(data['criteria']), contract=record.exact_mcx_contract_identity,
+                        monitoring=None if monitoring_projection is None else monitoring_projection(record.readiness_identity)))
                 now += record.readiness_state in {ReadinessState.BUY_NOW, ReadinessState.SELL_NOW}
                 ready += record.readiness_state in {ReadinessState.BUY_READY, ReadinessState.SELL_READY}
             if before != store.restore_current():
                 raise ValueError("INTRADAY_DASHBOARD_SOURCE_CHANGED")
-            return IntradayDashboardSummary(now, ready, "CURRENT_SESSION_VERIFIED" if current else "NO_CURRENT_READINESS", tuple(current))
+            return IntradayDashboardSummary(now, ready, "CURRENT_SESSION_VERIFIED" if current else "NO_CURRENT_READINESS", tuple(current), opportunities=tuple(opportunities))
     except (ValueError, OSError):
         return IntradayDashboardSummary()
 

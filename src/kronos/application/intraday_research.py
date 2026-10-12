@@ -149,6 +149,7 @@ class IntradayResearchApplication:
         return tuple(first[key] for key in sorted(first))
 
     def _ensure_origins(self, *, source_events=None, tracks=None):
+        from kronos.intraday.wo12_research_contract import opportunity_id
         # Same identity/reset authority for explicit research and admitted persistence.
         all_events = self._source_origins_all() if source_events is None else source_events
         first = {}
@@ -166,6 +167,8 @@ class IntradayResearchApplication:
                 origin_at=at,
                 probable_result_identity=result_identity,
                 probables_run_identity=run_identity,
+                legacy_symbol=existing is not None and existing.data['opportunity_id'] ==
+                    opportunity_id(result.canonical_subject_identity, at, legacy_symbol=True),
             )
             if existing is not None:
                 data = existing.data

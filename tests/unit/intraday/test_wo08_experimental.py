@@ -21,7 +21,7 @@ from tests.unit.intraday.test_native_pullback_policy import START,SESSION,SUBJEC
 def experimental_fixture(direction='LONG', *, minutes=135, rows=None, five_rows=None,
                          missing_five=(), missing_fifteen=(), daily=(125,85,105),
                          subject=SUBJECT, session=SESSION, binding=None, bundle=None,
-                         shortened=False):
+                         shortened=False, member='MEMBER'):
     """Reusable source/facts/mapping/run/native/assessment, exact completed slots."""
     boundary=START+timedelta(minutes=minutes)
     exchange='MCX' if subject.startswith('MCX-') else 'NSE'
@@ -36,7 +36,7 @@ def experimental_fixture(direction='LONG', *, minutes=135, rows=None, five_rows=
         return HistoricalCandle(start,float(c),float(h),float(l),float(c),100)
     all_rows=list(BARS)+[(117,110,116)] if rows is None else rows
     five=[(108,102,106)]*25+[(115,110,114),(117,114,116)] if five_rows is None else five_rows
-    facts=create_discovery_probables_v2_facts(universe_member_identity='MEMBER',canonical_subject_identity=subject,
+    facts=create_discovery_probables_v2_facts(universe_member_identity=member,canonical_subject_identity=subject,
         subject_exchange=exchange,discovery_bundle_identity='BUNDLE' if bundle is None else bundle.bundle_identity,
         observation_boundary_identity='BOUNDARY',observation_boundary=boundary,
         current_schedule=current,previous_schedule=previous,
@@ -51,8 +51,8 @@ def experimental_fixture(direction='LONG', *, minutes=135, rows=None, five_rows=
         current_fifteen_minute=facts.current_fifteen_minute,current_five_minute=facts.current_five_minute,provenance=('ISOLATED',))
     semantic=build_semantic_qualification_evidence_v2(selection=selection,narrow_cpr_fact=facts.previous_session_facts.narrow_cpr,
         participation_state='AVAILABLE_SUPPORTING_NON_BLOCKING',provenance=('ISOLATED',))
-    mapping=create_discovery_probables_evidence_v2(universe_member_identity='MEMBER',source_discovery_run_identity='DISCOVERY',
-        source_discovery_member_identity='MEMBER-RESULT',market_session_identity=session,completed_evidence=selection,
+    mapping=create_discovery_probables_evidence_v2(universe_member_identity=member,source_discovery_run_identity='DISCOVERY',
+        source_discovery_member_identity=member+'-RESULT',market_session_identity=session,completed_evidence=selection,
         semantic_evidence=semantic,opening_semantic=None,nifty_relative=None,provenance=('ISOLATED',facts.facts_identity))
     run=evaluate_probables_v2_run(source_discovery_run_identity='DISCOVERY',universe_identity='UNIVERSE',universe_version='1',
         reconciliation_identity='RECONCILIATION',reconciliation_version='1',market_session_identity=session,analysis_boundary=boundary,
