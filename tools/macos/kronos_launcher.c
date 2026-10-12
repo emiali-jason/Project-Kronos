@@ -1019,6 +1019,12 @@ static BackendStartResult monitor_backend_start(
 #define RECOVERY_WINDOW_END "2026-10-12T07:50:33.006722+05:30"
 #define RECOVERY_START_US 1789179633006722LL
 #define RECOVERY_END_US 1791771633006722LL
+#define RECOVERY_HISTORY_SCHEMA "KRONOS-FAILED-ACTIVE-RECOVERY-AUTHORIZATION/2.0.0"
+#define RECOVERY_HISTORY_PREDECESSOR "37c9dc94ccbbfd35b78c3dfa7c0369a7f41b0df3"
+#define RECOVERY_HISTORY_CAPABILITY "WO06H-CAPABILITY-f61cfe6c7395d0ee8554d82946a5a7fa88444c09151f53bc171253a3d35aa31b"
+#define RECOVERY_HISTORY_RELATION "c718842b6927ee058b4fd135df6eaa57873ffc0b901c597372110bb46338b0f8"
+#define RECOVERY_HISTORY_DIAGNOSIS "c6bb42f497b6e1a2acb056ccc9fd09b2476b73a2e182526fb2bc240e72298d08"
+#define RECOVERY_HISTORY_MAX_VALIDITY_US 1800000000LL
 #define RECOVERY_JSON_TOKENS 8192
 
 typedef struct RecoveryJsonToken { int start, end, next, count; char kind; } RecoveryJsonToken;
@@ -1181,8 +1187,24 @@ typedef struct RecoveryAuthorization {
     char predecessor[41],successor[41],control_digest[65],package[65];
     char rollback[PATH_MAX],rollback_identity[65],relation[PATH_MAX],diagnosis[PATH_MAX];
     char sponsor[PATH_MAX],sponsor_digest[65],control[PATH_MAX];
-    long long valid_from,valid_until,reserved_at;pid_t pid;
+    long long valid_from,valid_until,reserved_at;pid_t pid;int historical;
 } RecoveryAuthorization;
+
+static int recovery_time_valid(const RecoveryAuthorization *a,long long now) {
+    if(now<a->valid_from || now>=a->valid_until)return 0;
+    return a->historical ? (a->valid_from>=RECOVERY_END_US && now>=RECOVERY_END_US &&
+        a->valid_until-a->valid_from<=RECOVERY_HISTORY_MAX_VALIDITY_US) :
+        (a->valid_until<=RECOVERY_END_US && now>=RECOVERY_START_US && now<RECOVERY_END_US);
+}
+static const char *recovery_capability(const RecoveryAuthorization *a) {
+    return a->historical?RECOVERY_HISTORY_CAPABILITY:RECOVERY_CAPABILITY;
+}
+static const char *recovery_relation(const RecoveryAuthorization *a) {
+    return a->historical?RECOVERY_HISTORY_RELATION:RECOVERY_RELATION;
+}
+static const char *recovery_diagnosis(const RecoveryAuthorization *a) {
+    return a->historical?RECOVERY_HISTORY_DIAGNOSIS:RECOVERY_DIAGNOSIS;
+}
 
 static int recovery_load_authorization(const char *root,const char *attempt,
                                       const char *control,pid_t pid,const char *target,
@@ -1192,18 +1214,22 @@ static int recovery_load_authorization(const char *root,const char *attempt,
     memset(a,0,sizeof(*a));strcpy(a->root,root);strcpy(a->attempt,attempt);
     if(snprintf(a->file,sizeof(a->file),"%s/%s.authorization.json",root,attempt)>=(int)sizeof(a->file))return 0;
     char raw[16384],reference[256],sponsor_path[PATH_MAX],sponsor_hash[65],actual[65];RecoveryJson j;
-    if(!recovery_read_file(a->file,raw,sizeof(raw),1) || !recovery_json_document(&j,raw) || j.token[0].count!=24 ||
-       !recovery_field(&j,0,"schema",RECOVERY_SCHEMA) || !recovery_field(&j,0,"recovery_class",RECOVERY_CLASS) ||
+    if(!recovery_read_file(a->file,raw,sizeof(raw),1) || !recovery_json_document(&j,raw))return 0;
+    a->historical=recovery_field(&j,0,"schema",RECOVERY_HISTORY_SCHEMA);
+    if((a->historical ? (j.token[0].count!=25 ||
+            !recovery_field(&j,0,"research_state","HISTORICAL_ACCEPTANCE_EXPIRED")) :
+            (j.token[0].count!=24 || !recovery_field(&j,0,"schema",RECOVERY_SCHEMA))) ||
+       !recovery_field(&j,0,"recovery_class",RECOVERY_CLASS) ||
        !recovery_field(&j,0,"state","SPONSOR_APPROVED") || !recovery_field(&j,0,"attempt_identity",attempt) ||
        !recovery_string(&j,0,"sponsor_authorization_reference",reference,sizeof(reference)) ||
        !recovery_string(&j,0,"sponsor_authorization_path",sponsor_path,sizeof(sponsor_path)) ||
        !recovery_string(&j,0,"sponsor_authorization_sha256",sponsor_hash,sizeof(sponsor_hash)) || !valid_token(sponsor_hash) ||
        !recovery_file_digest(sponsor_path,actual,0) || strcmp(actual,sponsor_hash) ||
-       !recovery_field(&j,0,"predecessor_revision",RECOVERY_PREDECESSOR) ||
+       !recovery_field(&j,0,"predecessor_revision",a->historical?RECOVERY_HISTORY_PREDECESSOR:RECOVERY_PREDECESSOR) ||
        !recovery_field(&j,0,"successor_revision",target) ||
-       !recovery_field(&j,0,"expected_successor_capability",RECOVERY_CAPABILITY) ||
-       !recovery_field(&j,0,"compatibility_relation_sha256",RECOVERY_RELATION) ||
-       !recovery_field(&j,0,"diagnosis_sha256",RECOVERY_DIAGNOSIS) ||
+       !recovery_field(&j,0,"expected_successor_capability",recovery_capability(a)) ||
+       !recovery_field(&j,0,"compatibility_relation_sha256",recovery_relation(a)) ||
+       !recovery_field(&j,0,"diagnosis_sha256",recovery_diagnosis(a)) ||
        !recovery_field(&j,0,"window_start",RECOVERY_WINDOW_START) || !recovery_field(&j,0,"window_end",RECOVERY_WINDOW_END) ||
        recovery_integer(&j,0,"predecessor_pid")!=pid ||
        !recovery_string(&j,0,"predecessor_maintenance_identity",a->maintenance,sizeof(a->maintenance)) || !valid_token(a->maintenance) ||
@@ -1214,18 +1240,17 @@ static int recovery_load_authorization(const char *root,const char *attempt,
        !recovery_separate_bundle(a->rollback,canonical_bundle) ||
        !recovery_string(&j,0,"rollback_package_identity",a->rollback_identity,sizeof(a->rollback_identity)) || !valid_token(a->rollback_identity) ||
        !recovery_string(&j,0,"relation_path",a->relation,sizeof(a->relation)) ||
-       !recovery_file_digest(a->relation,actual,0) || strcmp(actual,RECOVERY_RELATION) ||
+       !recovery_file_digest(a->relation,actual,0) || strcmp(actual,recovery_relation(a)) ||
        !recovery_string(&j,0,"diagnosis_path",a->diagnosis,sizeof(a->diagnosis)) ||
-       !recovery_file_digest(a->diagnosis,actual,0) || strcmp(actual,RECOVERY_DIAGNOSIS) ||
+       !recovery_file_digest(a->diagnosis,actual,0) || strcmp(actual,recovery_diagnosis(a)) ||
        !recovery_file_digest(a->file,a->digest,1))return 0;
     unsigned char parsed_digest[CC_SHA256_DIGEST_LENGTH]; char parsed_hex[65];
     CC_SHA256(raw,(CC_LONG)strlen(raw),parsed_digest);
     for(int i=0;i<CC_SHA256_DIGEST_LENGTH;i++)snprintf(parsed_hex+2*i,3,"%02x",parsed_digest[i]);
     if(strcmp(parsed_hex,a->digest))return 0;
     a->valid_from=recovery_integer(&j,0,"valid_from_us");a->valid_until=recovery_integer(&j,0,"valid_until_us");
-    if(a->valid_from<0 || a->valid_until<=a->valid_from || a->valid_until>RECOVERY_END_US ||
-       now<RECOVERY_START_US || now>=RECOVERY_END_US || now<a->valid_from || now>=a->valid_until)return 0;
-    a->pid=pid;strcpy(a->predecessor,RECOVERY_PREDECESSOR);strcpy(a->successor,target);
+    if(a->valid_from<0 || a->valid_until<=a->valid_from || !recovery_time_valid(a,now))return 0;
+    a->pid=pid;strcpy(a->predecessor,a->historical?RECOVERY_HISTORY_PREDECESSOR:RECOVERY_PREDECESSOR);strcpy(a->successor,target);
     strcpy(a->sponsor,sponsor_path);strcpy(a->sponsor_digest,sponsor_hash);strcpy(a->control,control);return 1;
 }
 static const char *recovery_body(const char *response) {
@@ -1271,7 +1296,7 @@ static int recovery_runtime_matches(const RecoveryAuthorization *a,const char *r
        !recovery_field(&j,provider,"cleanup_state","COMPLETE") || recovery_integer(&j,provider,"owned_work_count")!=0 ||
        recovery_integer(&j,provider,"retained_lease_count")!=0 || recovery_integer(&j,provider,"unresolved_cleanup_count")!=0 ||
        !recovery_field(&d,0,"active_operation_identity","null") || !recovery_field(&d,0,"current_failure","null") ||
-       !recovery_field(&d,shadow,"failure","SHADOW_RESTORATION_RUNTIME_INCOMPATIBLE") ||
+       !recovery_field(&d,shadow,"failure",a->historical?"SHADOW_RESTORATION_WINDOW_NOT_ACTIVE":"SHADOW_RESTORATION_RUNTIME_INCOMPATIBLE") ||
        !recovery_field(&d,shadow,"runtime_accepted","false") || !recovery_field(&d,shadow,"epoch_failure","null") ||
        !recovery_field(&d,shadow,"publication_hook_failure","null"))return 0;
     int owners=recovery_json_get(&j,drain,"owners");if(owners<0 || j.token[owners].kind!='{')return 0;
@@ -1337,8 +1362,7 @@ static int recovery_attempt_matches(const RecoveryAuthorization *a,const char *g
         recovery_read_file(path,retained,sizeof(retained),1) && !strcmp(record,retained);
 }
 static int recovery_reserve(RecoveryAuthorization *a,const char *generation,long long now) {
-    if(!valid_token(generation) || now<a->valid_from || now>=a->valid_until ||
-       now<RECOVERY_START_US || now>=RECOVERY_END_US || !recovery_safe_path(a->root,1,1))return 0;
+    if(!valid_token(generation) || !recovery_time_valid(a,now) || !recovery_safe_path(a->root,1,1))return 0;
     char actual[65],path[PATH_MAX],record[1024];
     if(!recovery_file_digest(a->file,actual,1) || strcmp(actual,a->digest) ||
        snprintf(path,sizeof(path),"%s/%s.attempt.json",a->root,a->attempt)>=(int)sizeof(path))return 0;
@@ -1357,11 +1381,11 @@ static int recovery_reserve(RecoveryAuthorization *a,const char *generation,long
 static int recovery_bindings_match(const RecoveryAuthorization *a,const char *repository,
                                   const char *python,const char *control_proof) {
     long long now=recovery_now_us();char actual[65];
-    if(now<a->valid_from || now>=a->valid_until || now<RECOVERY_START_US || now>=RECOVERY_END_US ||
+    if(!recovery_time_valid(a,now) ||
        !recovery_file_digest(a->file,actual,1) || strcmp(actual,a->digest) ||
        !recovery_file_digest(a->sponsor,actual,0) || strcmp(actual,a->sponsor_digest) ||
-       !recovery_file_digest(a->relation,actual,0) || strcmp(actual,RECOVERY_RELATION) ||
-       !recovery_file_digest(a->diagnosis,actual,0) || strcmp(actual,RECOVERY_DIAGNOSIS) ||
+       !recovery_file_digest(a->relation,actual,0) || strcmp(actual,recovery_relation(a)) ||
+       !recovery_file_digest(a->diagnosis,actual,0) || strcmp(actual,recovery_diagnosis(a)) ||
        !recovery_separate_bundle(a->rollback,canonical_bundle) ||
        !recovery_package_identity(repository,python,canonical_bundle,actual) || strcmp(actual,a->package) ||
        !recovery_package_identity(repository,python,a->rollback,actual) || strcmp(actual,a->rollback_identity) ||
@@ -1374,7 +1398,7 @@ static int recovery_bindings_match(const RecoveryAuthorization *a,const char *re
         memset(proof,0,sizeof(proof));if(!ok)return 0;
     }
     now=recovery_now_us();
-    return now>=a->valid_from && now<a->valid_until && now>=RECOVERY_START_US && now<RECOVERY_END_US;
+    return recovery_time_valid(a,now);
 }
 static int recovery_assess(const RecoveryAuthorization *a) {
     char runtime[BACKEND_STATUS_RESPONSE_BYTES],status[BACKEND_STATUS_RESPONSE_BYTES],intraday[BACKEND_STATUS_RESPONSE_BYTES];
@@ -1482,15 +1506,16 @@ static int recovery_successor_ready(void) {
     snprintf(pid,sizeof(pid),"%ld",(long)controlled_pid);snprintf(parent,sizeof(parent),"%ld",(long)a->pid);
     snprintf(from,sizeof(from),"%lld",a->valid_from);snprintf(until,sizeof(until),"%lld",a->valid_until);
     char *arguments[]={(char*)recovery_successor.python,"-B","tools/failed_active_successor.py",
-        "--relation",(char*)a->relation,"--relation-sha256",RECOVERY_RELATION,
-        "--capability",RECOVERY_CAPABILITY,"--pid",pid,"--parent-pid",parent,
+        "--relation",(char*)a->relation,"--relation-sha256",(char*)recovery_relation(a),
+        "--capability",(char*)recovery_capability(a),"--pid",pid,"--parent-pid",parent,
         "--revision",(char*)a->successor,"--generation",(char*)recovery_successor.generation,
-        "--maintenance-root",maintenance,"--evidence-root",evidence,"--valid-from-us",from,"--valid-until-us",until,NULL};
+        "--maintenance-root",maintenance,"--evidence-root",evidence,"--valid-from-us",from,"--valid-until-us",until,
+        "--research-state",a->historical?"HISTORICAL_ACCEPTANCE_EXPIRED":"ACTIVE",NULL};
     int valid=recovery_run_helper(recovery_successor.repository,recovery_successor.python,arguments,input,output,sizeof(output),0) &&
         !strcmp(output,"KRONOS_RECOVERY_SUCCESSOR_V1 VALID\n") &&
         recovery_attempt_matches(a,recovery_successor.generation) &&
         recovery_listener_owner(controlled_pid) &&
-        recovery_now_us()>=a->valid_from && recovery_now_us()<a->valid_until && recovery_now_us()<RECOVERY_END_US;
+        recovery_time_valid(a,recovery_now_us());
     struct timespec now;
     return valid && monotonic_now(&now)==0 && !time_reached(&now,&recovery_successor.deadline);
 }
@@ -1756,7 +1781,7 @@ int main(void) {
         }
         if(!recovery_listener_scan(0,1)){memset(token,0,sizeof(token));return show_restart_blocked();}
         long long final_now=recovery_now_us();
-        if(final_now<recovery_authority.valid_from || final_now>=recovery_authority.valid_until || final_now>=RECOVERY_END_US){
+        if(!recovery_time_valid(&recovery_authority,final_now)){
             memset(token,0,sizeof(token));return show_restart_blocked();}
         recovery_successor=(RecoverySuccessorContext){.authority=&recovery_authority,
             .repository=repository,.python=python,.generation=generation,.home=home};

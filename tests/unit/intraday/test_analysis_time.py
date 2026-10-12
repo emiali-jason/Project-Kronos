@@ -186,7 +186,9 @@ def test_premature_fifteen_minute_completion_cannot_be_reached(tmp_path):
     (REQUESTED.replace(hour=10, minute=0), REQUESTED.replace(hour=13, minute=0)),
 ])
 def test_equal_and_historical_operations_retain_requested_time_and_replay(tmp_path, requested, trusted):
-    _, c, control, _, requests = _control(tmp_path, boundary=trusted)
+    # The fixture producer already exists at the requested historical boundary;
+    # the later trusted admission clock does not retroactively commission it.
+    _, c, control, _, requests = _control(tmp_path, boundary=trusted, commissioned_at=requested)
     payload = _payload("VALID-TIME", boundary=requested)
     result = control.execute_document(payload)
     assert result["outcome"] == "SUCCESS"

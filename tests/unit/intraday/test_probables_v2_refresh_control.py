@@ -145,15 +145,18 @@ def _control(
     *,
     authenticated: bool = True,
     boundary: datetime = SEMANTIC_BOUNDARY,
+    commissioned_at: datetime | None = None,
 ):  # type: ignore[no-untyped-def]
     shared, _, factory_calls, provider_requests = _configured_shared()
     if authenticated:
         _authenticate(shared)
+    clock_value = [boundary if commissioned_at is None else commissioned_at]
     composition = create_intraday_runtime(
         shared,
         evidence_root=tmp_path.resolve(),
-        clock=lambda: boundary,
+        clock=lambda: clock_value[0],
     )
+    clock_value[0] = boundary
     control = IntradayProbablesV2OperationalControl(
         composition.discovery_v2_operation,
         composition.probables_v2_application,

@@ -29,7 +29,12 @@ def complete_startup(server, shadow, *, swing_outcomes=None, wo11=None, wo17=Non
                                              else p.last_factual_observation_at.isoformat())}
             for p in server.trade_window.paper_observation_projections()]
         status = shadow.status()
-        if status["failure"] or (status["window"] is not None and not status["runtime_accepted"]):
+        historical = (status.get("historical_restoration") == "KRONOS-WO06H-HISTORICAL-RESTORATION/1.0.0"
+            and status.get("acceptance_disposition") == "HISTORICAL_ACCEPTANCE_EXPIRED"
+            and status.get("historical_evidence") == "READABLE"
+            and status.get("collection_authority") == "EXPIRED"
+            and status.get("enabled") is False and status["runtime_accepted"] is False)
+        if status["failure"] or (status["window"] is not None and not status["runtime_accepted"] and not historical):
             failure = "ACCEPTANCE_RESTORATION_NOT_ESTABLISHED"
         elif _swing_restoration_failure(swing_outcomes):
             failure = "SWING_RESTORATION_NOT_ESTABLISHED"

@@ -216,13 +216,15 @@ def test_wo05a_rejects_0929_requesting_0930_before_shadow_or_provider(tmp_path):
 
 def test_month_cutoff_mid_batch_keeps_denominator_without_further_quotes(tmp_path,monkeypatch):
     import kronos.application.intraday_live_shadow as module
-    original=module.capture;count=[]
+    original=module.capture;count=[];at_expiry=[]
+    from tests.unit.intraday.test_live_shadow_epochs import inventory
     def cutoff(source,result,**kwargs):
         count.append(1)
         pair=original(source,result,**kwargs)
         # Clock change simulates the lawful month endpoint while a batch is in progress.
         owner=next(x for x in services if x._accepted is not None)
         owner.clock=lambda: __import__('datetime').datetime.fromisoformat(owner._window.body['end'])
+        at_expiry.append(inventory(owner._epochs.raw.root))
         return pair
     services=[];old_init=module.IntradayLiveShadowService.__init__
     def init(self,**kwargs):old_init(self,**kwargs);services.append(self)
@@ -230,9 +232,19 @@ def test_month_cutoff_mid_batch_keeps_denominator_without_further_quotes(tmp_pat
     monkeypatch.setattr(module,'capture',cutoff)
     _,_,s,_,_,quotes,*_=pipeline(tmp_path,narrow=False)
     assert len(quotes)==len(count)==1
-    assert len(s.store.all('observation'))==93 and s.status()['counts']['missing_rows']==0
-    assert not s.status()['enabled']
-    assert sum(o.body['assessment']['reason']=='WINDOW_CLOSED_NO_QUOTE' for o in s.store.all('observation'))==92
+    # IWO-06A forbids even missing-price observation publication after expiry.
+    # The batch denominator already retained before expiry remains truthful.
+    assert s.store.all('observation')==()
+    assert inventory(s._epochs.raw.root)==at_expiry[0]
+    assert not s.status()['enabled'] and s._accepted is None
+    from kronos.application.intraday_shadow_history import HistoricalIntradayLiveShadowService
+    restored=HistoricalIntradayLiveShadowService(store=s._epochs.raw,clock=s.clock)
+    restored.bind_runtime(s._manifest)
+    state=restored.status()
+    assert state['acceptance_disposition']=='HISTORICAL_ACCEPTANCE_EXPIRED'
+    assert state['counts']['missing_rows']==93
+    assert state['counts']['expected_b']==93 and state['counts']['cohort_b']==0
+    assert inventory(s._epochs.raw.root)==at_expiry[0]
 
 
 def test_unexpected_shadow_callback_failure_cannot_change_published_admission(tmp_path,monkeypatch):

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from kronos.intraday.runtime_identity import StartupEvidence
-from kronos.application.intraday_live_shadow import IntradayLiveShadowService
+from kronos.application.intraday_shadow_history import HistoricalIntradayLiveShadowService as IntradayLiveShadowService
 from kronos.intraday.live_shadow_persistence import ShadowStore
 
 from dataclasses import dataclass

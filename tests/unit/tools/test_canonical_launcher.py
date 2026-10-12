@@ -1903,5 +1903,5 @@ def test_recovery_review_provenance_is_separate_from_production_binding():
     assert reviewed != persisted
     # Provenance is explicit, but never an alternate byte authorization.
     assert source.count("RECOVERY_REVIEW_ARTIFACT_SHA256") == 1
-    assert 'recovery_field(&j,0,"compatibility_relation_sha256",RECOVERY_RELATION)' in source
-    assert 'strcmp(actual,RECOVERY_RELATION)' in source
+    assert 'recovery_field(&j,0,"compatibility_relation_sha256",recovery_relation(a))' in source
+    assert 'strcmp(actual,recovery_relation(a))' in source

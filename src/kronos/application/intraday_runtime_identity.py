@@ -36,8 +36,9 @@ def compose_runtime_manifest(startup, configuration, operation, control):
     from kronos.application.intraday_live_shadow import IntradayLiveShadowService
     from kronos.intraday import live_shadow_features, live_shadow_quote
     from kronos.intraday.technical_context_research import decimal_policy
+    from kronos.application.intraday_shadow_history import HistoricalIntradayLiveShadowService
     shadow = getattr(operation, "live_shadow", None)
-    if type(shadow) is IntradayLiveShadowService:
+    if type(shadow) in (IntradayLiveShadowService, HistoricalIntradayLiveShadowService):
         calculation = _capability("WO_06H_LIVE_SHADOW", "1.0.0", shadow.capture_published,
             shadow._capture, shadow.complete_eod, shadow.accept_runtime, live_shadow_features.classify,
             live_shadow_features.snapshot, live_shadow_quote.capture, live_shadow_quote.native_context,
@@ -45,7 +46,7 @@ def compose_runtime_manifest(startup, configuration, operation, control):
             live_shadow_features.sma.__wrapped__, live_shadow_features.vwap.__wrapped__,
             live_shadow_features.measure.__wrapped__, decimal_policy)
         capabilities.append(calculation)
-    if type(shadow) is IntradayLiveShadowService:
+    if type(shadow) in (IntradayLiveShadowService, HistoricalIntradayLiveShadowService):
         from kronos.application.intraday_shadow_epochs import epoch_capability
         capabilities.append(epoch_capability(calculation))
     return create_runtime_manifest(startup, configuration, capabilities)

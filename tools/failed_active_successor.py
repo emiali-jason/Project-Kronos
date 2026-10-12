@@ -48,7 +48,7 @@ def read_private(path, *, private=False):
     return raw
 
 
-def verify_documents(documents, relation, *, pid, revision, generation, capability):
+def verify_documents(documents, relation, *, pid, revision, generation, capability, research_state="ACTIVE"):
     from kronos.intraday.live_shadow_epochs import capabilities, validate
     from kronos.intraday.live_shadow_transition import capability_identity
     validate(relation)
@@ -73,9 +73,20 @@ def verify_documents(documents, relation, *, pid, revision, generation, capabili
                    ("owned_work_count", "retained_lease_count", "unresolved_cleanup_count"))):
         raise ValueError("provider authority")
     shadow = intraday["live_shadow"]
-    if (shadow["runtime_accepted"] is not True or shadow["enabled"] is not True
-            or shadow["acceptance_disposition"] != "EXISTING_ACCEPTANCE_RESTORED"
-            or shadow["acceptance_identity"] != body["acceptance"]
+    if research_state == "HISTORICAL_ACCEPTANCE_EXPIRED":
+        restored = (shadow["runtime_accepted"] is False and shadow["enabled"] is False
+            and shadow["acceptance_disposition"] == research_state
+            and shadow.get("historical_restoration") == "KRONOS-WO06H-HISTORICAL-RESTORATION/1.0.0"
+            and shadow.get("historical_evidence") == "READABLE"
+            and shadow.get("collection_authority") == "EXPIRED"
+            and all(type(shadow["counts"][key]) is int for key in ("cohort_a", "cohort_b", "eod_available"))
+            and {key:shadow["counts"][key] for key in ("cohort_a", "cohort_b", "eod_available")}
+                == {"cohort_a":1, "cohort_b":18, "eod_available":0})
+    else:
+        restored = (research_state == "ACTIVE" and shadow["runtime_accepted"] is True
+            and shadow["enabled"] is True
+            and shadow["acceptance_disposition"] == "EXISTING_ACCEPTANCE_RESTORED")
+    if (not restored or shadow["acceptance_identity"] != body["acceptance"]
             or shadow["current_epoch"] != body["epoch"]
             or shadow["window"] != {"identity": body["window"], "start": body["start"], "end": body["end"]}
             or any(shadow[name] is not None for name in ("failure", "epoch_failure", "publication_hook_failure"))):
@@ -97,6 +108,7 @@ def main(argv=None):
         parser.add_argument("--" + name, required=True)
     for name in ("pid", "parent-pid", "valid-from-us", "valid-until-us"):
         parser.add_argument("--" + name, required=True, type=int)
+    parser.add_argument("--research-state", choices=("ACTIVE", "HISTORICAL_ACCEPTANCE_EXPIRED"), default="ACTIVE")
     args = parser.parse_args(argv)
     try:
         raw = sys.stdin.buffer.read(196609)
@@ -108,7 +120,7 @@ def main(argv=None):
         relation = _json(relation_raw)
         documents = _json(raw)
         verify_documents(documents, relation, pid=args.pid, revision=args.revision,
-            generation=args.generation, capability=args.capability)
+            generation=args.generation, capability=args.capability, research_state=args.research_state)
         claim = _json(read_private(Path(args.maintenance_root) / (args.generation + ".consumed.json"), private=True))
         if (set(claim) != {"schema", "generation", "parent_pid", "process_id", "runtime_identity", "accepted_at"}
                 or claim["schema"] != "KRONOS_MAINTENANCE_CONSUMPTION_V2"
@@ -128,8 +140,13 @@ def main(argv=None):
         delta = now - datetime(1970, 1, 1, tzinfo=timezone.utc)
         now_us = (delta.days * 86400 + delta.seconds) * 1000000 + delta.microseconds
         body = relation["body"]
-        if not (args.valid_from_us <= now_us < args.valid_until_us
-                and datetime.fromisoformat(body["start"]) <= now < datetime.fromisoformat(body["end"])
+        expired = args.research_state == "HISTORICAL_ACCEPTANCE_EXPIRED"
+        window_valid = (now >= datetime.fromisoformat(body["end"]) if expired else
+            datetime.fromisoformat(body["start"]) <= now < datetime.fromisoformat(body["end"]))
+        if expired and (args.valid_from_us < int(datetime.fromisoformat(body["end"]).timestamp()*1000000)
+                or not 0 < args.valid_until_us-args.valid_from_us <= 1800000000):
+            raise ValueError("historical authorization validity")
+        if not (args.valid_from_us <= now_us < args.valid_until_us and window_valid
                 and datetime.fromisoformat(documents[2]["live_shadow"]["runtime_proof"]["startup"])
                 <= datetime.fromisoformat(claim["accepted_at"])
                 <= datetime.fromisoformat(receipt["at"]) <= now):
