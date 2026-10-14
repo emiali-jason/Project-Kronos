@@ -126,7 +126,13 @@ def test_exact_startup_tool_commissions_once_and_retains_bound_receipt(tmp_path)
 
 
 @pytest.mark.parametrize('path_name', ['tools/owner.py', 'tools/kronos_browser.py.backup',
-                                      'tools/nested/kronos_browser.py'])
+                                      'tools/nested/kronos_browser.py',
+                                      'tools/swing_chart_analyst_measurement.py.backup',
+                                      'tools/nested/swing_chart_analyst_measurement.py',
+                                      'tools/Swing_chart_analyst_measurement.py',
+                                      'tools/failed_active_continuity.py',
+                                      'tools/failed_active_successor.py',
+                                      'tools/macos/kronos_launcher.c'])
 def test_other_tools_paths_are_not_release_authority(tmp_path, path_name):
     root, head, manifest, digest = release(tmp_path, path_name)
     with pytest.raises(ValueError, match='RELEASE_PATH_INVALID'):
@@ -135,8 +141,9 @@ def test_other_tools_paths_are_not_release_authority(tmp_path, path_name):
 
 @pytest.mark.parametrize('change', ['loaded', 'requested', 'manifest_hash', 'trailer',
                                    'scope', 'committed_hash', 'untracked', 'staged'])
-def test_startup_tool_exception_preserves_release_identity_and_scope_checks(tmp_path, change):
-    root, head, manifest, digest = release(tmp_path, 'tools/kronos_browser.py')
+@pytest.mark.parametrize('path_name', ['tools/kronos_browser.py', 'tools/swing_chart_analyst_measurement.py'])
+def test_startup_tool_exception_preserves_release_identity_and_scope_checks(tmp_path, change, path_name):
+    root, head, manifest, digest = release(tmp_path, path_name)
     def git(*args):
         return subprocess.check_output(['git', '-C', str(root), *args]).decode().strip()
     loaded = head
@@ -162,14 +169,17 @@ def test_startup_tool_exception_preserves_release_identity_and_scope_checks(tmp_
     elif change == 'untracked':
         (root/'unexpected').write_text('unexpected')
     else:
-        (root/'tools/kronos_browser.py').write_text('CHANGED = True\n')
+        (root/path_name).write_text('CHANGED = True\n')
         git('add', '.')
     with pytest.raises(ValueError, match=error):
         ResearchReleaseVerifier(root, lambda: loaded).verify(head, manifest, digest)
 
 
 @pytest.mark.parametrize('bad_path', ['/tools/kronos_browser.py',
-    'tools/../tools/kronos_browser.py', 'tools//kronos_browser.py'])
+    'tools/../tools/kronos_browser.py', 'tools//kronos_browser.py',
+    '/tools/swing_chart_analyst_measurement.py',
+    'tools/../tools/swing_chart_analyst_measurement.py',
+    'tools//swing_chart_analyst_measurement.py'])
 def test_startup_tool_exception_rejects_absolute_traversal_and_noncanonical_paths(tmp_path, monkeypatch, bad_path):
     root, head, manifest, digest = release(tmp_path, 'tools/kronos_browser.py')
     value = json.loads(manifest); value['paths'][0]['path'] = bad_path
@@ -190,14 +200,15 @@ def test_startup_tool_exception_rejects_absolute_traversal_and_noncanonical_path
 
 
 @pytest.mark.parametrize('symlink', ['file', 'parent'])
-def test_exact_startup_tool_rejects_symlink_and_disk_substitution(tmp_path, monkeypatch, symlink):
-    root, head, manifest, digest = release(tmp_path, 'tools/kronos_browser.py')
+@pytest.mark.parametrize('path_name', ['tools/kronos_browser.py', 'tools/swing_chart_analyst_measurement.py'])
+def test_exact_startup_tool_rejects_symlink_and_disk_substitution(tmp_path, monkeypatch, symlink, path_name):
+    root, head, manifest, digest = release(tmp_path, path_name)
     outside = tmp_path/'outside'; outside.mkdir()
-    data = root/'tools/kronos_browser.py'
-    (outside/'kronos_browser.py').write_bytes(data.read_bytes())
+    data = root/path_name
+    (outside/Path(path_name).name).write_bytes(data.read_bytes())
     data.unlink()
     if symlink == 'file':
-        data.symlink_to(outside/'kronos_browser.py')
+        data.symlink_to(outside/Path(path_name).name)
     else:
         (root/'tools').rmdir(); (root/'tools').symlink_to(outside, target_is_directory=True)
     original = subprocess.check_output
@@ -210,25 +221,27 @@ def test_exact_startup_tool_rejects_symlink_and_disk_substitution(tmp_path, monk
         ResearchReleaseVerifier(root, lambda: head).verify(head, manifest, digest)
 
 
-def test_startup_tool_rejects_disk_change_after_clean_status_observation(tmp_path, monkeypatch):
-    root, head, manifest, digest = release(tmp_path, 'tools/kronos_browser.py')
+@pytest.mark.parametrize('path_name', ['tools/kronos_browser.py', 'tools/swing_chart_analyst_measurement.py'])
+def test_startup_tool_rejects_disk_change_after_clean_status_observation(tmp_path, monkeypatch, path_name):
+    root, head, manifest, digest = release(tmp_path, path_name)
     original = subprocess.check_output
     def changed_after_status(command, **kwargs):
         result = original(command, **kwargs)
         if command[3:4] == ['status']:
-            (root/'tools/kronos_browser.py').write_text('CHANGED_AFTER_OBSERVATION = True\n')
+            (root/path_name).write_text('CHANGED_AFTER_OBSERVATION = True\n')
         return result
     monkeypatch.setattr(subprocess, 'check_output', changed_after_status)
     with pytest.raises(ValueError, match='BYTES_INVALID'):
         ResearchReleaseVerifier(root, lambda: head).verify(head, manifest, digest)
 
 
-def test_startup_tool_rechecks_git_head_after_blob_reads(tmp_path, monkeypatch):
-    root, head, manifest, digest = release(tmp_path, 'tools/kronos_browser.py')
+@pytest.mark.parametrize('path_name', ['tools/kronos_browser.py', 'tools/swing_chart_analyst_measurement.py'])
+def test_startup_tool_rechecks_git_head_after_blob_reads(tmp_path, monkeypatch, path_name):
+    root, head, manifest, digest = release(tmp_path, path_name)
     original = subprocess.check_output
     def advanced_after_blob(command, **kwargs):
         result = original(command, **kwargs)
-        if command[3:] == ['show', head+':tools/kronos_browser.py']:
+        if command[3:] == ['show', head+':'+path_name]:
             original(['git', '-C', str(root), 'commit', '--amend', '-m',
                       'isolated concurrent release\n\nWO12-Source-Manifest-SHA256: '+digest])
         return result
@@ -525,3 +538,53 @@ def test_admitted_import_finishes_before_update_evaluation_and_both_owners_drain
     assert observations == [("VERIFIED_NO_ACTION", receipts[0])]
     assert control.status()["operation"]["state"] == "COMPLETED"
     assert drained == [True]
+
+
+def test_exact_external_measurement_tool_is_source_attestation_only(tmp_path):
+    root, head, manifest, digest = release(tmp_path, 'tools/swing_chart_analyst_measurement.py')
+    proof = ResearchReleaseVerifier(root, lambda: head).verify(head, manifest, digest)
+    assert proof == dict(release_identity=head, source_manifest_sha256=digest,
+                         verified_paths=1, base_commit=json.loads(manifest)['direct_base_commit'])
+    # A source proof creates no commissioning or invocation record.
+    assert set(path.name for path in root.iterdir()) == {'.git', 'tools'}
+
+
+def test_authentic_composed_ten_path_release_verifies_all_exact_bytes(tmp_path):
+    """Copy actual candidate bytes into an isolated Git successor, not production."""
+    repository = Path(__file__).resolve().parents[3]
+    base = 'd44b191289da3e6c05b034310267f04fdd084a2f'
+    paths = sorted((
+        'docs/engineering/KRONOS-SWING-OPS-IMPROVEMENTS-20261012.md',
+        'docs/engineering/KRONOS-SWING-ANALYST-PHASE-MEASUREMENT-20261013.md',
+        'docs/engineering/KRONOS-SWING-REPORTS-SPONSOR-UX-SLICE4-20261013.md',
+        'src/kronos/browser/views.py',
+        'src/kronos/application/swing_research_authority.py',
+        'tests/unit/browser/test_swing_opportunity_sponsor_simplification.py',
+        'tests/unit/browser/test_swing_reports_sponsor_coverage.py',
+        'tests/unit/tools/test_swing_chart_analyst_measurement.py',
+        'tests/unit/application/test_swing_research_authority.py',
+        'tools/swing_chart_analyst_measurement.py',
+    ))
+    root = tmp_path/'composed-source'
+    subprocess.run(['git', 'clone', '--shared', '--no-checkout', str(repository), str(root)], check=True)
+    subprocess.run(['git', '-C', str(root), 'checkout', '--detach', base], check=True)
+    entries = []
+    for path in paths:
+        output = root/path; output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes((repository/path).read_bytes())
+        entries.append(dict(path=path, candidate_sha256=sha256(output.read_bytes()).hexdigest()))
+    manifest = json.dumps(dict(direct_base_commit=base, path_count=10, paths=entries)).encode()
+    digest = sha256(manifest).hexdigest()
+    def git(*args):
+        return subprocess.check_output(['git', '-C', str(root), *args]).decode().strip()
+    git('config', 'user.name', 'Isolated source authority')
+    git('config', 'user.email', 'isolated@example.invalid')
+    git('add', '.'); git('commit', '-m', 'Isolated composed release\n\nWO12-Source-Manifest-SHA256: '+digest)
+    head = git('rev-parse', 'HEAD')
+    proof = ResearchReleaseVerifier(root, lambda: head).verify(head, manifest, digest)
+    assert proof['verified_paths'] == 10 and proof['base_commit'] == base
+    assert json.loads(manifest)['path_count'] == len(git('diff', '--name-only', base, head).splitlines())
+    # Replacing even the sidecar's on-disk bytes cannot pass clean/exact authority.
+    (root/'tools/swing_chart_analyst_measurement.py').write_bytes(b'ALTERED\n')
+    with pytest.raises(ValueError, match='RELEASE_DRIFT'):
+        ResearchReleaseVerifier(root, lambda: head).verify(head, manifest, digest)

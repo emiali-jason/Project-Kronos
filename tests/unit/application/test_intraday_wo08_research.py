@@ -245,7 +245,7 @@ def test_explicit_update_refreshes_original_month_without_restamping_origin(tmp_
     originals = app.store.records('WO12_WO08_CONSIDERATION_V1')
     app.clock = lambda: runs[0].analysis_boundary.replace(month=9)
     result = app.update(operation_identity='MONTH-LATER')
-    assert result.workbook_path.name.endswith('2026_09.xlsx')
+    assert result.workbook_path == app.publication_root / '2026' / '2026-09 — September.xlsx'
     prior = app.store.current_receipt('2026_08')
     assert prior is not None and str(app.open_current('2026_08')[0]) == prior.data['workbook_path']
     assert app.store.records('WO12_WO08_CONSIDERATION_V1') == originals

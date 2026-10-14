@@ -61,7 +61,8 @@ class ResearchReleaseVerifier:
                 path = PurePosixPath(entry["path"])
                 if (path.is_absolute() or ".." in path.parts or str(path) != entry["path"]
                         or (path.parts[0] not in {"src", "tests", "docs"}
-                            and str(path) != "tools/kronos_browser.py")):
+                            and str(path) not in {"tools/kronos_browser.py",
+                                                  "tools/swing_chart_analyst_measurement.py"})):
                     raise ValueError("SWING_RESEARCH_RELEASE_PATH_INVALID")
                 local = self.root / path
                 if any(parent.is_symlink() for parent in (local, *local.parents)):

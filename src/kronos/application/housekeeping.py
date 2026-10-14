@@ -7,6 +7,7 @@ remains disabled unless an owning composition explicitly activates it.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import StrEnum
 from hashlib import sha256
 import fcntl
@@ -370,9 +371,23 @@ class _IntradayResearchStagingScope:
             target = Path(str(data["workbook_path"]))
             if not target.is_absolute():
                 return None
-            if target != publication_root / filename or target.parent != publication_root:
+            month = datetime.strptime(year_month, "%Y_%m")
+            if month.strftime("%Y_%m") != year_month:
                 return None
-            if _has_symlink_component(publication_root):
+            version = data["schema_version"]
+            if version == "2.4.0":
+                from kronos.application.intraday_sponsor_reporting import monthly_path
+                expected_target = monthly_path(publication_root, year_month)
+            elif version in {"2.2.0", "2.3.0"}:
+                # Historical publication retains its exact original version/layout.
+                expected_target = publication_root / f"KRONOS_Intraday_Research_{year_month}.xlsx"
+            else:
+                return None
+            if (target != expected_target or filename != expected_target.name
+                    or data["workbook_path_identity"] != "WO12-WORKBOOK-PATH-" + digest(
+                        {"root": str(publication_root), "filename": filename})):
+                return None
+            if _has_symlink_component(target):
                 return None
             root_stat = publication_root.lstat()
             target_stat = target.lstat()

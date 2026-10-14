@@ -10,6 +10,14 @@ from tests.unit.instrument.test_active_derivative_selection import _rows
 from tests.unit.intraday.test_native_pullback_policy import BARS
 
 
+def _rehearsal_summary_path(output, nodeid, direction):
+    """Bind caller-owned evidence to the actual collected case, not its helper."""
+    from hashlib import sha256
+    assert direction in ('LONG','SHORT')
+    return output.with_name(output.stem+'-'+direction.lower()+'-'+
+        sha256(nodeid.encode('utf-8')).hexdigest()+'-summary.json')
+
+
 def configured_experimental_runtime(tmp_path,direction):
     clock_value=[datetime(2026,9,11,12,2,tzinfo=IST)]
     stage=['I2_PENDING']
@@ -222,6 +230,7 @@ def test_normal_analysis_experimental_population_progression_and_restart(tmp_pat
         from pathlib import Path
         output=Path(request.config.option.xmlpath)
         summary=dict(result='DISPOSABLE_PRODUCTION_SHAPED_REHEARSAL_PASS',direction=direction,
+            evidence_test_nodeid=request.node.nodeid,
             initial_probables_run=result.probables_run_identity,successor_probables_run=later.probables_run_identity,
             population_per_analysis=98,experimental_assessment_count=196,current_readiness_count=len(latest),
             method='KRONOS-INTRADAY-WO08-EXPERIMENTAL-PULLBACK-PAPER/0.1.0',
@@ -240,5 +249,27 @@ def test_normal_analysis_experimental_population_progression_and_restart(tmp_pat
             original_assessment_price='UNMODIFIED_BY_EXPERIMENTAL_METHOD',
             terminal_eod_business_validation='NOT_YET_EXERCISED',natgas='HELD',
             predictive_usefulness='NOT_ESTABLISHED',live_broker_authority='NONE')
-        with output.with_name(output.stem+'-'+direction.lower()+'-summary.json').open('x') as file:
+        with _rehearsal_summary_path(output,request.node.nodeid,direction).open('x') as file:
             json.dump(summary,file,indent=2);file.write('\n')
+
+
+@pytest.mark.parametrize('direction',['LONG','SHORT'])
+def test_rehearsal_summary_identity_preserves_exclusive_first_write(tmp_path,direction):
+    from pathlib import Path
+    from hashlib import sha256
+    output=tmp_path/'full-protected.xml'
+    direct='tests/unit/application/test_iwo_experimental_rehearsal.py::test_normal_analysis_experimental_population_progression_and_restart['+direction+']'
+    journey='tests/unit/application/test_opportunity_journey_rehearsal.py::test_experimental_journey_workbook_from_ordinary_analysis['+direction+']'
+    first=_rehearsal_summary_path(output,direct,direction)
+    second=_rehearsal_summary_path(output,journey,direction)
+    assert first!=second
+    assert first==_rehearsal_summary_path(output,direct,direction)
+    assert sha256(direct.encode()).hexdigest() in first.name
+    assert sha256(journey.encode()).hexdigest() in second.name
+    for path,data in ((first,'direct first-write'),(second,'journey first-write')):
+        with path.open('x') as stream:stream.write(data)
+        for replay in (data,'conflicting content'):
+            with pytest.raises(FileExistsError):
+                with path.open('x') as stream:stream.write(replay)
+        assert path.read_text()==data
+    assert set(tmp_path.iterdir())=={first,second}

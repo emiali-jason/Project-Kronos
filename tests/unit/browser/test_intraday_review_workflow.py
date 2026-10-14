@@ -48,7 +48,7 @@ def test_opportunity_link_and_missing_current_review_focus_are_inert(tmp_path):
     card = _probable_v2_card(result, "RELIANCE")
     assert 'Review · <strong>NOT LOADED</strong>' in card
     assert f'/intraday/review?candidate={result.result_identity}#review-candidate-{result.result_identity}' in card
-    assert 'Open Native Review' in card
+    assert 'Open Analysis Review →' in card
     page = _page(routes, result.result_identity)
     assert 'Candidate is in latest Probables but not current Review. Load Fresh Review required.' in page
     assert page.index('LOAD FRESH REVIEW') < page.index('intraday-review-v2-grid', page.index('<section class="intraday-review-v2"'))

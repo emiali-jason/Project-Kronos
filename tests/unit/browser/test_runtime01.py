@@ -654,11 +654,67 @@ def test_status_and_intraday_are_observational_during_inflight_detach(running,tm
     assert provider.begin_count==0 and calls==[]
 
 
-def test_slice8_compact_history_real_http_consumers_are_read_only(running, tmp_path, monkeypatch):
+@pytest.fixture
+def intraday_books_owner(running, tmp_path):
+    """Canonical WO14/15/16 owners with real, empty isolated source stores."""
+    from datetime import datetime, timezone
+    from kronos.application.intraday_books import IntradayBooks
+    from kronos.application.intraday_journal import IntradayJournalApplication
+    from kronos.application.intraday_lifecycle import IntradayLifecycleApplication
+    from kronos.application.intraday_futures import IntradayFuturesApplication
+    from kronos.intraday.wo09_persistence import Wo09Store
+    from kronos.intraday.wo10_futures_store import FuturesStore
+    from kronos.intraday.wo11_lifecycle_store import LifecycleStore
+    from kronos.intraday.wo12_research_store import ResearchStore
+    from kronos.intraday.wo14_journal_store import JournalStore
+
+    server = running[0]
+    root = tmp_path / "intraday-owned"
+    futures = FuturesStore(root / "futures")
+    futures_application = IntradayFuturesApplication(
+        futures, Wo09Store(root / "wo09"),
+        operational_guard=lambda: not server.connection_governance.maintenance_active)
+    research = ResearchStore(root / "research")
+    def unexpected(*_args, **_kwargs):
+        pytest.fail("read-only empty Books fixture requested operational evidence")
+    lifecycle = IntradayLifecycleApplication(
+        futures=futures_application, store=LifecycleStore(root / "lifecycle"),
+        clock=lambda: datetime(2026, 8, 28, tzinfo=timezone.utc),
+        session_source=unexpected, timing_source=unexpected,
+        operational_guard=lambda: not server.connection_governance.maintenance_active)
+    lifecycle.bind_maintenance_admission(server.maintenance_admission)
+    lifecycle.bind_monitoring(server.swing_monitoring_hub, server.application.authenticated_read_only_capability)
+    journal = IntradayJournalApplication(
+        research=research, futures=futures, lifecycle=lifecycle,
+        store=JournalStore(root / "journal"))
+    journal.bind()
+    books = IntradayBooks(research=journal.research, futures=journal.futures, lifecycle=lifecycle)
+    books.bind()
+    server.intraday_lifecycle = lifecycle
+    server.intraday_journal = journal
+    server.intraday_books = books
+    try:
+        yield books
+    finally:
+        # Dispose only this fixture's process-local projections and bindings.
+        server._close_domain_owners()
+        assert lifecycle.work_status()["owned_workers"] == 0
+        assert lifecycle.work_status()["queued_items"] == 0
+        for owner, name, callback in (
+            (futures, "book_listener", books.consume_source),
+            (lifecycle.store, "book_listener", books.consume_source),
+            (futures, "journal_listener", journal.consume_source),
+            (lifecycle.store, "journal_listener", journal.consume_source)):
+            assert getattr(owner, name) == callback
+            delattr(owner, name)
+        del server.intraday_books
+        assert not hasattr(server, "intraday_books")
+
+
+def test_slice8_compact_history_real_http_consumers_are_read_only(running, tmp_path, monkeypatch, intraday_books_owner):
     from datetime import timedelta
     from tests.unit.swing.v1.test_observation_research_ledger_v2 import _selected_history_service, NOW
     from kronos.application.paper_observation_tracking import PaperObservationTrackingWorkflow
-    from kronos.intraday.wo14_journal_contract import JournalSnapshot
     server, governance, provider, calls, root = running
     service, paper, track = _selected_history_service(tmp_path / 'selected')
     server.trade_window._observation_research_v2 = service
@@ -667,7 +723,7 @@ def test_slice8_compact_history_real_http_consumers_are_read_only(running, tmp_p
     from tests.unit.browser.test_browser_reports import _empty_mcx_reports_owner
     server.mcx_v1_control = _empty_mcx_reports_owner(tmp_path/'empty-mcx',server.native_review)
     server.trade_window._paper_observation_tracking = PaperObservationTrackingWorkflow(paper)
-    server.intraday_journal = SimpleNamespace(snapshot=lambda **_: JournalSnapshot((), ()))
+    assert server.intraday_books is intraday_books_owner
     monkeypatch.setattr(server.application, 'current_swing_trading_date', lambda: NOW.date())
     monkeypatch.setattr(server.application, 'swing_trading_date_for', lambda timestamp: timestamp.date())
     for name in ('facts', '_load_fact', 'prepare_historical_consolidation', 'publish_historical_consolidation'):
@@ -860,3 +916,39 @@ def test_native_legacy_ambiguity_is_bounded_to_its_owner(tmp_path, owner, expect
                   failure_reason=None, current_positions=[]))
     assert server.connection_governance.startup_state == expected
     assert server.connection_governance.maintenance_active == (expected == "BLOCKED")
+
+
+@pytest.mark.parametrize("route", [
+    "/reports?product=INTRADAY", "/reports/export.json?product=INTRADAY",
+    "/portfolio?product=INTRADAY"])
+def test_runtime_missing_intraday_books_is_unavailable_without_swing_substitution(running, route):
+    server, _, provider, calls, root = running
+    assert getattr(server, "intraday_books", None) is None
+    before = inventory(root)
+    code, body = request(server, route)
+    assert code == 503 and "unavailable" in body.lower()
+    assert inventory(root) == before
+    assert provider.begin_count == 0 and calls == []
+
+
+def test_runtime_complete_books_bindings_are_inert_product_local_and_clean(running, intraday_books_owner):
+    server, _, provider, calls, root = running
+    books = intraday_books_owner
+    assert books.research is server.intraday_journal.research
+    assert books.futures is server.intraday_journal.futures
+    assert books.lifecycle is server.intraday_lifecycle.store
+    assert books.lifecycle is not server.trade_window
+    assert books.futures.book_listener == books.consume_source
+    assert books.futures.journal_listener == server.intraday_journal.consume_source
+    before = inventory(root)
+    for route in ("/journal?product=INTRADAY", "/reports?product=INTRADAY",
+                  "/reports/export.json?product=INTRADAY", "/portfolio?product=INTRADAY"):
+        assert request(server, route)[0] == 200
+    assert inventory(root) == before
+    assert books.snapshot() == ()
+    work = server.intraday_lifecycle.work_status()
+    assert work["owned_workers"] == work["queued_items"] == 0 and work["failure"] is None
+    assert server.swing_monitoring_hub.active_session_count == server.swing_monitoring_hub.subscription_count == 0
+    assert server.request_capacity_status()["active"] == 0
+    assert "HTTP_REQUEST" not in server.maintenance_admission.snapshot()["owners"]
+    assert provider.begin_count == 0 and calls == []

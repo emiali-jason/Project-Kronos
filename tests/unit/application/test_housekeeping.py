@@ -8,6 +8,8 @@ from threading import Event, Thread
 import time
 import tracemalloc
 
+import pytest
+
 from kronos.application.housekeeping import (
     BoundedHousekeeping,
     DEFAULT_INTERVAL_SECONDS,
@@ -534,3 +536,187 @@ def test_hash_contract_used_for_staged_duplicate_is_exact(tmp_path) -> None:
     assert sha256(staged.read_bytes()).hexdigest() != result.workbook_sha256
     assert cleaned.removed_files == 0
     assert "INTRADAY_RESEARCH_STAGE_MISMATCH" in cleaned.diagnostics
+
+
+# Current layout is owned by Sponsor reporting 2.4; historical layout requires
+# its exact retained 2.2/2.3 receipt, never a basename/hash fallback.
+
+
+def _publication_stage(tmp_path):
+    application, _ = _application(tmp_path)
+    operation = "PF08-LAYOUT-BOUND"
+    result = application.update(operation_identity=operation)
+    stage = application.store.root / "staging" / digest(operation)
+    stage.mkdir(parents=True)
+    shutil.copyfile(result.workbook_path, stage / result.workbook_path.name)
+    return application, result, stage
+
+
+def _verify_publication(application, receipt):
+    from kronos.application.housekeeping import _Budget
+    budget = _Budget(HousekeepingLimits(max_elapsed_seconds=5), time.monotonic, time.monotonic())
+    return intraday_research_staging_scope(application)._verified_current(receipt, budget)
+
+
+def _inventory_bytes(root):
+    return {str(p.relative_to(root)): (p.read_bytes(), p.stat().st_mtime_ns, p.stat().st_ino)
+            for p in root.rglob("*") if p.is_file() and not p.is_symlink()}
+
+
+def test_current_publisher_path_is_verified_observationally_before_cleanup(tmp_path):
+    application, result, stage = _publication_stage(tmp_path)
+    receipt = application.store.load(result.receipt_identity)
+    from kronos.application.intraday_sponsor_reporting import monthly_path
+    assert result.workbook_path == monthly_path(application.publication_root, "2026_08")
+    assert result.workbook_path.parent.name == "2026"
+    before = _inventory_bytes(tmp_path)
+    assert _verify_publication(application, receipt) is not None
+    assert _inventory_bytes(tmp_path) == before
+    keep = stage.parent / "unrelated.xlsx"
+    keep.write_bytes(b"not disposable")
+    cleaned = _housekeeper(intraday_research_staging_scope(application)).run_once()
+    assert cleaned.removed_files == cleaned.removed_directories == 1
+    assert not stage.exists() and keep.read_bytes() == b"not disposable"
+    assert application.store.current_receipt("2026_08") == receipt
+    assert result.workbook_path.read_bytes() == before[str(result.workbook_path.relative_to(tmp_path))][0]
+
+
+@pytest.mark.parametrize("fault", [
+    "omitted-year", "wrong-year", "wrong-month", "wrong-filename", "wrong-root",
+    "traversal", "relative", "wrong-path-identity", "wrong-hash", "wrong-size",
+    "unknown-version", "noncanonical-month", "missing-workbook", "directory-workbook",
+    "symlink-file", "symlink-year", "symlink-root", "stale-pointer", "missing-pointer",
+    "symlink-pointer", "invalid-receipt"])
+def test_publication_layout_rejects_unproved_binding_and_preserves_stage(tmp_path, fault):
+    from dataclasses import asdict
+    from kronos.intraday.wo12_research_contract import encoded
+    application, result, stage = _publication_stage(tmp_path)
+    receipt = application.store.load(result.receipt_identity)
+    data = receipt.data
+    target = result.workbook_path
+    pointer = application.store.root / "current" / "2026_08.json"
+    if fault in {"omitted-year", "wrong-year", "wrong-month", "wrong-filename", "wrong-root", "traversal", "relative"}:
+        paths = {
+            "omitted-year": application.publication_root / target.name,
+            "wrong-year": application.publication_root / "2025" / target.name,
+            "wrong-month": application.publication_root / "2026" / "2026-09 — September.xlsx",
+            "wrong-filename": target.parent / "other.xlsx",
+            "wrong-root": tmp_path / "other-root" / "2026" / target.name,
+            "traversal": application.publication_root / "2026" / ".." / "2026" / target.name,
+            "relative": Path("2026") / target.name,
+        }
+        replacement = paths[fault]
+        if fault not in {"relative", "traversal"}:
+            replacement.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(target, replacement)
+        data["workbook_path"] = str(replacement)
+        data["workbook_filename"] = replacement.name
+        data["workbook_path_identity"] = "WO12-WORKBOOK-PATH-" + digest(
+            {"root": str(application.publication_root), "filename": replacement.name})
+    elif fault == "wrong-path-identity": data["workbook_path_identity"] = "wrong"
+    elif fault == "wrong-hash": data["workbook_sha256"] = "0" * 64
+    elif fault == "wrong-size": data["workbook_bytes"] += 1
+    elif fault == "unknown-version": data["schema_version"] = "9.9.0"
+    elif fault == "noncanonical-month": data["year_month"] = "2026_8"
+    elif fault == "missing-workbook": target.unlink()
+    elif fault == "directory-workbook": target.unlink(); target.mkdir()
+    elif fault == "symlink-file":
+        other = tmp_path / "workbook-copy"; shutil.copyfile(target, other)
+        target.unlink(); target.symlink_to(other)
+    elif fault in {"symlink-year", "symlink-root"}:
+        directory = target.parent if fault == "symlink-year" else application.publication_root
+        other = tmp_path / "moved-publication"
+        directory.rename(other); directory.symlink_to(other, target_is_directory=True)
+    changed = record(receipt.schema, **data)
+    # Isolate the exact path/hash verifier, with a valid content-addressed pointer.
+    pointer.write_bytes(encoded(asdict(changed)) + b"\n")
+    if fault == "noncanonical-month":
+        pointer.rename(pointer.with_name("2026_8.json"))
+    elif fault == "stale-pointer":
+        pointer.write_bytes(encoded(asdict(record(receipt.schema, **dict(data, published_at="2000-01-01T00:00:00+00:00")))) + b"\n")
+    elif fault == "missing-pointer": pointer.unlink()
+    elif fault == "symlink-pointer":
+        other = tmp_path / "pointer-copy"; shutil.copyfile(pointer, other)
+        pointer.unlink(); pointer.symlink_to(other)
+    elif fault == "invalid-receipt": pointer.write_bytes(b'{"invalid":true}')
+    before = _inventory_bytes(tmp_path)
+    assert _verify_publication(application, changed) is None
+    assert _inventory_bytes(tmp_path) == before
+    cleaned = _housekeeper(intraday_research_staging_scope(application)).run_once()
+    assert cleaned.removed_files == 0 and stage.exists()
+
+
+@pytest.mark.parametrize("version", ["2.2.0", "2.3.0"])
+def test_historical_layout_requires_exact_explicit_original_version(tmp_path, version):
+    from dataclasses import asdict
+    from kronos.intraday.wo12_research_contract import encoded
+    application, result, stage = _publication_stage(tmp_path)
+    receipt = application.store.load(result.receipt_identity)
+    legacy = application.publication_root / "KRONOS_Intraday_Research_2026_08.xlsx"
+    shutil.copyfile(result.workbook_path, legacy)
+    data = dict(receipt.data, schema_version=version, workbook_path=str(legacy),
+                workbook_filename=legacy.name,
+                workbook_path_identity="WO12-WORKBOOK-PATH-" + digest(
+                    {"root": str(application.publication_root), "filename": legacy.name}))
+    original = record(receipt.schema, **data)
+    pointer = application.store.root / "current" / "2026_08.json"
+    pointer.write_bytes(encoded(asdict(original)) + b"\n")
+    assert _verify_publication(application, original) is not None
+    current = record(receipt.schema, **dict(data, schema_version="2.4.0"))
+    pointer.write_bytes(encoded(asdict(current)) + b"\n")
+    assert _verify_publication(application, current) is None
+    assert stage.exists()
+
+
+def test_current_publication_is_rechecked_before_stage_removal(tmp_path, monkeypatch):
+    application, result, stage = _publication_stage(tmp_path)
+    scope = intraday_research_staging_scope(application)
+    original = type(scope)._verified_current
+    reads = []
+    def invalidate_after_initial(self, receipt, budget):
+        reads.append(receipt.identity)
+        if len(reads) == 2:
+            result.workbook_path.write_bytes(b"changed after initial proof")
+        return original(self, receipt, budget)
+    monkeypatch.setattr(type(scope), "_verified_current", invalidate_after_initial)
+    cleaned = _housekeeper(scope).run_once()
+    assert len(reads) == 2
+    assert cleaned.removed_files == 0 and stage.exists()
+    assert "INTRADAY_RESEARCH_REFERENCE_CHANGED" in cleaned.diagnostics
+
+
+def test_conflicting_and_missing_retained_receipts_never_authorize_cleanup(tmp_path):
+    application, result, stage = _publication_stage(tmp_path)
+    receipt = application.store.load(result.receipt_identity)
+    conflict = record(receipt.schema, **dict(receipt.data, workbook_bytes=result.workbook_bytes + 1))
+    application.store.retain(conflict)
+    cleaned = _housekeeper(intraday_research_staging_scope(application)).run_once()
+    assert cleaned.removed_files == 0 and stage.exists()
+    assert "INTRADAY_RESEARCH_REFERENCE_UNCERTAIN" in cleaned.diagnostics
+    # Remove only synthetic conflicting evidence; missing authoritative receipt
+    # with its update/pointer retained must still leave the stage owned.
+    (application.store.root / "records" / (conflict.identity + ".json")).unlink()
+    (application.store.root / "records" / (receipt.identity + ".json")).unlink()
+    missing = _housekeeper(intraday_research_staging_scope(application)).run_once()
+    assert missing.removed_files == 0 and stage.exists()
+    assert "INTRADAY_RESEARCH_INCOMPLETE_RECOVERY" in missing.diagnostics
+
+
+def test_intraday_publication_proof_does_not_bypass_removal_budget(tmp_path):
+    application, result, stage = _publication_stage(tmp_path)
+    limits = HousekeepingLimits(max_removed_bytes=result.workbook_bytes - 1, max_elapsed_seconds=5)
+    cleaned = _housekeeper(intraday_research_staging_scope(application), limits=limits).run_once()
+    assert cleaned.outcome == "LIMIT_REACHED"
+    assert "REMOVAL_BYTE_LIMIT" in cleaned.diagnostics
+    assert cleaned.removed_files == 0 and stage.exists()
+
+
+def test_verified_empty_stage_is_disposable_but_unproved_empty_stage_is_retained(tmp_path):
+    application, result, stage = _publication_stage(tmp_path)
+    (stage / result.workbook_path.name).unlink()
+    unknown = stage.parent / digest("PF08-UNPROVED-EMPTY")
+    unknown.mkdir()
+    cleaned = _housekeeper(intraday_research_staging_scope(application)).run_once()
+    assert cleaned.removed_files == 0 and cleaned.removed_directories == 1
+    assert not stage.exists() and unknown.exists()
+    assert "INTRADAY_RESEARCH_INCOMPLETE_RECOVERY" in cleaned.diagnostics

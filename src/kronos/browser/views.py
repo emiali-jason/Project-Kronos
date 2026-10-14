@@ -302,7 +302,7 @@ a{color:inherit;text-decoration:none}.app{display:grid;grid-template-columns:218
 .analysis-details{display:grid;gap:12px;max-width:1180px}.analysis-section{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:10px;padding:16px}.analysis-section h2{margin:0 0 10px;color:var(--blue);font-size:15px}.analysis-facts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.analysis-fact{border-left:2px solid #28506a;padding:5px 9px;font-size:11px}.analysis-fact span{display:block;color:var(--muted);font-size:9px;letter-spacing:.06em;text-transform:uppercase}.analysis-table{width:100%;border-collapse:collapse;font-size:11px}.analysis-table th,.analysis-table td{text-align:left;vertical-align:top;border-top:1px solid var(--line);padding:7px}.analysis-table th{color:var(--muted);font-size:9px;letter-spacing:.05em}.analysis-decision{font-size:18px;font-weight:800}.analysis-next{border-left:3px solid var(--amber)}
 .mcx-context-strip{display:flex;align-items:center;gap:10px;flex-wrap:wrap;border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:8px;padding:7px 10px;margin:8px 0;font-size:10px}.mcx-context-strip>strong{color:var(--blue);letter-spacing:.06em}.mcx-context-slot{display:flex;align-items:center;gap:7px;flex-wrap:wrap}.mcx-context-slot b{font-size:9px}.mcx-context-slot form{display:inline}.mcx-context-status{color:var(--muted)}.mcx-context-error{display:grid;gap:1px;border-left:2px solid var(--red);padding-left:7px;color:#ffb1b6}.mcx-context-error strong{font-size:9px}.mcx-context-error span{font-size:9px;color:#e8c2c4}.mcx-context-prep{position:relative}.mcx-context-prep>summary{color:var(--blue);cursor:pointer;font-weight:800}.mcx-context-targets{display:grid;grid-template-columns:repeat(2,minmax(180px,1fr));gap:8px;position:absolute;z-index:5;top:24px;left:0;width:min(440px,75vw);padding:9px;border:1px solid var(--line);border-radius:8px;background:#071827;box-shadow:0 10px 30px #010812}.mcx-context-targets h3{margin:0 0 5px;font-size:10px;color:#dce8f0}.mcx-context-targets .chart-paste-target{min-height:68px}.mcx-context-targets .chart-slot-actions{margin-top:4px}@media(max-width:700px){.mcx-context-targets{grid-template-columns:1fr;position:fixed;left:12px;right:12px;top:auto;width:auto}}
 .missing-evidence{display:block;color:var(--amber);font-size:10px;margin-top:5px}.missing-evidence strong{color:#ffd98c}.blocker-list{margin:8px 0 0;padding-left:18px;color:var(--muted);font-size:11px}
-.swing-opportunities-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start;min-width:0}.swing-market-group{min-width:0;min-height:0;overflow:hidden}.swing-market-group .panel-heading{gap:10px;flex-wrap:wrap}.swing-market-group .panel-heading h2{color:var(--green)}.swing-market-empty{border-left:2px solid var(--amber);color:var(--muted);font-size:10px;margin:12px 0 0;padding:6px 9px}.swing-direction-group{margin-top:14px;min-width:0}.swing-direction-group>h3{margin:0;color:#dce8f0;font-size:12px;letter-spacing:.08em}.swing-direction-group>p{margin:3px 0 0;color:var(--muted);font-size:10px}.swing-direction-empty{border:1px dashed var(--line);border-radius:8px;color:var(--muted);font-size:11px;margin-top:8px;padding:11px;text-align:center}.swing-card-list{display:grid;gap:9px;min-width:0}.swing-card-list>.native-opportunity{min-width:0}.native-opportunity{padding:11px 12px;margin-top:0;min-width:0}.native-opportunity .opp-head{gap:8px}.native-opportunity .opp-identity h3{font-size:18px;line-height:1.2;overflow-wrap:anywhere;word-break:normal}.native-opportunity .setup-family{font-size:11px;margin-top:0;overflow-wrap:anywhere;word-break:normal}.native-opportunity .direction{padding:2px 7px;font-size:11px;white-space:nowrap;flex:0 0 auto}.swing-primary-facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin:9px 0}.swing-card-fact{border-left:1px solid var(--line);padding-left:7px;min-width:0}.swing-card-fact:first-child{border-left:0;padding-left:0}.swing-card-fact span{display:block;color:var(--muted);font-size:8px;text-transform:uppercase;letter-spacing:.04em}.swing-card-fact strong{display:block;margin-top:2px;font-size:10px;line-height:1.25;overflow-wrap:anywhere;word-break:normal}.swing-timeframe-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin:9px 0}.swing-timeframe-fact{min-width:0;border-left:2px solid #28506a;padding:4px 7px}.swing-timeframe-fact span{display:block;color:var(--muted);font-size:9px;letter-spacing:.06em}.swing-timeframe-fact strong{display:block;margin-top:2px;font-size:10px;line-height:1.25;overflow-wrap:anywhere;word-break:normal}.swing-result-row{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid var(--line);padding-top:8px;color:var(--muted);font-size:11px}.swing-result-row strong{color:#dce8f0}.swing-result-row span:last-child{text-align:right;overflow-wrap:anywhere}.swing-review-readiness{display:flex;align-items:center;justify-content:space-between;gap:8px 12px;flex-wrap:wrap;margin-top:8px;font-size:10px}.swing-readiness-states{display:flex;gap:5px 10px;flex-wrap:wrap;min-width:0}.swing-readiness-state{color:var(--muted);font-weight:800;overflow-wrap:anywhere}.swing-readiness-state.ready{color:var(--green)}.swing-readiness-state.pending{color:var(--amber)}.swing-readiness-state.rejected{color:var(--red)}.swing-card-warning{font-size:10px;color:var(--amber);border-left:3px solid var(--amber);padding-left:8px;margin:8px 0}.swing-review-binding{margin:7px 0;color:#b9cddd;font-size:10px;line-height:1.35;overflow-wrap:anywhere}.native-opportunity .summary-reason{font-size:11px;line-height:1.35;margin:7px 0;overflow-wrap:anywhere}.native-opportunity .summary-footer{align-items:center;gap:9px;padding-top:8px;flex-wrap:wrap}.native-opportunity .summary-rr{flex:1 1 220px;min-width:0;font-size:11px;line-height:1.35;overflow-wrap:anywhere}.native-opportunity .summary-rr>strong{display:inline-flex;align-items:center;border:1px solid #31506a;border-radius:999px;padding:2px 7px;color:var(--green);font-size:10px;white-space:nowrap}.native-opportunity .summary-rr>strong .kr370-state{border:0;padding:0;background:transparent;box-shadow:none}.native-opportunity .missing-evidence{font-size:9px;line-height:1.3;margin-top:4px}.native-opportunity-actions{display:flex;flex:0 1 auto;justify-content:flex-end;gap:6px;flex-wrap:wrap;max-width:100%}.native-opportunity-actions .button{display:inline-flex;align-items:center;min-height:27px;padding:5px 9px;font-size:10px;line-height:1.15;white-space:nowrap}.swing-supporting-details{border-top:1px solid var(--line);margin-top:8px;padding-top:7px}.swing-supporting-details summary{cursor:pointer;color:var(--muted);font-size:10px;font-weight:750}.swing-supporting-details div{display:grid;gap:3px;margin-top:6px;color:var(--muted);font-size:9px}.swing-supporting-details code{white-space:normal;overflow-wrap:anywhere;user-select:text;color:#c9d8e3}
+.swing-opportunities-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;align-items:start;min-width:0}.swing-market-group{min-width:0;min-height:0;overflow:hidden}.swing-market-group .panel-heading{gap:10px;flex-wrap:wrap}.swing-market-group .panel-heading h2{color:var(--green)}.swing-market-empty{border-left:2px solid var(--amber);color:var(--muted);font-size:10px;margin:12px 0 0;padding:6px 9px}.swing-direction-group{margin-top:14px;min-width:0}.swing-direction-group>h3{margin:0;color:#dce8f0;font-size:12px;letter-spacing:.08em}.swing-direction-group>p{margin:3px 0 0;color:var(--muted);font-size:10px}.swing-direction-empty{border:1px dashed var(--line);border-radius:8px;color:var(--muted);font-size:11px;margin-top:8px;padding:11px;text-align:center}.swing-card-list{display:grid;gap:9px;min-width:0}.swing-card-list>.native-opportunity{min-width:0}.native-opportunity .swing-sponsor-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:9px 0;min-width:0}.native-opportunity .swing-governed-status,.native-opportunity .swing-pending-facts{grid-column:1/-1;font-size:12px;line-height:1.4;overflow-wrap:anywhere}.native-opportunity .swing-pending-facts ul{margin:4px 0;padding-left:18px}.native-opportunity .swing-opportunity-details{border-top:1px solid var(--line);margin-top:9px;padding-top:8px;min-width:0;overflow-wrap:anywhere}.native-opportunity .swing-opportunity-details>summary{cursor:pointer;font-size:12px;font-weight:750;min-height:32px;display:list-item;overflow-wrap:anywhere}.native-opportunity .swing-opportunity-details>summary:focus-visible{outline:2px solid var(--blue);outline-offset:3px}.native-opportunity .swing-opportunity-details code{white-space:normal;overflow-wrap:anywhere}@media(max-width:760px){.native-opportunity .swing-sponsor-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.native-opportunity .swing-sponsor-summary>.swing-card-fact:last-of-type{grid-column:1/-1}.swing-card-list .native-opportunity .native-opportunity-actions .button{white-space:normal;overflow-wrap:anywhere}}.native-opportunity{padding:11px 12px;margin-top:0;min-width:0}.native-opportunity .opp-head{gap:8px}.native-opportunity .opp-identity h3{font-size:18px;line-height:1.2;overflow-wrap:anywhere;word-break:normal}.native-opportunity .setup-family{font-size:11px;margin-top:0;overflow-wrap:anywhere;word-break:normal}.native-opportunity .direction{padding:2px 7px;font-size:11px;white-space:nowrap;flex:0 0 auto}.swing-primary-facts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px;margin:9px 0}.swing-card-fact{border-left:1px solid var(--line);padding-left:7px;min-width:0}.swing-card-fact:first-child{border-left:0;padding-left:0}.swing-card-fact span{display:block;color:var(--muted);font-size:8px;text-transform:uppercase;letter-spacing:.04em}.swing-card-fact strong{display:block;margin-top:2px;font-size:10px;line-height:1.25;overflow-wrap:anywhere;word-break:normal}.swing-timeframe-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px;margin:9px 0}.swing-timeframe-fact{min-width:0;border-left:2px solid #28506a;padding:4px 7px}.swing-timeframe-fact span{display:block;color:var(--muted);font-size:9px;letter-spacing:.06em}.swing-timeframe-fact strong{display:block;margin-top:2px;font-size:10px;line-height:1.25;overflow-wrap:anywhere;word-break:normal}.swing-result-row{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid var(--line);padding-top:8px;color:var(--muted);font-size:11px}.swing-result-row strong{color:#dce8f0}.swing-result-row span:last-child{text-align:right;overflow-wrap:anywhere}.swing-review-readiness{display:flex;align-items:center;justify-content:space-between;gap:8px 12px;flex-wrap:wrap;margin-top:8px;font-size:10px}.swing-readiness-states{display:flex;gap:5px 10px;flex-wrap:wrap;min-width:0}.swing-readiness-state{color:var(--muted);font-weight:800;overflow-wrap:anywhere}.swing-readiness-state.ready{color:var(--green)}.swing-readiness-state.pending{color:var(--amber)}.swing-readiness-state.rejected{color:var(--red)}.swing-card-warning{font-size:10px;color:var(--amber);border-left:3px solid var(--amber);padding-left:8px;margin:8px 0}.swing-review-binding{margin:7px 0;color:#b9cddd;font-size:10px;line-height:1.35;overflow-wrap:anywhere}.native-opportunity .summary-reason{font-size:11px;line-height:1.35;margin:7px 0;overflow-wrap:anywhere}.native-opportunity .summary-footer{align-items:center;gap:9px;padding-top:8px;flex-wrap:wrap}.native-opportunity .summary-rr{flex:1 1 220px;min-width:0;font-size:11px;line-height:1.35;overflow-wrap:anywhere}.native-opportunity .summary-rr>strong{display:inline-flex;align-items:center;border:1px solid #31506a;border-radius:999px;padding:2px 7px;color:var(--green);font-size:10px;white-space:nowrap}.native-opportunity .summary-rr>strong .kr370-state{border:0;padding:0;background:transparent;box-shadow:none}.native-opportunity .missing-evidence{font-size:9px;line-height:1.3;margin-top:4px}.native-opportunity-actions{display:flex;flex:0 1 auto;justify-content:flex-end;gap:6px;flex-wrap:wrap;max-width:100%}.native-opportunity-actions .button{display:inline-flex;align-items:center;min-height:27px;padding:5px 9px;font-size:10px;line-height:1.15;white-space:nowrap}.swing-supporting-details{border-top:1px solid var(--line);margin-top:8px;padding-top:7px}.swing-supporting-details summary{cursor:pointer;color:var(--muted);font-size:10px;font-weight:750}.swing-supporting-details div{display:grid;gap:3px;margin-top:6px;color:var(--muted);font-size:9px}.swing-supporting-details code{white-space:normal;overflow-wrap:anywhere;user-select:text;color:#c9d8e3}
 .kr370-state{display:inline-flex;align-items:center;border:1px solid currentColor;border-radius:6px;padding:2px 7px;font-size:11px;font-weight:850;letter-spacing:.035em}.kr370-state-now{color:#d8ffea;border-color:#34dc88;background:#12623e;box-shadow:0 0 16px rgba(52,220,136,.18)}.kr370-state-ready{color:#77e6a9;border-color:#248a59;background:rgba(23,103,65,.16)}.kr370-state-potential{color:#ffd57a;border-color:#82631f;background:#2a210c}.kr370-state-no-setup{color:#ff9a9f;border-color:#793b40;background:#2c151c}.kr370-state-unavailable{color:#a9b8c3;border-color:#465866;background:#111d25}.kr370-card-line{display:block;color:var(--muted);font-size:9px;margin-top:4px;letter-spacing:.035em}.kr370-card-line strong{color:#dce8f0}.analysis-decision.kr370-state{font-size:18px;padding:4px 9px;margin-bottom:9px}
 .progression-summary{display:block;color:var(--muted);font-size:9px;margin-top:3px;text-transform:uppercase;letter-spacing:.04em}.progression-list{display:grid;gap:8px}.progression-row{display:grid;grid-template-columns:20px 1fr;gap:8px;border-top:1px solid var(--line);padding-top:8px}.progression-row:first-child{border-top:0;padding-top:0}.progression-marker{color:var(--blue);font-weight:800}.progression-state{display:block;color:var(--amber);font-size:9px;font-weight:800;letter-spacing:.06em;margin-top:2px}.progression-row small{display:block;color:var(--muted);font-size:10px;margin-top:4px}.progression-row form{margin-top:7px}.progression-row details{margin-top:7px}.progression-row details .analysis-fact{margin-top:5px}
 .notification-tabs{display:flex;gap:7px;margin-bottom:12px}.notification-tabs .button{padding:6px 11px;font-size:11px}.notification-tabs .active{background:#0c4f83;border-color:#2c9cff}.notification-action-centre{border:1px solid #8a4c26;background:#21170f;border-radius:9px;padding:11px 13px;margin-bottom:12px}.notification-action-centre h2{margin:0 0 5px;color:#ffd59c;font-size:13px}.notification-action-centre p{margin:0;color:var(--muted);font-size:11px}.notification-list{display:grid;gap:9px}.notification-row{border:1px solid var(--line);background:rgba(6,23,37,.88);border-radius:9px;padding:12px}.notification-head{display:flex;align-items:center;gap:9px}.notification-head h2{font-size:18px;margin:0}.notification-product{color:var(--blue);font-size:10px;font-weight:800}.notification-state{margin-left:auto;border:1px solid currentColor;border-radius:999px;padding:3px 8px;font-size:10px;font-weight:800}.notification-state.ACTIVE{color:var(--green)}.notification-state.TRIGGERED{color:var(--amber)}.notification-state.INACTIVE{color:var(--muted)}.notification-state.STALE{color:var(--red)}.notification-condition{margin:7px 0 4px;font-weight:750}.notification-trigger{border-left:2px solid var(--amber);padding:6px 9px;margin:8px 0;background:#211a0d}.notification-trigger strong,.notification-trigger span{display:block}.notification-trigger span{color:var(--amber);font-size:11px}.notification-trigger small{color:#ffd59c}.notification-meta{display:flex;gap:12px;flex-wrap:wrap;color:var(--muted);font-size:10px}.notification-actions{display:flex;align-items:flex-start;gap:6px;flex-wrap:wrap;margin-top:9px}.notification-actions form{display:inline}.notification-actions button,.notification-actions .button{padding:5px 8px;font-size:10px}.notification-confirm summary{list-style:none;border:1px solid #246295;background:#0b2b47;color:#e9f5ff;padding:5px 8px;border-radius:7px;font-size:10px;font-weight:650;cursor:pointer}.notification-confirm summary::-webkit-details-marker{display:none}.notification-confirm div{position:absolute;z-index:10;max-width:330px;border:1px solid var(--line);background:#071827;padding:10px;border-radius:8px;box-shadow:0 12px 30px rgba(0,0,0,.45)}.notification-confirm p{margin:0 0 7px;color:var(--muted);font-size:11px}.notification-history{margin-top:8px;border-top:1px solid var(--line);padding-top:7px}.notification-history summary{cursor:pointer;color:var(--muted);font-size:10px}.notification-history ul{margin:6px 0 0;padding-left:18px;color:var(--muted);font-size:10px}
@@ -1014,6 +1014,32 @@ def _native_opportunity_card(
         else "Chart / reference status" if v3 is not None
         else "Review"
     )
+    # Sponsor navigation only: retain the owning states and every existing
+    # diagnostic below. A displayed stage grants no downstream authority.
+    stage = ("KR-370 V2" if v2 is not None else "Review"
+             if item.status is NativeDiscoveryStatus.PROBABLE else "Discovery")
+    pending = () if v2 is None else _v2_advance_lines(v2)
+    if v2 is not None and (not pending or v2.readiness_explanation is None):
+        pending = tuple((_v2_label(reason), False) for _, state, reason in v2.criteria
+                        if state != "SATISFIED")
+        if v2.confirmation in {"PENDING", "UNAVAILABLE"}:
+            pending += tuple(("Confirmation · " + _v2_label(reason), True)
+                             for reason in v2.confirmation_reasons)
+    if v2 is None:
+        pending = tuple((label, False) for label, css_class in readiness
+                        if css_class != "ready")
+    pending_markup = (('<div class="swing-pending-facts"><strong>Pending requirements</strong><ul>'
+                      + ''.join('<li>' + escape(line) + '</li>' for line, _ in pending)
+                      + '</ul></div>') if pending else '')
+    sponsor_summary = (
+        '<div class="swing-sponsor-summary">'
+        + _swing_card_fact("Current stage", stage)
+        + _swing_card_fact("Discovery", item.status.value)
+        + _swing_card_fact("Currentness", currentness)
+        + '<div class="swing-governed-status"><span>' + escape(status_label)
+        + ' · </span><strong>' + state_value + '</strong></div>'
+        + pending_markup + '</div>'
+    )
     return (
         '<article class="opportunity native-opportunity"><div class="opp-head">'
         f'<div class="opp-identity"><h3>{escape(item.canonical_instrument)}</h3>'
@@ -1021,10 +1047,19 @@ def _native_opportunity_card(
         f'{"NSE" if item.product_path is NativeProductPath.NSE else "MCX"} · '
         f'{escape(item.canonical_instrument)}</span></div>'
         f'<span class="direction direction-{escape(direction.lower())}">{escape(direction)}</span>'
-        '</div><div class="swing-primary-facts">' + primary_facts + '</div>'
-        '<div class="swing-timeframe-grid">' + timeframe_facts + '</div>'
+        '</div>' + sponsor_summary
         + _swing_continuity_warning(continuity)
         + intake_summary
+        + ('<p class="v2-downstream">DOWNSTREAM — MCX STEP-31 NOT COMMISSIONED</p>'
+           if item.product_path is NativeProductPath.MCX else '')
+        + '<div class="swing-review-readiness"><div class="swing-readiness-states">'
+        + readiness_markup + '</div><span class="native-opportunity-actions">' + review_action +
+        f'<a class="button" href="/swing/analysis-details/{escape(item.run_identity)}/'
+        f'{quote(item.canonical_instrument, safe="")}">View Analysis Details →</a>'
+        + trade_window_action + '</span></div>'
+        '<details class="swing-opportunity-details"><summary>WHY BLOCKED / ANALYSIS DETAILS</summary>'
+        '<div class="swing-primary-facts">' + primary_facts + '</div>'
+        '<div class="swing-timeframe-grid">' + timeframe_facts + '</div>'
         + '<div class="swing-result-row"><span>Result · <strong>'
         + escape(item.status.value.replace("_", " ")) + '</strong></span><span>'
         + escape(opportunity) + '</span></div>'
@@ -1035,12 +1070,7 @@ def _native_opportunity_card(
            if item.product_path is NativeProductPath.MCX and v2 is None else '')
         + ('<details class="v2-card-detail"><summary>K1–K5 and confirmation details</summary>'
            + _v2_promotion_detail(v2) + '</details>' if v2 is not None else '')
-        + '<div class="swing-review-readiness"><div class="swing-readiness-states">'
-        + readiness_markup + '</div><span class="native-opportunity-actions">' + review_action +
-        f'<a class="button" href="/swing/analysis-details/{escape(item.run_identity)}/'
-        f'{quote(item.canonical_instrument, safe="")}">View Analysis Details →</a>'
-        + trade_window_action + '</span>'
-        '</div>' + ('<details class="swing-supporting-details"><summary>Supporting details</summary>'
+        + ('<details class="swing-supporting-details"><summary>Supporting details</summary>'
         + _swing_continuity_summary(continuity)
         + '<div><span>Run · <code>' + escape(item.run_identity) + '</code></span>'
         '<span>Assessment · <code>' + escape(item.result_sha256) + '</code></span>'
@@ -1049,7 +1079,8 @@ def _native_opportunity_card(
         + escape(item.policy_version) + '</code></span>'
         '<span>Discovery evidence · <code>'
         + escape(" · ".join(item.reason_codes).replace("_", " "))
-        + '</code></span></div></details>' if v2 is None and not promotions_v2 else '') + '</article>'
+        + '</code></span></div></details>' if v2 is None and not promotions_v2 else '')
+        + '</details></article>'
     )
 
 
@@ -2988,12 +3019,23 @@ def render_reports(
         from kronos.browser.reports import _coverage
         import json
         unsupported += ('<style>.reports-coverage,.swing-reports-detail{min-width:0}'
+                        '.reports-coverage .reports-coverage-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}'
+                        '.reports-coverage :is(h2,h3,p,dt,dd,summary){overflow-wrap:anywhere}'
+                        '.reports-coverage h3{font-size:12px;margin:0 0 8px}'
+                        '.reports-coverage dl{margin:0;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 12px}'
+                        '.reports-coverage dd{margin:0;font-weight:700}'
+                        '.reports-coverage .reports-coverage-source{font-size:12px}'
+                        '.reports-coverage .reports-coverage-audit{margin-top:12px}'
+                        '.reports-coverage summary{cursor:pointer;font-weight:700}'
+                        '.reports-coverage summary:focus-visible{outline:2px solid currentColor;outline-offset:3px}'
+                        '@media(max-width:600px){.reports-coverage .reports-coverage-grid{grid-template-columns:1fr}}'
                         '.reports-coverage pre{white-space:pre-wrap;overflow-wrap:anywhere;min-width:0}'
                         '.swing-reports-detail :is(h2,strong,details,.journal-detail-grid>div,.v1-context-row)'
                         '{min-width:0;overflow-wrap:anywhere}</style>'
-                        '<section class="reports-coverage"><h2>COVERAGE & RELATIONSHIPS</h2><pre>'
+                        + _reports_coverage_summary(projection, _coverage(projection))
+                        + '<details class="reports-coverage-audit"><summary>VIEW GOVERNED COVERAGE DETAILS</summary><pre>'
                         + escape(json.dumps(_coverage(projection), sort_keys=True, indent=2))
-                        + '</pre><p>Decisions and advisory plans are not actual trades. '
+                        + '</pre></details><p>Decisions and advisory plans are not actual trades. '
                         'Literal MCX history is UNRESOLVED. Costs and net P/L are UNKNOWN.</p></section>')
     table = _reports_table(projection)
     filters = _reports_filter_panel(projection)
@@ -3006,6 +3048,60 @@ def render_reports(
             + '</main>' + filters + '</div>'
         ),
     )
+
+
+def _reports_coverage_summary(projection: HistoricalReportsProjection, coverage: dict) -> str:
+    """Present existing coverage facts; source totals are not filtered relationships."""
+    def rows(values):
+        return '<dl>' + ''.join('<dt>' + escape(label) + '</dt><dd>'
+                               + escape(str(value)) + '</dd>' for label, value in values) + '</dl>'
+
+    sources = {row['source']: row for row in coverage['sources']}
+    def source_count(name):
+        source = sources.get(name)
+        if source is None:
+            return 'UNAVAILABLE'
+        if source['state'] not in {'VALID_EMPTY', 'VALID_HISTORY'}:
+            return source['state'] + ' — count UNAVAILABLE'
+        return source['count']
+
+    missing = coverage['missing_relationships']
+    markets = coverage['markets']
+    families = coverage['families']
+    warning = ('<p class="reports-unavailable">WARNING: ' + str(missing)
+               + ' filtered historical record(s) have no V2 relationship. '
+               'Independent history does not establish operational completeness.</p>') if missing else ''
+    unresolved = ('<p class="reports-unavailable">' + str(markets['UNRESOLVED'])
+                  + ' filtered historical record(s): MCX family and exact future UNRESOLVED.</p>') if markets['UNRESOLVED'] else ''
+    source_labels = {'V1': 'V1 history', 'V2': 'V2 relationships',
+                     'STEP33': 'Step-33 history', 'MCX_PLANS': 'MCX plans',
+                     'MCX_POSITIONS': 'MCX positions'}
+    source_lines = []
+    for row in coverage['sources']:
+        name, state = row['source'], row['state']
+        if name in {'V1', 'V2'} and state in {'VALID_EMPTY', 'VALID_HISTORY'}:
+            continue  # Their retained counts are already shown above.
+        if name in source_labels:
+            value = state if state in {'VALID_EMPTY', 'VALID_HISTORY'} else state + ' — UNAVAILABLE'
+            source_lines.append(source_labels[name] + ': ' + value)
+        elif name not in {'V1_ONLY_V2_ABSENT', 'UNRESOLVED_MCX'}:
+            source_lines.append('Additional source authority: ' + state)
+    source_states = ('<p class="reports-coverage-source">Retained source availability (before filters): '
+                     + ('; '.join(escape(value) for value in source_lines) or 'UNAVAILABLE') + '.</p>')
+    family_empty = ('<p>No family-resolved MCX records in this filtered population.</p>') if not sum(families.values()) else ''
+    return ('<section class="reports-coverage"><h2>COVERAGE</h2><p>Filtered records: <strong>'
+            + str(projection.total_records) + '</strong> · ' + escape(coverage['filtered_population']) + '</p>'
+            '<div class="reports-coverage-grid"><div><h3>Market coverage · filtered</h3>'
+            + rows((('NSE', markets['NSE']), ('MCX · family-resolved', markets['MCX']),
+                    ('Historical MCX · UNRESOLVED', markets['UNRESOLVED'])))
+            + '</div><div><h3>Evidence relationships</h3>'
+            + rows((('V1 source records · before filters', source_count('V1')),
+                    ('V2 source records · before filters', source_count('V2')),
+                    ('Missing V2 relationships · filtered', missing)))
+            + '</div><div><h3>MCX families · filtered</h3>' + rows(tuple(families.items()))
+            + family_empty + '</div></div>' + warning + unresolved + source_states
+            + '<p class="reports-coverage-source">Operational V2 completeness: '
+            + 'checked independently. This Reports projection does not certify operational readiness.</p>')
 
 
 def _reports_params(projection: HistoricalReportsProjection) -> dict[str, object]:
