@@ -78,6 +78,22 @@ def _swing_restoration_failure(outcomes):
             or result["TRADE_WINDOW"] != "SUCCESS")
 
 
+def _startup_outcomes_document(server):
+    """Copy the frozen constructor tuple, never repeat restoration on a GET."""
+    reader = getattr(server, "startup_restoration_outcomes", None)
+    outcomes = reader() if callable(reader) else None
+    if (type(outcomes) is not tuple or len(outcomes) != 6
+            or any(type(row) is not tuple or len(row) != 2
+                   or any(type(value) is not str for value in row) for row in outcomes)
+            or {row[0] for row in outcomes} != {
+                "LEGACY_MTF", "LEGACY_NATIVE", "NATIVE_REVIEW", "V3_RECORDS",
+                "V3_RESTORE", "TRADE_WINDOW"}):
+        return None
+    # Failed owner results remain visible. The existing aggregate predicate,
+    # not this projection, determines whether those results permit startup.
+    return [list(row) for row in outcomes]
+
+
 def status_document(server):
     governance = server.connection_governance
     provider_runtime = getattr(server, "provider_runtime", None)
@@ -118,6 +134,7 @@ def status_document(server):
         "browser_requests": server.request_capacity_status(),
         "monitoring": server.swing_monitoring_hub.status_document(),
         "owner_restoration": getattr(server, "monitoring_restoration_state", "NOT_ASSESSED"),
+        "startup_restoration_outcomes": _startup_outcomes_document(server),
         "startup_retained_owner_evidence": getattr(server, "startup_monitoring_owners", []),
         "retained_owner_scope": "STARTUP_SNAPSHOT_NOT_CURRENT_LIFECYCLE_PROJECTION"}
 

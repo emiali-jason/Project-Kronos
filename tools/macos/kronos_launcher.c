@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
+#include <libproc.h>
 #include <mach-o/dyld.h>
 #include <netinet/in.h>
 #include <poll.h>
@@ -1025,6 +1026,14 @@ static BackendStartResult monitor_backend_start(
 #define RECOVERY_HISTORY_RELATION "c718842b6927ee058b4fd135df6eaa57873ffc0b901c597372110bb46338b0f8"
 #define RECOVERY_HISTORY_DIAGNOSIS "c6bb42f497b6e1a2acb056ccc9fd09b2476b73a2e182526fb2bc240e72298d08"
 #define RECOVERY_HISTORY_MAX_VALIDITY_US 1800000000LL
+/* Closed IWO-07R3 predecessor pins; not generic FAILED_ACTIVE authority. */
+#define RECOVERY_SWING_SCHEMA "KRONOS-IWO07R3-RECOVERY-AUTHORIZATION/1.0.0"
+#define RECOVERY_SWING_PREDECESSOR "7b0729402687b2f05607ce99a5c99a9cea35568b"
+#define RECOVERY_SWING_PID 45583
+#define RECOVERY_SWING_START_US 1791996740356956LL
+#define RECOVERY_SWING_GENERATION "02a8392f4d88082bf96d3e807c6f1acf00e381ac63f62f7433aecfd2e1c762b3"
+#define RECOVERY_SWING_PACKAGE "35a468ca66dfe127479112d777323a63c1221cd381c63d93db09a8b36d4cbd18"
+#define RECOVERY_SWING_DIAGNOSIS "014e7571a779a6411655240b92dfbe77bda4f85661c95c243738118b1e3d4d6b"
 #define RECOVERY_JSON_TOKENS 8192
 
 typedef struct RecoveryJsonToken { int start, end, next, count; char kind; } RecoveryJsonToken;
@@ -1187,12 +1196,12 @@ typedef struct RecoveryAuthorization {
     char predecessor[41],successor[41],control_digest[65],package[65];
     char rollback[PATH_MAX],rollback_identity[65],relation[PATH_MAX],diagnosis[PATH_MAX];
     char sponsor[PATH_MAX],sponsor_digest[65],control[PATH_MAX];
-    long long valid_from,valid_until,reserved_at;pid_t pid;int historical;
+    long long valid_from,valid_until,reserved_at;pid_t pid;int historical, swing_incident;char artifact_receipt_digest[65];
 } RecoveryAuthorization;
 
 static int recovery_time_valid(const RecoveryAuthorization *a,long long now) {
     if(now<a->valid_from || now>=a->valid_until)return 0;
-    return a->historical ? (a->valid_from>=RECOVERY_END_US && now>=RECOVERY_END_US &&
+    return (a->historical || a->swing_incident) ? (a->valid_from>=RECOVERY_END_US && now>=RECOVERY_END_US &&
         a->valid_until-a->valid_from<=RECOVERY_HISTORY_MAX_VALIDITY_US) :
         (a->valid_until<=RECOVERY_END_US && now>=RECOVERY_START_US && now<RECOVERY_END_US);
 }
@@ -1200,10 +1209,58 @@ static const char *recovery_capability(const RecoveryAuthorization *a) {
     return a->historical?RECOVERY_HISTORY_CAPABILITY:RECOVERY_CAPABILITY;
 }
 static const char *recovery_relation(const RecoveryAuthorization *a) {
-    return a->historical?RECOVERY_HISTORY_RELATION:RECOVERY_RELATION;
+    return a->swing_incident?a->artifact_receipt_digest:(a->historical?RECOVERY_HISTORY_RELATION:RECOVERY_RELATION);
 }
 static const char *recovery_diagnosis(const RecoveryAuthorization *a) {
-    return a->historical?RECOVERY_HISTORY_DIAGNOSIS:RECOVERY_DIAGNOSIS;
+    return a->swing_incident?RECOVERY_SWING_DIAGNOSIS:(a->historical?RECOVERY_HISTORY_DIAGNOSIS:RECOVERY_DIAGNOSIS);
+}
+
+static int recovery_swing_process_start(pid_t pid) {
+    struct proc_bsdinfo info;
+    return pid==RECOVERY_SWING_PID &&
+        proc_pidinfo(pid,PROC_PIDTBSDINFO,0,&info,sizeof(info))==(int)sizeof(info) &&
+        (long long)info.pbi_start_tvsec*1000000+info.pbi_start_tvusec==RECOVERY_SWING_START_US;
+}
+static int recovery_swing_authorization(const RecoveryJson *j,const char *raw,const char *control,
+                                       pid_t pid,const char *target,long long now,RecoveryAuthorization *a) {
+    char reference[256],actual[65];
+    a->swing_incident=1;
+    if(j->token[0].count!=23 || pid!=RECOVERY_SWING_PID || !strcmp(target,RECOVERY_SWING_PREDECESSOR) ||
+       !recovery_field(j,0,"recovery_class",RECOVERY_CLASS) || !recovery_field(j,0,"state","SPONSOR_APPROVED") ||
+       !recovery_field(j,0,"attempt_identity",a->attempt) ||
+       !recovery_field(j,0,"predecessor_revision",RECOVERY_SWING_PREDECESSOR) ||
+       !recovery_field(j,0,"successor_revision",target) || recovery_integer(j,0,"predecessor_pid")!=pid ||
+       recovery_integer(j,0,"predecessor_start_us")!=RECOVERY_SWING_START_US ||
+       !recovery_field(j,0,"predecessor_maintenance_identity",RECOVERY_SWING_GENERATION) ||
+       !recovery_field(j,0,"predecessor_package_identity",RECOVERY_SWING_PACKAGE) ||
+       !recovery_field(j,0,"rollback_package_identity",RECOVERY_SWING_PACKAGE) ||
+       !recovery_field(j,0,"diagnosis_sha256",RECOVERY_SWING_DIAGNOSIS) ||
+       !recovery_string(j,0,"sponsor_authorization_reference",reference,sizeof(reference)) ||
+       !recovery_string(j,0,"sponsor_authorization_path",a->sponsor,sizeof(a->sponsor)) ||
+       !recovery_string(j,0,"sponsor_authorization_sha256",a->sponsor_digest,sizeof(a->sponsor_digest)) ||
+       !valid_token(a->sponsor_digest) || !recovery_file_digest(a->sponsor,actual,0) || strcmp(actual,a->sponsor_digest) ||
+       !recovery_string(j,0,"private_control_sha256",a->control_digest,sizeof(a->control_digest)) ||
+       !recovery_file_digest(control,actual,1) || strcmp(actual,a->control_digest) ||
+       !recovery_string(j,0,"installed_package_identity",a->package,sizeof(a->package)) ||
+       !valid_token(a->package) || !strcmp(a->package,RECOVERY_SWING_PACKAGE) ||
+       !recovery_string(j,0,"rollback_bundle",a->rollback,sizeof(a->rollback)) ||
+       !recovery_separate_bundle(a->rollback,canonical_bundle) ||
+       !recovery_string(j,0,"stage_a_receipt_path",a->relation,sizeof(a->relation)) ||
+       !recovery_string(j,0,"stage_a_receipt_sha256",a->artifact_receipt_digest,sizeof(a->artifact_receipt_digest)) ||
+       !valid_token(a->artifact_receipt_digest) || !recovery_file_digest(a->relation,actual,1) ||
+       strcmp(actual,a->artifact_receipt_digest) ||
+       !recovery_string(j,0,"diagnosis_path",a->diagnosis,sizeof(a->diagnosis)) ||
+       !recovery_file_digest(a->diagnosis,actual,0) || strcmp(actual,RECOVERY_SWING_DIAGNOSIS) ||
+       !recovery_file_digest(a->file,a->digest,1))return 0;
+    unsigned char digest[CC_SHA256_DIGEST_LENGTH];char hex[65];
+    CC_SHA256(raw,(CC_LONG)strlen(raw),digest);
+    for(int i=0;i<CC_SHA256_DIGEST_LENGTH;i++)snprintf(hex+2*i,3,"%02x",digest[i]);
+    a->valid_from=recovery_integer(j,0,"valid_from_us");a->valid_until=recovery_integer(j,0,"valid_until_us");
+    if(strcmp(hex,a->digest) || a->valid_from<=RECOVERY_SWING_START_US ||
+       a->valid_until<=a->valid_from || !recovery_time_valid(a,now))return 0;
+    a->pid=pid;strcpy(a->predecessor,RECOVERY_SWING_PREDECESSOR);strcpy(a->successor,target);
+    strcpy(a->maintenance,RECOVERY_SWING_GENERATION);strcpy(a->rollback_identity,RECOVERY_SWING_PACKAGE);
+    strcpy(a->control,control);return 1;
 }
 
 static int recovery_load_authorization(const char *root,const char *attempt,
@@ -1215,6 +1272,8 @@ static int recovery_load_authorization(const char *root,const char *attempt,
     if(snprintf(a->file,sizeof(a->file),"%s/%s.authorization.json",root,attempt)>=(int)sizeof(a->file))return 0;
     char raw[16384],reference[256],sponsor_path[PATH_MAX],sponsor_hash[65],actual[65];RecoveryJson j;
     if(!recovery_read_file(a->file,raw,sizeof(raw),1) || !recovery_json_document(&j,raw))return 0;
+    if(recovery_field(&j,0,"schema",RECOVERY_SWING_SCHEMA))
+        return recovery_swing_authorization(&j,raw,control,pid,target,now,a);
     a->historical=recovery_field(&j,0,"schema",RECOVERY_HISTORY_SCHEMA);
     if((a->historical ? (j.token[0].count!=25 ||
             !recovery_field(&j,0,"research_state","HISTORICAL_ACCEPTANCE_EXPIRED")) :
@@ -1265,6 +1324,14 @@ static int recovery_maintenance_matches(const RecoveryJson *j,int object,
         recovery_field(j,object,"startup",ready?"READY":"BLOCKED") &&
         recovery_field(j,object,"failure",ready?"null":"ACCEPTANCE_RESTORATION_NOT_ESTABLISHED");
 }
+static int recovery_incident_maintenance(const RecoveryAuthorization *a,const RecoveryJson *j,int object) {
+    if(!a->swing_incident)return recovery_maintenance_matches(j,object,a->maintenance,0);
+    return recovery_field(j,object,"protocol","KRONOS_MAINTENANCE_HANDOFF_V1") &&
+        recovery_field(j,object,"generation",RECOVERY_SWING_GENERATION) &&
+        recovery_field(j,object,"state","FAILED_ACTIVE") && recovery_field(j,object,"active","true") &&
+        recovery_field(j,object,"startup","BLOCKED") &&
+        recovery_field(j,object,"failure","SWING_RESTORATION_NOT_ESTABLISHED");
+}
 static int recovery_worker_drainable(const RecoveryJson *j,int object,int owners,const char *kind) {
     long long workers=recovery_integer(j,object,"owned_workers"),queued=recovery_integer(j,object,"queued_items");
     if(workers<0 || queued<0 || !recovery_field(j,object,"continuity","COMPLETE") ||
@@ -1285,8 +1352,8 @@ static int recovery_runtime_matches(const RecoveryAuthorization *a,const char *r
         monitor=recovery_json_get(&j,0,"monitoring"),shadow=recovery_json_get(&d,0,"live_shadow");
     if(!recovery_field(&j,0,"schema","KRONOS-RUNTIME-STATE/1.0.0") || recovery_integer(&j,process,"pid")!=a->pid ||
        !recovery_field(&j,process,"revision",a->predecessor) || !recovery_field(&j,process,"source_state","CLEAN_COMMIT") ||
-       !recovery_maintenance_matches(&j,m,a->maintenance,0) ||
-       !recovery_maintenance_matches(&s,recovery_json_get(&s,0,"maintenance"),a->maintenance,0) ||
+       !recovery_incident_maintenance(a,&j,m) ||
+       !recovery_incident_maintenance(a,&s,recovery_json_get(&s,0,"maintenance")) ||
        !recovery_field(&s,0,"service","KRONOS_BROWSER_V1") ||
        !recovery_field(&j,drain,"state","OPEN") || !recovery_field(&j,drain,"generation","null") || !recovery_field(&j,drain,"failure","null") ||
        !recovery_field(&j,0,"maintenance_claim","DRAINABLE") || !recovery_field(&s,0,"runtime_ready","false") ||
@@ -1296,7 +1363,7 @@ static int recovery_runtime_matches(const RecoveryAuthorization *a,const char *r
        !recovery_field(&j,provider,"cleanup_state","COMPLETE") || recovery_integer(&j,provider,"owned_work_count")!=0 ||
        recovery_integer(&j,provider,"retained_lease_count")!=0 || recovery_integer(&j,provider,"unresolved_cleanup_count")!=0 ||
        !recovery_field(&d,0,"active_operation_identity","null") || !recovery_field(&d,0,"current_failure","null") ||
-       !recovery_field(&d,shadow,"failure",a->historical?"SHADOW_RESTORATION_WINDOW_NOT_ACTIVE":"SHADOW_RESTORATION_RUNTIME_INCOMPATIBLE") ||
+       !recovery_field(&d,shadow,"failure",a->swing_incident?"null":(a->historical?"SHADOW_RESTORATION_WINDOW_NOT_ACTIVE":"SHADOW_RESTORATION_RUNTIME_INCOMPATIBLE")) ||
        !recovery_field(&d,shadow,"runtime_accepted","false") || !recovery_field(&d,shadow,"epoch_failure","null") ||
        !recovery_field(&d,shadow,"publication_hook_failure","null"))return 0;
     int owners=recovery_json_get(&j,drain,"owners");if(owners<0 || j.token[owners].kind!='{')return 0;
@@ -1329,6 +1396,20 @@ static int recovery_runtime_matches(const RecoveryAuthorization *a,const char *r
 }
 static int recovery_run_helper(const char *repository,const char *executable,char *const arguments[],
                                const char *input,char *output,size_t capacity,int expected_exit);
+static int recovery_swing_verify(const RecoveryAuthorization *a,const char *repository,const char *python,
+                                 const char *phase,const char *documents,const char *generation,pid_t pid) {
+    char output[100],process[32],maintenance[PATH_MAX],evidence[PATH_MAX];
+    const char *home=getenv("HOME");if(!home)return 0;
+    if(snprintf(maintenance,sizeof(maintenance),"%s/Library/Application Support/KRONOS/runtime/maintenance",home)>=(int)sizeof(maintenance) ||
+       snprintf(evidence,sizeof(evidence),"%s/Library/Application Support/KRONOS/evidence",home)>=(int)sizeof(evidence))return 0;
+    snprintf(process,sizeof(process),"%ld",(long)pid);
+    char *arguments[]={(char*)python,"-B","tools/failed_active_successor.py","--incident-phase",(char*)phase,
+        "--authorization",(char*)a->file,"--authorization-sha256",(char*)a->digest,
+        "--revision",(char*)a->successor,"--generation",(char*)generation,"--pid",process,
+        "--maintenance-root",maintenance,"--evidence-root",evidence,NULL};
+    return recovery_run_helper(repository,python,arguments,documents,output,sizeof(output),0) &&
+        !strcmp(output,"KRONOS_IWO07R3_RECOVERY_V1 VALID\n");
+}
 static int recovery_package_identity(const char *repository,const char *python,const char *bundle,char out[65]) {
     char raw[67];
     char *arguments[]={(char*)python,"-B","-c","import sys; from tools.macos.package_launcher import verify; print(verify(sys.argv[1]))",(char*)bundle,NULL};
@@ -1397,14 +1478,21 @@ static int recovery_bindings_match(const RecoveryAuthorization *a,const char *re
             recovery_file_digest(a->control,actual,1) && !strcmp(actual,a->control_digest);
         memset(proof,0,sizeof(proof));if(!ok)return 0;
     }
+    if(a->swing_incident && ((!recovery_swing_verify(a,repository,python,"retired",NULL,a->maintenance,a->pid)) ||
+        (control_proof && !recovery_swing_process_start(a->pid))))return 0;
     now=recovery_now_us();
     return recovery_time_valid(a,now);
 }
-static int recovery_assess(const RecoveryAuthorization *a) {
+static int recovery_assess(const RecoveryAuthorization *a,const char *repository,const char *python) {
     char runtime[BACKEND_STATUS_RESPONSE_BYTES],status[BACKEND_STATUS_RESPONSE_BYTES],intraday[BACKEND_STATUS_RESPONSE_BYTES];
-    return read_backend_route("/runtime/status",runtime) && read_backend_route("/status",status) &&
+    if(!(read_backend_route("/runtime/status",runtime) && read_backend_route("/status",status) &&
         read_backend_route("/control/intraday-discovery/v2/status",intraday) &&
-        recovery_runtime_matches(a,runtime,status,intraday) && recovery_listener_owner(a->pid);
+        recovery_runtime_matches(a,runtime,status,intraday) && recovery_listener_owner(a->pid)))return 0;
+    if(!a->swing_incident)return 1;
+    char input[BACKEND_STATUS_RESPONSE_BYTES*3];
+    return recovery_swing_process_start(a->pid) &&
+        snprintf(input,sizeof(input),"[%s,%s,%s]",recovery_body(runtime),recovery_body(status),recovery_body(intraday))<(int)sizeof(input) &&
+        recovery_swing_verify(a,repository,python,"preflight",input,a->maintenance,a->pid);
 }
 
 /* Helpers have no runtime authority; they only validate existing durable bytes
@@ -1511,8 +1599,11 @@ static int recovery_successor_ready(void) {
         "--revision",(char*)a->successor,"--generation",(char*)recovery_successor.generation,
         "--maintenance-root",maintenance,"--evidence-root",evidence,"--valid-from-us",from,"--valid-until-us",until,
         "--research-state",a->historical?"HISTORICAL_ACCEPTANCE_EXPIRED":"ACTIVE",NULL};
-    int valid=recovery_run_helper(recovery_successor.repository,recovery_successor.python,arguments,input,output,sizeof(output),0) &&
-        !strcmp(output,"KRONOS_RECOVERY_SUCCESSOR_V1 VALID\n") &&
+    int verified=a->swing_incident ? recovery_swing_verify(a,recovery_successor.repository,
+        recovery_successor.python,"successor",input,recovery_successor.generation,controlled_pid) :
+        (recovery_run_helper(recovery_successor.repository,recovery_successor.python,arguments,input,output,sizeof(output),0) &&
+        !strcmp(output,"KRONOS_RECOVERY_SUCCESSOR_V1 VALID\n"));
+    int valid=verified &&
         recovery_attempt_matches(a,recovery_successor.generation) &&
         recovery_listener_owner(controlled_pid) &&
         recovery_time_valid(a,recovery_now_us());
@@ -1689,13 +1780,13 @@ int main(void) {
         if (snprintf(root,sizeof(root),"%s/Library/Application Support/KRONOS/runtime/failed-active-recovery-v1",home)>=(int)sizeof(root) ||
             !recovery_control_record(control_path,&backend_pid,token) ||
             !recovery_load_authorization(root,recovery_attempt,control_path,backend_pid,target_revision,recovery_now_us(),&recovery_authority) ||
-            snprintf(relation,sizeof(relation),"%s/Library/Application Support/KRONOS/evidence/intraday-v1/live-shadow-v1/epochs-v1/WO06H-SUCCESSOR_COMPATIBILITY-%s.json",home,
+            (!recovery_authority.swing_incident && (snprintf(relation,sizeof(relation),"%s/Library/Application Support/KRONOS/evidence/intraday-v1/live-shadow-v1/epochs-v1/WO06H-SUCCESSOR_COMPATIBILITY-%s.json",home,
                 recovery_authority.historical ? "1a9a7b8b997447716f1b6f11b02fbcccf88fda2644b4a2af23604dbf5f293976" :
                     "4f6aac6c3a9f59fe2e19b788fb6266fec1a239358e71f2abc9f9c9ac4c0731ef")>=(int)sizeof(relation) ||
-            strcmp(recovery_authority.relation,relation) ||
+            strcmp(recovery_authority.relation,relation))) ||
             !recovery_package_identity(repository,python,canonical_bundle,installed) || strcmp(installed,recovery_authority.package) ||
             !recovery_package_identity(repository,python,recovery_authority.rollback,rollback) || strcmp(rollback,recovery_authority.rollback_identity) ||
-            !recovery_assess(&recovery_authority)) { memset(token,0,sizeof(token));return show_restart_blocked(); }
+            !recovery_assess(&recovery_authority,repository,python)) { memset(token,0,sizeof(token));return show_restart_blocked(); }
     }
     if (replacement) {
         if (!read_control_record(control_path, &backend_pid, token)) {
@@ -1752,7 +1843,7 @@ int main(void) {
         if (
             (!replacement && !recovery && !read_control_record(control_path, &backend_pid, token)) ||
             (recovery && (!recovery_continuity(repository,python,home,NULL) ||
-                !recovery_assess(&recovery_authority) ||
+                !recovery_assess(&recovery_authority,repository,python) ||
                 !recovery_bindings_match(&recovery_authority,repository,python,token) ||
                 !recovery_reserve(&recovery_authority,generation,recovery_now_us()))) ||
             !request_graceful_shutdown(backend_pid, token, generation, replacement || recovery) ||

@@ -952,3 +952,29 @@ def test_runtime_complete_books_bindings_are_inert_product_local_and_clean(runni
     assert server.request_capacity_status()["active"] == 0
     assert "HTTP_REQUEST" not in server.maintenance_admission.snapshot()["owners"]
     assert provider.begin_count == 0 and calls == []
+
+
+@pytest.mark.parametrize('fault', [None, 'failed', 'missing', 'duplicate', 'unknown', 'malformed', 'mutable'])
+def test_iwo07r3_frozen_owner_projection_is_inert(tmp_path, fault):
+    from kronos.browser.runtime_state import _swing_restoration_failure
+    s = server_for(governance(tmp_path, maintenance=GENERATION))
+    outcomes = tuple((owner, 'SUCCESS') for owner in
+        ('LEGACY_MTF', 'LEGACY_NATIVE', 'NATIVE_REVIEW', 'V3_RECORDS', 'V3_RESTORE', 'TRADE_WINDOW'))
+    if fault == 'failed': outcomes = tuple((k, 'FAILED' if k == 'V3_RECORDS' else v) for k, v in outcomes)
+    elif fault == 'missing': outcomes = outcomes[:-1]
+    elif fault == 'duplicate': outcomes = outcomes[:-1] + (outcomes[0],)
+    elif fault == 'unknown': outcomes = outcomes[:-1] + (('OTHER', 'SUCCESS'),)
+    elif fault == 'malformed': outcomes = outcomes[:-1] + (([], 'SUCCESS'),)
+    elif fault == 'mutable': outcomes = list(outcomes)
+    s.startup_restoration_outcomes = lambda: outcomes
+    before = inventory(tmp_path)
+    result = status_document(s)['startup_restoration_outcomes']
+    assert inventory(tmp_path) == before
+    assert s.connection_governance.startup_state != 'READY'
+    if fault in (None, 'failed'):
+        assert result == [list(row) for row in outcomes]
+        assert _swing_restoration_failure(outcomes) is (fault == 'failed')
+        result[0][1] = 'OTHER'
+        assert status_document(s)['startup_restoration_outcomes'][0][1] == 'SUCCESS'
+    else:
+        assert result is None

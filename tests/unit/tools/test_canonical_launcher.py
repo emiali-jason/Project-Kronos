@@ -1717,13 +1717,13 @@ def recovery_orchestration_probe(tmp_path_factory):
     source = original.replace('int main(void) {', 'int unused_application_main(void) {')
     source += r'''
 static const char *fault;
-static int history_mode=0;
+static int history_mode=0,incident_mode=0;
 static int calls_assess=0,calls_continuity=0,calls_binding=0,calls_verify=0,calls_package=0;
 static int shutdowns=0,starts=0,reservations=0;
 static int step(const char *name,int result) {printf("%s\n",name);return fault&&strcmp(fault,name)==0?0:result;}
 static int fake_control(pid_t *pid,char *token) {*pid=history_mode?18089:12985;memset(token,'d',64);token[64]=0;return step("control",1);}
 static int fake_authority(RecoveryAuthorization *a) {
-    memset(a,0,sizeof(*a));a->historical=history_mode;a->pid=history_mode?18089:12985;
+    memset(a,0,sizeof(*a));a->historical=history_mode;a->swing_incident=incident_mode;a->pid=history_mode?18089:12985;
     strcpy(a->predecessor,history_mode?RECOVERY_HISTORY_PREDECESSOR:RECOVERY_PREDECESSOR);
     memset(a->package,'b',64);memset(a->rollback_identity,'c',64);strcpy(a->rollback,"/disposable/rollback.app");
     /* Independent fixture identities: never derive the expected filename from the production selector. */
@@ -1762,7 +1762,7 @@ static BackendStartResult fake_start(void) {
 #define recovery_control_record(path,pid,token) fake_control(pid,token)
 #define recovery_load_authorization(root,attempt,control,pid,target,now,a) fake_authority(a)
 #define recovery_package_identity(repository,python,bundle,out) fake_package(out)
-#define recovery_assess(a) fake_assess()
+#define recovery_assess(a,repository,python) fake_assess()
 #define connect_backend() open("/dev/null",O_RDONLY)
 #define recovery_continuity(repository,python,home,generation) fake_continuity()
 #define recovery_bindings_match(a,repository,python,proof) fake_binding()
@@ -1787,7 +1787,7 @@ static BackendStartResult fake_start(void) {
     source += original.split('int main(void) {', 1)[1].join(['int exercise_main(void) {', ''])
     source += r'''
 int main(int argc,char **argv) {
-    if(argc!=3)return 2;fault=argv[1];history_mode=!strcmp(argv[2],"v2");
+    if(argc!=3)return 2;fault=argv[1];history_mode=strcmp(argv[2],"v1")!=0;incident_mode=!strcmp(argv[2],"v3");
     setenv("KRONOS_LAUNCH_MODE",RECOVERY_CLASS,1);
     setenv("KRONOS_RECOVERY_ATTEMPT","aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",1);
     setenv("KRONOS_REPLACEMENT_REVISION","bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",1);
@@ -1921,3 +1921,108 @@ def test_recovery_review_provenance_is_separate_from_production_binding():
     assert source.count("RECOVERY_REVIEW_ARTIFACT_SHA256") == 1
     assert 'recovery_field(&j,0,"compatibility_relation_sha256",recovery_relation(a))' in source
     assert 'strcmp(actual,recovery_relation(a))' in source
+
+
+@pytest.fixture(scope='module')
+def iwo07r3_authorization_probe(tmp_path_factory):
+    import hashlib
+    root=tmp_path_factory.mktemp('iwo07r3-auth').resolve()
+    installed=root/'installed.app';installed.mkdir()
+    diagnosis=root/'forensic.zip';diagnosis.write_bytes(b'disposable forensic')
+    digest=hashlib.sha256(diagnosis.read_bytes()).hexdigest()
+    source=SOURCE.read_text().replace('int main(void) {','int unused_application_main(void) {')
+    source=source.replace('static const char *canonical_bundle = "/Applications/KRONOS.app";',
+        'static const char *canonical_bundle = '+json.dumps(str(installed))+';')
+    import re
+    source=re.sub(r'#define RECOVERY_SWING_DIAGNOSIS "[^"]+"', '#define RECOVERY_SWING_DIAGNOSIS "'+digest+'"', source)
+    source+=r'''
+int main(int argc,char **argv) {
+    if(argc!=5)return 2;RecoveryAuthorization a;
+    int admitted=recovery_load_authorization(argv[1],argv[2],argv[3],RECOVERY_SWING_PID,argv[4],RECOVERY_SWING_START_US+10000000,&a);
+    if(admitted){char generation[65]={0};memset(generation,'f',64);
+        printf("%d %d %d\n",admitted,recovery_reserve(&a,generation,RECOVERY_SWING_START_US+10000000),
+               recovery_reserve(&a,generation,RECOVERY_SWING_START_US+10000000));
+    }else printf("0\n");return 0;
+}
+'''
+    # Reservation calls must be sequenced; C argument evaluation order is unspecified.
+    source=source.replace('printf("%d %d %d\\n",admitted,recovery_reserve(&a,generation,RECOVERY_SWING_START_US+10000000),\n               recovery_reserve(&a,generation,RECOVERY_SWING_START_US+10000000));',
+        'int first=recovery_reserve(&a,generation,RECOVERY_SWING_START_US+10000000);int replay=recovery_reserve(&a,generation,RECOVERY_SWING_START_US+10000000);printf("%d %d %d\\n",admitted,first,replay);')
+    binary=root/'probe';compile_source(source,binary)
+    return binary,installed,diagnosis,digest
+
+
+@pytest.mark.parametrize('fault',[None,'pid','start','generation','revision','failure_schema','old_bundle','rollback','control','stage_a','diagnosis','sponsor','unknown','expired','too_long','duplicate'])
+def test_iwo07r3_actual_c_admission_and_one_use(iwo07r3_authorization_probe,tmp_path,fault):
+    import hashlib
+    from tools import failed_active_successor as h
+    binary,installed,diagnosis,diagnosis_hash=iwo07r3_authorization_probe
+    root=tmp_path.resolve();root.chmod(0o700)
+    control=root/'control';control.write_text('disposable private control');control.chmod(0o600)
+    sponsor=root/'sponsor';sponsor.write_text('disposable');receipt=root/'receipt';receipt.write_text('{}');receipt.chmod(0o600)
+    rollback=root/'rollback.app';rollback.mkdir()
+    a=dict(schema=h.INCIDENT_SCHEMA,state='SPONSOR_APPROVED',recovery_class='FAILED_ACTIVE_RECOVERY_REPLACEMENT',attempt_identity='a'*64,
+        sponsor_authorization_reference='DISPOSABLE',sponsor_authorization_path=str(sponsor),sponsor_authorization_sha256=hashlib.sha256(sponsor.read_bytes()).hexdigest(),
+        predecessor_revision=h.INCIDENT_REVISION,predecessor_pid=h.INCIDENT_PID,predecessor_start_us=h.INCIDENT_START_US,
+        predecessor_maintenance_identity=h.INCIDENT_GENERATION,private_control_sha256=hashlib.sha256(control.read_bytes()).hexdigest(),
+        predecessor_package_identity=h.INCIDENT_PACKAGE,successor_revision='b'*40,installed_package_identity='b'*64,
+        rollback_bundle=str(rollback),rollback_package_identity=h.INCIDENT_PACKAGE,diagnosis_path=str(diagnosis),diagnosis_sha256=diagnosis_hash,
+        stage_a_receipt_path=str(receipt),stage_a_receipt_sha256=hashlib.sha256(receipt.read_bytes()).hexdigest(),valid_from_us=h.INCIDENT_START_US+1,valid_until_us=h.INCIDENT_START_US+20000000)
+    changes=dict(pid=('predecessor_pid',1),start=('predecessor_start_us',1),generation=('predecessor_maintenance_identity','0'*64),
+        revision=('predecessor_revision','0'*40),failure_schema=('schema','OTHER'),old_bundle=('installed_package_identity',h.INCIDENT_PACKAGE),
+        rollback=('rollback_bundle',str(installed)),control=('private_control_sha256','0'*64),stage_a=('stage_a_receipt_sha256','0'*64),
+        diagnosis=('diagnosis_sha256','0'*64),sponsor=('sponsor_authorization_sha256','0'*64),unknown=('extra',True),
+        expired=('valid_until_us',h.INCIDENT_START_US+10000000),too_long=('valid_until_us',h.INCIDENT_START_US+1800000002))
+    if fault in changes: k,v=changes[fault];a[k]=v
+    raw=json.dumps(a)
+    if fault=='duplicate': raw=raw[:-1]+',"state":"SPONSOR_APPROVED"}'
+    path=root/('a'*64+'.authorization.json');path.write_text(raw);path.chmod(0o600)
+    result=subprocess.check_output([str(binary),str(root),'a'*64,str(control),'b'*40],text=True).strip()
+    assert result==('1 1 0' if fault is None else '0')
+
+
+@pytest.fixture(scope='module')
+def iwo07r3_documents_probe(tmp_path_factory):
+    root=tmp_path_factory.mktemp('iwo07r3-documents')
+    source=SOURCE.read_text().replace('int main(void) {','int unused_application_main(void) {')
+    source+=r'''
+int main(int argc,char **argv) {
+    if(argc!=4)return 2;char r[BACKEND_STATUS_RESPONSE_BYTES],s[BACKEND_STATUS_RESPONSE_BYTES],d[BACKEND_STATUS_RESPONSE_BYTES];
+    if(!recovery_read_file(argv[1],r,sizeof(r),0)||!recovery_read_file(argv[2],s,sizeof(s),0)||!recovery_read_file(argv[3],d,sizeof(d),0))return 2;
+    RecoveryAuthorization a={0};a.swing_incident=1;a.pid=RECOVERY_SWING_PID;
+    strcpy(a.predecessor,RECOVERY_SWING_PREDECESSOR);strcpy(a.maintenance,RECOVERY_SWING_GENERATION);
+    printf("%d\n",recovery_runtime_matches(&a,r,s,d));return 0;
+}
+'''
+    binary=root/'probe';compile_source(source,binary);return binary
+
+
+@pytest.mark.parametrize('fault',[None,'pid','generation','revision','maintenance','failure','provider','unknown_owner','wo11','shadow','analysis','monitoring'])
+def test_iwo07r3_actual_c_incident_drain_predicate(iwo07r3_documents_probe,tmp_path,fault):
+    from tools import failed_active_successor as h
+    r,s,d=_failed_active_scope_documents()
+    r['process'].update(pid=h.INCIDENT_PID,revision=h.INCIDENT_REVISION)
+    for doc in (r,s): doc['maintenance'].update(generation=h.INCIDENT_GENERATION,failure='SWING_RESTORATION_NOT_ESTABLISHED')
+    d['live_shadow']['failure']=None
+    if fault=='pid': r['process']['pid']+=1
+    elif fault=='generation': s['maintenance']['generation']='b'*64
+    elif fault=='revision': r['process']['revision']='b'*40
+    elif fault=='maintenance': r['maintenance']['state']='INACTIVE'
+    elif fault=='failure': r['maintenance']['failure']='ACCEPTANCE_RESTORATION_NOT_ESTABLISHED'
+    elif fault=='provider': r['provider_runtime']['owned_work_count']=1
+    elif fault=='unknown_owner': r['maintenance_drain']['owners']['OTHER']=1
+    elif fault=='wo11': r['intraday_wo11_work']['continuity']='INCOMPLETE'
+    elif fault=='shadow': d['live_shadow']['failure']='OTHER'
+    elif fault=='analysis': r['analysis_execution']['owned_workers']=1
+    elif fault=='monitoring': r['monitoring']['session_count']=1
+    paths=[]
+    for i,doc in enumerate((r,s,d)):
+        p=tmp_path.resolve()/str(i);p.write_text(json.dumps(doc));paths.append(str(p))
+    assert subprocess.check_output([str(iwo07r3_documents_probe),*paths],text=True).strip()==('1' if fault is None else '0')
+
+
+@pytest.mark.parametrize("fault", ["none", "canonical", "source", "target", "control", "authorization", "installed", "rollback", "assess_initial", "continuity_before", "assess_final", "bindings_before", "reserve", "shutdown", "exit", "handoff_initial", "continuity_after", "bindings_after", "attempt_readback", "handoff_final", "listener_absent", "child_exit", "timeout", "internal"])
+def test_iwo07r3_actual_main_preserves_single_transition_order(recovery_orchestration_probe, fault):
+    # Real main orchestration, disposable boundary doubles. Predicates have
+    # separate actual C and Python tests, not inferred from this wiring proof.
+    test_actual_recovery_main_orders_one_use_drain_and_one_successor(recovery_orchestration_probe, fault, "v3")
