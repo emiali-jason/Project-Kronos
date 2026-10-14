@@ -23,6 +23,7 @@ from kronos.intraday.refresh_v2 import (
 _LATEST = WeakValueDictionary()
 _LATEST_GUARD = RLock()
 _MAX_LATEST_BYTES = 256 * 1024
+_RECENT_LIMIT = 5
 
 
 class _Latest:
@@ -30,6 +31,7 @@ class _Latest:
         self.lock = RLock()
         self.selected = None
         self.failure = None
+        self.recent = ()
 
 
 class RefreshV2ProvenanceStore:
@@ -91,12 +93,18 @@ class RefreshV2ProvenanceStore:
                 self._latest.failure = "INTRADAY_PROBABLES_V2_PROVENANCE_CAPACITY"
             else:
                 self._latest.selected = (record, payload)
+        if len(payload) <= _MAX_LATEST_BYTES:
+            retained = {item[0].provenance_identity: item for item in self._latest.recent}
+            retained[record.provenance_identity] = (record, payload)
+            self._latest.recent = tuple(sorted(retained.values(),
+                key=lambda item: key(item[0]), reverse=True)[:_RECENT_LIMIT])
 
     def restore_latest(self):
         """Explicit restoration boundary: stream history once, retain one result."""
         with self._lock:
             self._latest.selected = None
             self._latest.failure = None
+            self._latest.recent = ()
             try:
                 for path in (self._root / "records").glob("*.json"):
                     with path.open("rb") as handle:
@@ -131,6 +139,25 @@ class RefreshV2ProvenanceStore:
                 self._latest.failure = "INTRADAY_PROBABLES_V2_PROVENANCE_PREPARATION_FAILED"
                 raise
             return record
+
+    def recent(self) -> tuple[RefreshV2ProvenanceRecord, ...]:
+        """At most five prepared historical attempts, revalidated without a scan.
+
+        The derived selection is populated only by existing retain/restoration.
+        It is not operational authority and never creates durable records.
+        Historical corruption denies this view without changing latest authority.
+        """
+        with self._lock:
+            if self._latest.failure is not None:
+                raise ValueError(self._latest.failure)
+            selected = self._latest.recent
+            for record, expected in selected:
+                with self._path(record.provenance_identity).open('rb') as handle:
+                    actual = handle.read(_MAX_LATEST_BYTES + 1)
+                if actual != expected:
+                    _decoded(actual)
+                    raise ValueError('INTRADAY_PROBABLES_V2_PROVENANCE_CHANGED')
+            return tuple(record for record, _ in selected)
 
     def _path(self, identity: str) -> Path:
         _component(identity)

@@ -117,7 +117,23 @@ def test_retained_98_source_graph_and_sponsor_surfaces(tmp_path,monkeypatch):
     before={str(p.relative_to(tmp_path)):sha256(p.read_bytes()).hexdigest() for p in tmp_path.rglob('*.json')}
     status=IntradayWo08Projection(machine.store,probables).status_document()
     progress('before-projection')
+    import time
+    started=time.perf_counter()
     doc=readiness.status_document();html=render_machine_review(_snapshot(),status,doc)
+    measured=[time.perf_counter()-started]
+    if os.environ.get('IWO06C_OUTPUT'):
+        from kronos.browser.intraday_wo08 import render_sponsor_opportunities
+        timings={'review_first_seconds':measured[0],'scope':'Disposable real 98-member exact source/session/readiness stores; not production timing'}
+        for surface,render in [('review',render_machine_review),('opportunities',render_sponsor_opportunities)]:
+            samples=[]
+            for _ in range(2):
+                started=time.perf_counter()
+                fresh_status=IntradayWo08Projection(machine.store,probables).status_document()
+                fresh_readiness=readiness.status_document()
+                render(_snapshot(),fresh_status,fresh_readiness)
+                samples.append(time.perf_counter()-started)
+            timings[surface+'_repeated_seconds']=samples
+        (Path(os.environ['IWO06C_OUTPUT'])/'store-read-timings.json').write_text(json.dumps(timings,indent=2))
     progress('projection',summary=doc['operational_summary'],admitted=[(r['subject'],r['probables_state']) for r in status['assessments'] if r['probables_state'] in {'LONG_PROBABLE','SHORT_PROBABLE'}])
     if destination:(Path(destination)/'machine-review-production-shaped.html').write_text(html)
     assert 'Analysed</span><strong>98' in html and 'Considered</span><strong>11' in html, doc['operational_summary']

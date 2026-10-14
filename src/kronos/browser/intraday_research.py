@@ -215,7 +215,7 @@ def render_research(snapshot, status, *, statistics=False):
             + '<form method="get"><label>Month (YYYY_MM)<input name="month" value="' + escape(status["current_month"]) + '"></label><button>View</button></form>'
             + summary + "<p>Metrics use the last verified WO12 monthly publication. Missing publication is unavailable, not zero. UPDATE RESEARCH explicitly refreshes retained evidence.</p>"
             "<p>Monthly local research ledger. Research authority only; no trading authority.</p>"
-            f"<p>Canonical folder: <code>{escape(status['publication_root'])}</code></p>"
+            f"<p>Canonical folder: <code style='overflow-wrap:anywhere'>{escape(status['publication_root'])}</code></p>"
             '<form id="research-update"><button>UPDATE RESEARCH</button><output></output></form>'
             + '<p>Update publishes the current month (' + escape(status.get('update_month', status['current_month']).replace('_', '-')) + ') and retained earlier outcomes. Month selection above is for viewing.</p>'
             f'<p>{open_control}</p><p><a href="/reports/export.xlsx?product=INTRADAY">RAW TECHNICAL SNAPSHOT</a></p><details><summary>Technical Evidence</summary>'

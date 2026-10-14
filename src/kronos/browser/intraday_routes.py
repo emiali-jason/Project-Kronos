@@ -427,6 +427,8 @@ class IntradayBrowserRoutes:
                         control = self._probables_v2_control
                         latest = None if control is None else control.latest_evaluable_run()
                         refresh = None if control is None else control.status_document(latest_evaluable_run=latest)
+                        if control is not None:
+                            refresh = {**refresh, "recent_analysis_history": control.analysis_history_document()}
                         if refresh is not None and refresh.get("current_analysis_identity") != document["current_probables_run_identity"]:
                             raise ValueError("WO08_PAGE_SOURCE_CHANGED")
                         if document != self._wo08_projection.status_document():

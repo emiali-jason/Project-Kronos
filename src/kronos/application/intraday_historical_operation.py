@@ -147,11 +147,11 @@ class IntradayHistoricalQualificationOperationService:
 
     @property
     def operation_available(self) -> bool:
-        return self._runtime.lifecycle_state is SharedProviderRuntimeLifecycle.ACTIVE
+        return self._runtime.read_only_status()["capability_state"] == "RETAINED_UNEXPIRED"  # Display only; revalidated on use.
 
     @property
     def actual_context_state(self) -> str:
-        return self._runtime.lifecycle_state.value
+        return str(self._runtime.read_only_status()["retained_lifecycle"])  # Retained context; no synchronization.
 
     @property
     def active_operation_identity(self) -> str | None:

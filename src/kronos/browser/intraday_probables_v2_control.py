@@ -298,6 +298,12 @@ class IntradayProbablesV2OperationalControl:
             return accounting_document(None)
         return accounting_document(self._operation.accounting_store.load(identity))
 
+    def analysis_history_document(self):
+        return tuple(analysis_history_entry(record,
+            None if record.operation_accounting_identity is None else
+            self._operation.accounting_store.load(record.operation_accounting_identity))
+            for record in self._store.recent())
+
     def _response_document(self, record, *, idempotent):
         return {**_record_document(record, idempotent=idempotent),
             "operation_accounting": self._accounting_document(record)}
@@ -424,6 +430,27 @@ def _record_document(
         ),
         "idempotent": idempotent,
     }
+
+
+def analysis_history_entry(record, accounting):
+    """Retained attempt and exact owning operation timing; no inferred duration."""
+    from kronos.intraday.operation_accounting import DiscoveryOperationAccounting
+    if type(record) is not RefreshV2ProvenanceRecord:
+        raise ValueError('INTRADAY_ANALYSIS_HISTORY_INVALID')
+    if accounting is not None and (type(accounting) is not DiscoveryOperationAccounting
+            or accounting.accounting_identity != record.operation_accounting_identity
+            or accounting.discovery_run_identity != record.resulting_discovery_identity
+            or accounting.analysis_boundary != record.observation_boundary):
+        raise ValueError('INTRADAY_ANALYSIS_HISTORY_ACCOUNTING_BINDING_INVALID')
+    return dict(provenance_identity=record.provenance_identity,
+        run_identity=record.resulting_probables_identity,
+        boundary=None if record.observation_boundary is None else record.observation_boundary.isoformat(),
+        completed_at=record.operation_completed_at.isoformat(), result=record.outcome.value,
+        analysed_population=None if accounting is None or accounting.not_reached_members is None else
+            accounting.governed_members - accounting.not_reached_members,
+        duration_microseconds=None if accounting is None else accounting.operation_duration_microseconds,
+        duration_authority='RETAINED_OPERATION_ACCOUNTING',
+        operation_accounting_identity=record.operation_accounting_identity)
 
 
 def _operation_document(result: DiscoveryOperationResult) -> dict[str, object]:

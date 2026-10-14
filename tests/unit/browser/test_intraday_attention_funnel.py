@@ -71,18 +71,25 @@ def test_98_attention_primary_and_full_diagnostics(tmp_path,renderer):
     status,readiness=documents(tmp_path)
     before={str(p):sha256(p.read_bytes()).hexdigest() for p in tmp_path.rglob('*.json')}
     html=renderer(_snapshot(),status,readiness)
-    primary,diagnostics=html.split('<details id="intraday-diagnostics">',1)
-    assert 'NEAR READY</span><strong>2' in primary
-    assert 'READY</span><strong>2' in primary
-    assert 'NOW</span><strong>3' in primary
-    assert primary.count('id="review-candidate-')==7
-    assert diagnostics.count('id="review-candidate-')==91
-    for i in range(3):assert 'LOW'+str(i) not in primary and 'LOW'+str(i) in diagnostics
-    assert 'UNAVAILABLE' in diagnostics and 'EXCLUDED86' in diagnostics
-    assert status['assessments'][-1]['exact_mcx_contract_identity'] in primary
-    assert 'BAJAJ AUTO' in primary and 'Follow-through, Path Clearance' in primary
-    assert 'Analysed</span><strong>98' in html and 'Considered</span><strong>11' in html
-    assert html.count('id="review-candidate-')==98
+    if renderer is render_sponsor_opportunities:
+        assert 'NEAR READY' not in html and 'SECONDARY REVIEW' not in html
+        assert html.count('id="review-candidate-')==5
+        assert 'Diagnostics in Review' in html
+        assert 'READY</span><strong>2' in html and 'NOW</span><strong>3' in html
+        for i in range(3):assert 'LOW'+str(i) not in html
+    else:
+        primary,diagnostics=html.split('<details id="intraday-diagnostics">',1)
+        assert 'NEAR READY</span><strong>2' in primary
+        assert 'SECONDARY REVIEW</span><strong>11' in primary
+        assert 'READY</span><strong>2' in primary and 'NOW</span><strong>3' in primary
+        assert primary.count('id="review-candidate-')==11
+        assert diagnostics.count('id="diagnostic-candidate-')==98
+        for i in range(3):assert 'LOW'+str(i) in diagnostics
+        assert 'UNAVAILABLE' in diagnostics and 'EXCLUDED86' in diagnostics
+        assert 'Analysed</span><strong>98' in html and 'Considered</span><strong>11' in html
+        assert html.count('id="review-candidate-')==98
+    assert status['assessments'][-1]['exact_mcx_contract_identity'] in html
+    assert 'BAJAJ AUTO' in html and 'Follow-through' in html
     assert before=={str(p):sha256(p.read_bytes()).hexdigest() for p in tmp_path.rglob('*.json')}
     destination=os.environ.get('INT_D_REHEARSAL_OUTPUT')
     if destination:
@@ -110,13 +117,15 @@ def test_historical_sessions_missing_authority_and_stale_pointer_are_diagnostics
     status['currentness']=currentness
     readiness['operational_summary']=IntradayDashboardSummary(0,0,'NO_CURRENT_READINESS')
     html=render_sponsor_opportunities(_snapshot(),status,readiness)
-    primary,diagnostics=html.split('<details id="intraday-diagnostics">',1)
+    assert 'id="review-candidate-' not in html and 'No current READY/NOW opportunities.' in html
+    reviewed=render_machine_review(_snapshot(),status,readiness)
+    primary,diagnostics=reviewed.split('<details id="intraday-diagnostics">',1)
     assert 'id="review-candidate-' not in primary
-    assert diagnostics.count('id="review-candidate-')==98
+    assert diagnostics.count('id="diagnostic-candidate-')==98
     assert 'NEAR READY</span><strong>0' in primary
     readiness['operational_summary']=IntradayDashboardSummary()
     html=render_sponsor_opportunities(_snapshot(),status,readiness)
-    assert 'NEAR READY</span><strong>—' in html
+    assert 'READY</span><strong>—' in html and 'NEAR READY' not in html
 
 
 @pytest.mark.parametrize('direction',['LONG','SHORT'])
@@ -187,9 +196,12 @@ def test_canonical_http_opportunities_uses_funnel_not_probables_cards(tmp_path,m
         for route in ('/intraday','/intraday/review'):
             code,_,html=_request(server,'GET',route)
             assert code==200
-            primary,diagnostics=html.split('<details id="intraday-diagnostics">',1)
-            assert primary.count('id="review-candidate-')==7
-            assert diagnostics.count('id="review-candidate-')==91
+            if route=='/intraday':
+                assert html.count('id="review-candidate-')==5 and 'NEAR READY' not in html
+            else:
+                primary,diagnostics=html.split('<details id="intraday-diagnostics">',1)
+                assert primary.count('id="review-candidate-')==11
+                assert diagnostics.count('id="diagnostic-candidate-')==98
         assert inventory(tmp_path)==before
         assert server.swing_monitoring_hub.status_document()['owner_count']==0
 

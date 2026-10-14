@@ -144,7 +144,7 @@ def test_machine_without_session_authority_keeps_rows_secondary(tmp_path):
     status, readiness = presentation_fixture(tmp_path)
     readiness.pop('operational_summary')
     html = render_machine_review(_snapshot(),status,readiness)
-    assert 'No current NEAR READY, READY or NOW opportunities.' in html
+    assert 'No current Secondary Review assessments.' in html
     assert 'Diagnostics / Full Analysis · 3' in html
     assert 'Current opportunity eligibility unavailable' in html
 

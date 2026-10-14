@@ -47,6 +47,55 @@ class IntradaySourceAdapter:
             raise ValueError("WO14_JOURNAL_OPPORTUNITY_ORIGIN_NOT_RETAINED")
         return values[0]
 
+    def _plan_origin(self, plan, opportunity_identity, *, intake=None):
+        """Keep WO10's claim distinct from its explicitly retained original origin."""
+        from kronos.intraday.wo09_experimental import AUTHORITY, ExperimentalReadinessRecord, origin_from
+        from kronos.intraday.wo10_futures_contract import normalize
+        source = plan.get("wo09") or {}
+        if not isinstance(source, dict):
+            raise ValueError("WO14_JOURNAL_WO09_SOURCE_INVALID")
+        if source.get("authority") != AUTHORITY:
+            if intake is not None and "experimental_authority" in intake:
+                raise ValueError("WO14_JOURNAL_EXPERIMENTAL_LINEAGE_MISMATCH")
+            return self._origin(opportunity_identity)
+        from kronos.intraday.wo09_persistence import _readiness
+        # WO10 normalizes copied datetime values to UTC; it is not a lossless
+        # WO09 handoff serialization. Its embedded readiness/origin documents
+        # remain exact original artifacts. Validate those, without restamping.
+        readiness = _readiness(source["readiness_document"])
+        if (type(readiness) is not ExperimentalReadinessRecord
+                or readiness.satisfied_count != 5 or readiness.first_five_document is None):
+            raise ValueError("WO14_JOURNAL_EXPERIMENTAL_SOURCE_REQUIRED")
+        names = ("policy_identity", "policy_version", "policy_checksum", "canonical_subject_identity",
+                 "session_identity", "direction", "methodology_identity", "methodology_version",
+                 "methodology_checksum", "wo08_identity", "wo08_integrity", "opportunity_identity",
+                 "first_five_document", "satisfied_count", "hard_gate", "readiness_state")
+        if (source.get("readiness_identity") != readiness.readiness_identity
+                or source.get("readiness_integrity") != readiness.integrity_identity
+                or any(source.get(key) != normalize(getattr(readiness, key)) for key in names)
+                or plan.get("subject") != readiness.canonical_subject_identity
+                or plan.get("session_identity") != readiness.session_identity
+                or plan.get("direction") != normalize(readiness.direction)):
+            raise ValueError("WO14_JOURNAL_EXPERIMENTAL_LINEAGE_MISMATCH")
+        origin = self._origin(readiness.opportunity_identity)
+        expected = origin_from(readiness.origin_document)
+        if (origin != expected
+                or origin.data["canonical_subject_identity"] != readiness.canonical_subject_identity
+                or origin.data["market_session_identity"] != readiness.session_identity):
+            raise ValueError("WO14_JOURNAL_EXPERIMENTAL_ORIGIN_MISMATCH")
+        if intake is not None:
+            required = dict(experimental_authority=AUTHORITY,
+                experimental_method_identity=readiness.methodology_identity,
+                experimental_method_version=readiness.methodology_version,
+                experimental_method_checksum=readiness.methodology_checksum,
+                experimental_opportunity_identity=readiness.opportunity_identity,
+                experimental_first_five_identity=readiness.first_five_document["fact_identity"],
+                subject=readiness.canonical_subject_identity, session_identity=readiness.session_identity,
+                direction=normalize(readiness.direction))
+            if any(intake.get(key) != value for key, value in required.items()):
+                raise ValueError("WO14_JOURNAL_EXPERIMENTAL_LINEAGE_MISMATCH")
+        return origin
+
     def _monitoring(self, track_identity: str | None, stored: str, terminal: bool) -> str:
         if terminal:
             return "NOT_REQUIRED"
@@ -78,8 +127,8 @@ class IntradaySourceAdapter:
         if data["choice"] != "NONE":
             return  # Selected Future is represented by the later WO-11 action/track.
         comparison = data["comparison"]
-        origin = self._origin(comparison["opportunity_identity"])
         plan = self.futures.load(comparison["plan_identity"]).data
+        origin = self._plan_origin(plan, comparison["opportunity_identity"])
         expression = self.futures.load(comparison["expression_identity"]).data
         snapshot = self.futures.load(comparison["snapshot_identity"]).data
         self.store.publish(self._revision(
@@ -100,8 +149,8 @@ class IntradaySourceAdapter:
         handoff = self.futures.load(data["handoff_identity"])
         selection = handoff.data["selection"]
         comparison = selection["comparison"]
-        origin = self._origin(comparison["opportunity_identity"])
         plan = handoff.data["plan"]
+        origin = self._plan_origin(plan, comparison["opportunity_identity"])
         expression = handoff.data["expression"]
         snapshot = handoff.data["snapshot"]
         self.store.publish(self._revision(
@@ -112,7 +161,7 @@ class IntradaySourceAdapter:
             future=expression.get("future"), future_geometry=_compact_geometry(expression),
             trading_date=(snapshot.get("contract") or {}).get("trading_date"),
             source_identities=[origin.identity, action.identity, handoff.identity,
-                               selection["comparison_identity"], comparison["plan_identity"],
+                               comparison["opportunity_identity"], selection["comparison_identity"], comparison["plan_identity"],
                                comparison["expression_identity"]],
         ))
 
@@ -124,8 +173,8 @@ class IntradaySourceAdapter:
         intake = data["intake"]
         auth = self.lifecycle.load(data["authorization_identity"])
         action = self.lifecycle.load(auth.data["action_identity"])
-        origin = self._origin(intake["opportunity_identity"])
         plan = self.futures.load(intake["plan_identity"]).data
+        origin = self._plan_origin(plan, intake["opportunity_identity"], intake=intake)
         expression = self.futures.load(intake["expression_identity"]).data
         metric = None if data["metrics"] is None else self.lifecycle.load(data["metrics"]).data
         monitoring = self._monitoring(data["track_identity"], data["monitoring"], data["state"] in TERMINAL)
