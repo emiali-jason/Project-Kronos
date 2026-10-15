@@ -1,0 +1,73 @@
+{
+  "schema_identity": "KRONOS-MCX-OPTION-EXPIRY-PUBLICATION-V1",
+  "schema_version": "1.0.0",
+  "publication_identity": "KRONOS-MCX-OPTION-EXPIRY-2026",
+  "publication_version": "2026.1.0",
+  "instrument_reference": "KRONOS-MCX-OPTION-SERIES-2026/2026.1.0/SHA256:395bf9e7f4e3174b87febee43ceeacbcebffa203dc07f7ceccdae11d2c943280",
+  "base_calendar_reference": "KRONOS-MCX-NON-AGRI-2026/2026.1.1/SHA256:6c1ae4fe581b99628b0abcec67f3c85488a443a1639512b56f197813d252f4d2",
+  "effective_from": "2026-10-12T04:32:40Z",
+  "effective_through": "2026-11-30T23:59:59+05:30",
+  "coverage_start": "2026-08-01",
+  "coverage_end": "2026-11-30",
+  "supersedes": null,
+  "supporting_source": {"identity":"NIST-US-DST-2026","official_uri":"https://www.nist.gov/pml/time-and-frequency-division/popular-links/daylight-saving-time-dst","updated_on":"2026-02-09","retrieved_at":"2026-10-12T04:32:40Z","filename":"sources/nist-dst-2026.html","sha256":"25cf0d761b6383d096622600fa27dbce89c986437a06e753375eaf7b105ccdf6"},
+  "session_periods": [{"start":"2026-08-01","end":"2026-10-31","normal_open":"09:00:00","normal_close":"23:30:00","source_identity":"NIST-US-DST-2026"},{"start":"2026-11-01","end":"2026-11-30","normal_open":"09:00:00","normal_close":"23:55:00","source_identity":"NIST-US-DST-2026"}],
+  "rules": [
+    {
+      "family": "GOLDM",
+      "series_kind": "MONTHLY",
+      "expiry_rule": "EXPLICIT_EXCHANGE_DATE",
+      "session_rule": "OPTION_SPEC_NORMAL_MCX_SESSION",
+      "source_ids": [
+        "GOLDM-OPT-2026"
+      ]
+    },
+    {
+      "family": "SILVERM",
+      "series_kind": "MONTHLY",
+      "expiry_rule": "FOURTH_LAST_BUSINESS_DAY_MONTHLY",
+      "session_rule": "OPTION_SPEC_NORMAL_MCX_SESSION",
+      "source_ids": [
+        "SILVERM-OPT-MONTHLY-2026"
+      ]
+    },
+    {
+      "family": "SILVERM",
+      "series_kind": "BI_MONTHLY",
+      "expiry_rule": "THREE_BEFORE_THREE_DAY_TENDER",
+      "session_rule": "OPTION_SPEC_NORMAL_MCX_SESSION",
+      "source_ids": [
+        "SILVERM-OPT-BIMONTHLY-2026",
+        "SILVERM-FUT-2026"
+      ]
+    },
+    {
+      "family": "COPPER",
+      "series_kind": "MONTHLY",
+      "expiry_rule": "THREE_BEFORE_THREE_DAY_TENDER",
+      "session_rule": "OPTION_SPEC_NORMAL_MCX_SESSION",
+      "source_ids": [
+        "COPPER-OPT-2026",
+        "COPPER-FUT-2026"
+      ]
+    },
+    {
+      "family": "CRUDEOIL",
+      "series_kind": "MONTHLY",
+      "expiry_rule": "TWO_BUSINESS_DAYS_BEFORE_FUTURE",
+      "session_rule": "OPTION_SPEC_NORMAL_MCX_SESSION",
+      "source_ids": [
+        "CRUDEOIL-OPT-2026"
+      ]
+    },
+    {
+      "family": "NATURALGAS",
+      "series_kind": "MONTHLY",
+      "expiry_rule": "TWO_BUSINESS_DAYS_BEFORE_FUTURE",
+      "session_rule": "OPTION_SPEC_NORMAL_MCX_SESSION",
+      "source_ids": [
+        "NATURALGAS-OPT-2026"
+      ]
+    }
+  ]
+}

@@ -1,5 +1,21 @@
 # KRONOS Engine Ownership
 
+## PLC-03C transport-only hygiene
+
+The Market reader may consume the same hash-pinned NIST original from its
+single-member ZIP transport, without extraction or new source authority. Existing
+raw-source layouts remain supported; invalid raw artifacts are not masked.
+Instrument/Market facts, Theta methods and Swing/Intraday ownership are unchanged.
+This candidate requires renewed exact-byte owner review and grants no publication.
+
+## Theta prospective candidate — PLC-02
+
+ADR-0066/0067 retain Theta's independent terminal-range evidence and documentary
+assessment boundary. Instrument/Market own exact target facts; Astra retains
+LOWER/UPPER/CONFIDENCE; Theta verifies required documentary relationships only.
+No Swing/Intraday criterion, numerical score, option-expression or trading
+ownership transfers. This index addition grants no production/runtime authority.
+
 **Status:** Canonical
 **Date:** 2026-07-10
 

@@ -62,6 +62,8 @@ with StartupCapture(Path(__file__).resolve().parents[1], keep_sources_pinned=Tru
     )
     from kronos.browser.intraday_routes import IntradayBrowserRoutes
     from kronos.browser.product_routes import ProductBrowserRoutes
+    from kronos.browser.theta_composition import compose_theta_browser_routes
+    from kronos.theta.composition import compose_theta_sponsor_workflow
     from kronos.browser.intraday_historical_control import (
         IntradayHistoricalQualificationOperationalControl,
     )
@@ -304,6 +306,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         statistics=intraday_statistics,
         review_workstation=intraday_runtime.discovery_application,
     ),))
+    # PLC-01 source candidate only. Preserve exact current Intraday owner/control
+    # instances and add Theta's offline manual workflow; never adopt trial state.
+    product_routes = compose_theta_browser_routes(product_routes,
+        factory=compose_theta_sponsor_workflow)
     intraday_historical_control = (
         IntradayHistoricalQualificationOperationalControl(
             intraday_runtime.historical_invocation

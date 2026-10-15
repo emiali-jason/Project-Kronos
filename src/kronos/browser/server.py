@@ -4058,6 +4058,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         if response is None:
             self._text(HTTPStatus.NOT_FOUND, "Not found.")
             return
+        if response.location is not None:
+            self._redirect(response.location)
+            return
         self._respond(
             response.status,
             response.body.encode("utf-8"),

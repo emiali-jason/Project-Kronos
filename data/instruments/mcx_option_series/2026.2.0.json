@@ -1,0 +1,493 @@
+{
+  "schema_identity": "KRONOS-MCX-OPTION-SERIES-PUBLICATION-V1",
+  "schema_version": "1.0.0",
+  "publication_identity": "KRONOS-MCX-OPTION-SERIES-2026",
+  "publication_version": "2026.2.0",
+  "effective_from": "2026-10-12T04:21:54Z",
+  "effective_through": "2026-12-31T23:59:59+05:30",
+  "coverage_start": "2026-08-01",
+  "coverage_end": "2026-12-31",
+  "supersedes": "KRONOS-MCX-OPTION-SERIES-2026/2026.1.0/SHA256:395bf9e7f4e3174b87febee43ceeacbcebffa203dc07f7ceccdae11d2c943280",
+  "sources": [
+    {
+      "identity": "GOLDM-OPT-2026",
+      "official_uri": "https://www.mcxindia.com/docs/default-source/options/gold-mini-(100-grams)-options-march-2026-contract-onwardsb02f614857fb64e3bdfdff00007acb35.pdf",
+      "reference": "MCX/TRD/052/2026",
+      "published_on": "2026-01-29",
+      "retrieved_at": "2026-10-12T04:21:54Z",
+      "filename": "sources/goldm-options.pdf",
+      "sha256": "c3df8d640d8b4c3af472c1cb955b37a04aa0fe7d1742357e9cc900104596c3ef",
+      "effective_scope": "March 2026 onwards; page 4 explicit option dates and futures months"
+    },
+    {
+      "identity": "GOLDM-FUT-2026",
+      "official_uri": "https://www.mcxindia.com/docs/default-source/about-us/gold-mini-august-2026-contract-onwards8a79913a-e8de-4136-9f0b-25d31dc163c4.pdf",
+      "reference": "MCX/TRD/041/2026; MCX/PMT/178/2026; MCX/PMT/375/2026",
+      "published_on": "2026-07-01",
+      "retrieved_at": "2026-10-12T04:21:54Z",
+      "filename": "sources/goldm-futures.pdf",
+      "sha256": "3ef6eb6f5146d09b8f0ee5f34a8bb18c0524f9f95bfe99cccc2435974dd474b8",
+      "effective_scope": "August 2026 onwards; pages 1, 2, 5: last trading day, tender and listing"
+    },
+    {
+      "identity": "SILVERM-OPT-MONTHLY-2026",
+      "official_uri": "https://www.mcxindia.com/docs/default-source/options/silver-mini-(5-kilograms)-options-july-2025-contract-onwards.pdf",
+      "reference": "MCX/TRD/279/2025",
+      "published_on": "2025-05-30",
+      "retrieved_at": "2026-10-12T04:21:54Z",
+      "filename": "sources/silverm-monthly-options.pdf",
+      "sha256": "2b207c6859fa3a0cb2d4075a686bec5fbd40d952a51508207609c384d733bb06",
+      "effective_scope": "Monthly series September/October 2026 to November future; pages 1, 3, 4"
+    },
+    {
+      "identity": "SILVERM-OPT-BIMONTHLY-2026",
+      "official_uri": "https://www.mcxindia.com/docs/default-source/options/silver-mini-(5-kilograms)-options-february-2026-contract-onwards7826ba40-8dcd-490c-8354-f68798ca6f63.pdf",
+      "reference": "MCX/TRD/116/2025",
+      "published_on": "2025-02-28",
+      "retrieved_at": "2026-10-12T04:21:54Z",
+      "filename": "sources/silverm-bimonthly-options.pdf",
+      "sha256": "ece49fa4da0d0583ffc76b43ae431bcccbcbca2d67f7f79c3988d45ef7f4684e",
+      "effective_scope": "Bi-monthly February 2026 onwards; pages 1, 3, 4; no monthly-series replacement"
+    },
+    {
+      "identity": "SILVERM-FUT-2026",
+      "official_uri": "https://www.mcxindia.com/docs/default-source/about-us/silver-mini-august-2026-contract-onwards.pdf",
+      "reference": "MCX/TRD/383/2025; MCX/MCXCCL/455/2025; MCX/PMT/415/2026",
+      "published_on": "2026-07-17",
+      "retrieved_at": "2026-10-12T04:21:54Z",
+      "filename": "sources/silverm-futures.pdf",
+      "sha256": "a36caf7981ecbfe4cd0d2db431586535a256d2ab634dd6bfd886189b90b9bde8",
+      "effective_scope": "August/November 2026 futures; last calendar day and three-day tender"
+    },
+    {
+      "identity": "COPPER-OPT-2026",
+      "official_uri": "https://www.mcxindia.com/docs/default-source/about-us/copper-(2500-kilograms)-options-may-2026-contract-onwards.pdf",
+      "reference": "MCX/TRD/229/2026",
+      "published_on": "2026-04-24",
+      "retrieved_at": "2026-10-12T04:21:54Z",
+      "filename": "sources/copper-options.pdf",
+      "sha256": "ef33925a1e7a91acab348e2396ae6b91a0481b483b9dfdce22d6011e9a18ef78",
+      "effective_scope": "May 2026 onwards; pages 1, 4: option expiry, session, settlement and listing"
+    },
+    {
+      "identity": "COPPER-FUT-2026",
+      "official_uri": "https://www.mcxindia.com/docs/default-source/products/contract-specification/copper/copper-may-2026-contracts-onwards.pdf",
+      "reference": "MCX/TRD/655/2025",
+      "published_on": "2025-12-23",
+      "retrieved_at": "2026-10-12T04:21:54Z",
+      "filename": "sources/copper-futures.pdf",
+      "sha256": "85006677f86c45c20f0ab146f04774300cade646d4c1bc328c869964cdd23858",
+      "effective_scope": "May 2026 onwards; last calendar day and three-day tender"
+    },
+    {
+      "identity": "CRUDEOIL-OPT-2026",
+      "official_uri": "https://www.mcxindia.com/docs/default-source/products/contract-specification/crude-oil-options/crudeoil-(100-barrels)-options-march-2026-contract-onwards4f4aed50-0f8d-46a4-8f1b-efba7c9b9479.pdf",
+      "reference": "MCX/TRD/100/2026",
+      "published_on": "2026-03-01",
+      "retrieved_at": "2026-10-12T04:21:54Z",
+      "filename": "sources/crudeoil-options.pdf",
+      "sha256": "33bf2c0c3f289891206d39968a6808eccbe583b24932b3b31050e0544664a6cb",
+      "effective_scope": "March 2026 onwards; pages 1, 4: two business days before underlying and settlement"
+    },
+    {
+      "identity": "CRUDEOIL-FUT-2026",
+      "official_uri": "https://www.mcxindia.com/docs/default-source/products/contract-specification/crude-oil/crude-oil-january-2026-contract-onwards267be8c1-650a-4baa-aabd-ffcc9364c100.pdf",
+      "reference": "MCX/TRD/319/2025",
+      "published_on": "2025-06-27",
+      "retrieved_at": "2026-10-12T04:21:54Z",
+      "filename": "sources/crudeoil-futures.pdf",
+      "sha256": "73bd9b8bf90c4a329f715e08018776551afac4a7de17d58cc8b10e05db7c568a",
+      "effective_scope": "Page 2 exact futures expiry dates August-December 2026"
+    },
+    {
+      "identity": "NATURALGAS-OPT-2026",
+      "official_uri": "https://www.mcxindia.com/docs/default-source/products/contract-specification/natural-gas-option/natural-gas-(1250-mmbtu)-options-march-2026-contract-onwards.pdf",
+      "reference": "MCX/TRD/103/2026",
+      "published_on": "2026-03-02",
+      "retrieved_at": "2026-10-12T04:21:54Z",
+      "filename": "sources/naturalgas-options.pdf",
+      "sha256": "c5427a81fa530e7d1ad4ef462be6b06f16552a8f4b5f3d8294a89c2fd67b45b8",
+      "effective_scope": "March 2026 onwards; pages 1, 4: expiry, session and settlement"
+    },
+    {
+      "identity": "NATURALGAS-FUT-2026",
+      "official_uri": "https://www.mcxindia.com/docs/default-source/products/contract-specification/natural-gas/natural-gas-january-2026-contract-onwards2ff2141b-f6e4-4b6a-9f0e-59f260cecf9b.pdf",
+      "reference": "MCX/TRD/320/2025",
+      "published_on": "2025-06-27",
+      "retrieved_at": "2026-10-12T04:21:54Z",
+      "filename": "sources/naturalgas-futures.pdf",
+      "sha256": "2f15e2ecc7f610686307d667b94c0788659b8a58acc539ec8bef96e7711cb74a",
+      "effective_scope": "Page 2 exact futures expiry dates August-December 2026"
+    }
+  ],
+  "series": [
+    {
+      "identity": "MCX-OPT-SERIES-GOLDM-MONTHLY-2026-08-28",
+      "family": "GOLDM",
+      "canonical_subject": "MCX-SUBJECT-GOLDM",
+      "series_kind": "MONTHLY",
+      "expiry": "2026-08-28",
+      "underlying_future": "MCX-FUT-GOLDM-2026-09-04",
+      "futures_expiry": "2026-09-04",
+      "quotation_unit": "INR per 10 grams",
+      "settlement_reference": "OPTION_EXPIRY_UNDERLYING_SETTLEMENT_REFERENCE",
+      "source_ids": [
+        "GOLDM-OPT-2026",
+        "GOLDM-FUT-2026"
+      ],
+      "source_locator": "Option specification page 4 explicit option date/futures month; futures pages 1,2,5 + bound 2026 calendar"
+    },
+    {
+      "identity": "MCX-OPT-SERIES-GOLDM-MONTHLY-2026-09-25",
+      "family": "GOLDM",
+      "canonical_subject": "MCX-SUBJECT-GOLDM",
+      "series_kind": "MONTHLY",
+      "expiry": "2026-09-25",
+      "underlying_future": "MCX-FUT-GOLDM-2026-10-05",
+      "futures_expiry": "2026-10-05",
+      "quotation_unit": "INR per 10 grams",
+      "settlement_reference": "OPTION_EXPIRY_UNDERLYING_SETTLEMENT_REFERENCE",
+      "source_ids": [
+        "GOLDM-OPT-2026",
+        "GOLDM-FUT-2026"
+      ],
+      "source_locator": "Option specification page 4 explicit option date/futures month; futures pages 1,2,5 + bound 2026 calendar"
+    },
+    {
+      "identity": "MCX-OPT-SERIES-GOLDM-MONTHLY-2026-10-29",
+      "family": "GOLDM",
+      "canonical_subject": "MCX-SUBJECT-GOLDM",
+      "series_kind": "MONTHLY",
+      "expiry": "2026-10-29",
+      "underlying_future": "MCX-FUT-GOLDM-2026-11-05",
+      "futures_expiry": "2026-11-05",
+      "quotation_unit": "INR per 10 grams",
+      "settlement_reference": "OPTION_EXPIRY_UNDERLYING_SETTLEMENT_REFERENCE",
+      "source_ids": [
+        "GOLDM-OPT-2026",
+        "GOLDM-FUT-2026"
+      ],
+      "source_locator": "Option specification page 4 explicit option date/futures month; futures pages 1,2,5 + bound 2026 calendar"
+    },
+    {
+      "identity": "MCX-OPT-SERIES-GOLDM-MONTHLY-2026-11-27",
+      "family": "GOLDM",
+      "canonical_subject": "MCX-SUBJECT-GOLDM",
+      "series_kind": "MONTHLY",
+      "expiry": "2026-11-27",
+      "underlying_future": "MCX-FUT-GOLDM-2026-12-04",
+      "futures_expiry": "2026-12-04",
+      "quotation_unit": "INR per 10 grams",
+      "settlement_reference": "OPTION_EXPIRY_UNDERLYING_SETTLEMENT_REFERENCE",
+      "source_ids": [
+        "GOLDM-OPT-2026",
+        "GOLDM-FUT-2026"
+      ],
+      "source_locator": "Option specification page 4 explicit option date/futures month; futures pages 1,2,5 + bound 2026 calendar"
+    },
+    {
+      "identity": "MCX-OPT-SERIES-COPPER-MONTHLY-2026-08-24",
+      "family": "COPPER",
+      "canonical_subject": "MCX-SUBJECT-COPPER",
+      "series_kind": "MONTHLY",
+      "expiry": "2026-08-24",
+      "underlying_future": "MCX-FUT-COPPER-2026-08-31",
+      "futures_expiry": "2026-08-31",
+      "quotation_unit": "INR per kilogram",
+      "settlement_reference": "OPTION_EXPIRY_UNDERLYING_SETTLEMENT_REFERENCE",
+      "source_ids": [
+        "COPPER-OPT-2026",
+        "COPPER-FUT-2026"
+      ],
+      "source_locator": "Option specification pages 1 and 4 + exact underlying specification and bound 2026 calendar; DERIVED expiry; no extrapolation"
+    },
+    {
+      "identity": "MCX-OPT-SERIES-COPPER-MONTHLY-2026-09-23",
+      "family": "COPPER",
+      "canonical_subject": "MCX-SUBJECT-COPPER",
+      "series_kind": "MONTHLY",
+      "expiry": "2026-09-23",
+      "underlying_future": "MCX-FUT-COPPER-2026-09-30",
+      "futures_expiry": "2026-09-30",
+      "quotation_unit": "INR per kilogram",
+      "settlement_reference": "OPTION_EXPIRY_UNDERLYING_SETTLEMENT_REFERENCE",
+      "source_ids": [
+        "COPPER-OPT-2026",
+        "COPPER-FUT-2026"
+      ],
+      "source_locator": "Option specification pages 1 and 4 + exact underlying specification and bound 2026 calendar; DERIVED expiry; no extrapolation"
+    },
+    {
+      "identity": "MCX-OPT-SERIES-COPPER-MONTHLY-2026-10-23",
+      "family": "COPPER",
+      "canonical_subject": "MCX-SUBJECT-COPPER",
+      "series_kind": "MONTHLY",
+      "expiry": "2026-10-23",
+      "underlying_future": "MCX-FUT-COPPER-2026-10-30",
+      "futures_expiry": "2026-10-30",
+      "quotation_unit": "INR per kilogram",
+      "settlement_reference": "OPTION_EXPIRY_UNDERLYING_SETTLEMENT_REFERENCE",
+      "source_ids": [
+        "COPPER-OPT-2026",
+        "COPPER-FUT-2026"
+      ],
+      "source_locator": "Option specification pages 1 and 4 + exact underlying specification and bound 2026 calendar; DERIVED expiry; no extrapolation"
+    },
+    {
+      "identity": "MCX-OPT-SERIES-COPPER-MONTHLY-2026-11-23",
+      "family": "COPPER",
+      "canonical_subject": "MCX-SUBJECT-COPPER",
+      "series_kind": "MONTHLY",
+      "expiry": "2026-11-23",
+      "underlying_future": "MCX-FUT-COPPER-2026-11-30",
+      "futures_expiry": "2026-11-30",
+      "quotation_unit": "INR per kilogram",
+      "settlement_reference": "OPTION_EXPIRY_UNDERLYING_SETTLEMENT_REFERENCE",
+      "source_ids": [
+        "COPPER-OPT-2026",
+        "COPPER-FUT-2026"
+      ],
+      "source_locator": "Option specification pages 1 and 4 + exact underlying specification and bound 2026 calendar; DERIVED expiry; no extrapolation"
+    },
+    {
+      "identity": "MCX-OPT-SERIES-CRUDEOIL-MONTHLY-2026-08-17",
+      "family": "CRUDEOIL",
+      "canonical_subject": "MCX-SUBJECT-CRUDE",
+      "series_kind": "MONTHLY",
+      "expiry": "2026-08-17",
+      "underlying_future": "MCX-FUT-CRUDE-2026-08-19",
+      "futures_expiry": "2026-08-19",
+      "quotation_unit": "INR per barrel",
+      "settlement_reference": "OPTION_EXPIRY_UNDERLYING_SETTLEMENT_REFERENCE",
+      "source_ids": [
+        "CRUDEOIL-OPT-2026",
+        "CRUDEOIL-FUT-2026"
+      ],
+      "source_locator": "Option specification pages 1 and 4 + exact underlying specification and bound 2026 calendar; DERIVED expiry; no extrapolation"
+    },
+    {
+      "identity": "MCX-OPT-SERIES-CRUDEOIL-MONTHLY-2026-09-17",
+      "family": "CRUDEOIL",
+      "canonical_subject": "MCX-SUBJECT-CRUDE",
+      "series_kind": "MONTHLY",
+      "expiry": "2026-09-17",
+      "underlying_future": "MCX-FUT-CRUDE-2026-09-21",
+      "futures_expiry": "2026-09-21",
+      "quotation_unit": "INR per barrel",
+      "settlement_reference": "OPTION_EXPIRY_UNDERLYING_SETTLEMENT_REFERENCE",
+      "source_ids": [
+        "CRUDEOIL-OPT-2026",
+        "CRUDEOIL-FUT-2026"
+      ],
+      "source_locator": "Option specification pages 1 and 4 + exact underlying specification and bound 2026 calendar; DERIVED expiry; no extrapolation"
+    },
+    {
+      "identity": "MCX-OPT-SERIES-CRUDEOIL-MONTHLY-2026-10-15",
+      "family": "CRUDEOIL",
+      "canonical_subject": "MCX-SUBJECT-CRUDE",
+      "series_kind": "MONTHLY",
+      "expiry": "2026-10-15",
+      "underlying_future": "MCX-FUT-CRUDE-2026-10-19",
+      "futures_expiry": "2026-10-19",
+      "quotation_unit": "INR per barrel",
+      "settlement_reference": "OPTION_EXPIRY_UNDERLYING_SETTLEMENT_REFERENCE",
+      "source_ids": [
+        "CRUDEOIL-OPT-2026",
+        "CRUDEOIL-FUT-2026"
+      ],
+      "source_locator": "Option specification pages 1 and 4 + exact underlying specification and bound 2026 calendar; DERIVED expiry; no extrapolation"
+    },
+    {
+      "identity": "MCX-OPT-SERIES-CRUDEOIL-MONTHLY-2026-11-17",
+      "family": "CRUDEOIL",
+      "canonical_subject": "MCX-SUBJECT-CRUDE",
+      "series_kind": "MONTHLY",
+      "expiry": "2026-11-17",
+      "underlying_future": "MCX-FUT-CRUDE-2026-11-19",
+      "futures_expiry": "2026-11-19",
+      "quotation_unit": "INR per barrel",
+      "settlement_reference": "OPTION_EXPIRY_UNDERLYING_SETTLEMENT_REFERENCE",
+      "source_ids": [
+        "CRUDEOIL-OPT-2026",
+        "CRUDEOIL-FUT-2026"
+      ],
+      "source_locator": "Option specification pages 1 and 4 + exact underlying specification and bound 2026 calendar; DERIVED expiry; no extrapolation"
+    },
+    {
+      "identity": "MCX-OPT-SERIES-NATURALGAS-MONTHLY-2026-08-24",
+      "family": "NATURALGAS",
+      "canonical_subject": "MCX-SUBJECT-NATGAS",
+      "series_kind": "MONTHLY",
+      "expiry": "2026-08-24",
+      "underlying_future": "MCX-FUT-NATGAS-2026-08-26",
+      "futures_expiry": "2026-08-26",
+      "quotation_unit": "INR per MMBtu",
+      "settlement_reference": "OPTION_EXPIRY_UNDERLYING_SETTLEMENT_REFERENCE",
+      "source_ids": [
+        "NATURALGAS-OPT-2026",
+        "NATURALGAS-FUT-2026"
+      ],
+      "source_locator": "Option specification pages 1 and 4 + exact underlying specification and bound 2026 calendar; DERIVED expiry; no extrapolation"
+    },
+    {
+      "identity": "MCX-OPT-SERIES-NATURALGAS-MONTHLY-2026-09-23",
+      "family": "NATURALGAS",
+      "canonical_subject": "MCX-SUBJECT-NATGAS",
+      "series_kind": "MONTHLY",
+      "expiry": "2026-09-23",
+      "underlying_future": "MCX-FUT-NATGAS-2026-09-25",
+      "futures_expiry": "2026-09-25",
+      "quotation_unit": "INR per MMBtu",
+      "settlement_reference": "OPTION_EXPIRY_UNDERLYING_SETTLEMENT_REFERENCE",
+      "source_ids": [
+        "NATURALGAS-OPT-2026",
+        "NATURALGAS-FUT-2026"
+      ],
+      "source_locator": "Option specification pages 1 and 4 + exact underlying specification and bound 2026 calendar; DERIVED expiry; no extrapolation"
+    },
+    {
+      "identity": "MCX-OPT-SERIES-NATURALGAS-MONTHLY-2026-10-23",
+      "family": "NATURALGAS",
+      "canonical_subject": "MCX-SUBJECT-NATGAS",
+      "series_kind": "MONTHLY",
+      "expiry": "2026-10-23",
+      "underlying_future": "MCX-FUT-NATGAS-2026-10-27",
+      "futures_expiry": "2026-10-27",
+      "quotation_unit": "INR per MMBtu",
+      "settlement_reference": "OPTION_EXPIRY_UNDERLYING_SETTLEMENT_REFERENCE",
+      "source_ids": [
+        "NATURALGAS-OPT-2026",
+        "NATURALGAS-FUT-2026"
+      ],
+      "source_locator": "Option specification pages 1 and 4 + exact underlying specification and bound 2026 calendar; DERIVED expiry; no extrapolation"
+    },
+    {
+      "identity": "MCX-OPT-SERIES-NATURALGAS-MONTHLY-2026-11-20",
+      "family": "NATURALGAS",
+      "canonical_subject": "MCX-SUBJECT-NATGAS",
+      "series_kind": "MONTHLY",
+      "expiry": "2026-11-20",
+      "underlying_future": "MCX-FUT-NATGAS-2026-11-24",
+      "futures_expiry": "2026-11-24",
+      "quotation_unit": "INR per MMBtu",
+      "settlement_reference": "OPTION_EXPIRY_UNDERLYING_SETTLEMENT_REFERENCE",
+      "source_ids": [
+        "NATURALGAS-OPT-2026",
+        "NATURALGAS-FUT-2026"
+      ],
+      "source_locator": "Option specification pages 1 and 4 + exact underlying specification and bound 2026 calendar; DERIVED expiry; no extrapolation"
+    },
+    {
+      "identity": "MCX-OPT-SERIES-SILVERM-BI_MONTHLY-2026-08-24",
+      "family": "SILVERM",
+      "canonical_subject": "MCX-SUBJECT-SILVERM",
+      "series_kind": "BI_MONTHLY",
+      "expiry": "2026-08-24",
+      "underlying_future": "MCX-FUT-SILVERM-2026-08-31",
+      "futures_expiry": "2026-08-31",
+      "quotation_unit": "INR per kilogram",
+      "settlement_reference": "OPTION_EXPIRY_UNDERLYING_SETTLEMENT_REFERENCE",
+      "source_ids": [
+        "SILVERM-OPT-BIMONTHLY-2026",
+        "SILVERM-FUT-2026"
+      ],
+      "source_locator": "Option specification pages 1 and 4 + exact underlying specification and bound 2026 calendar; DERIVED expiry; no extrapolation"
+    },
+    {
+      "identity": "MCX-OPT-SERIES-SILVERM-MONTHLY-2026-09-24",
+      "family": "SILVERM",
+      "canonical_subject": "MCX-SUBJECT-SILVERM",
+      "series_kind": "MONTHLY",
+      "expiry": "2026-09-24",
+      "underlying_future": "MCX-FUT-SILVERM-2026-11-30",
+      "futures_expiry": "2026-11-30",
+      "quotation_unit": "INR per kilogram",
+      "settlement_reference": "OPTION_EXPIRY_UNDERLYING_SETTLEMENT_REFERENCE",
+      "source_ids": [
+        "SILVERM-OPT-MONTHLY-2026",
+        "SILVERM-FUT-2026"
+      ],
+      "source_locator": "Option specification pages 1 and 4 + exact underlying specification and bound 2026 calendar; DERIVED expiry; no extrapolation"
+    },
+    {
+      "identity": "MCX-OPT-SERIES-SILVERM-MONTHLY-2026-10-27",
+      "family": "SILVERM",
+      "canonical_subject": "MCX-SUBJECT-SILVERM",
+      "series_kind": "MONTHLY",
+      "expiry": "2026-10-27",
+      "underlying_future": "MCX-FUT-SILVERM-2026-11-30",
+      "futures_expiry": "2026-11-30",
+      "quotation_unit": "INR per kilogram",
+      "settlement_reference": "OPTION_EXPIRY_UNDERLYING_SETTLEMENT_REFERENCE",
+      "source_ids": [
+        "SILVERM-OPT-MONTHLY-2026",
+        "SILVERM-FUT-2026"
+      ],
+      "source_locator": "Option specification pages 1 and 4 + exact underlying specification and bound 2026 calendar; DERIVED expiry; no extrapolation"
+    },
+    {
+      "identity": "MCX-OPT-SERIES-SILVERM-BI_MONTHLY-2026-11-23",
+      "family": "SILVERM",
+      "canonical_subject": "MCX-SUBJECT-SILVERM",
+      "series_kind": "BI_MONTHLY",
+      "expiry": "2026-11-23",
+      "underlying_future": "MCX-FUT-SILVERM-2026-11-30",
+      "futures_expiry": "2026-11-30",
+      "quotation_unit": "INR per kilogram",
+      "settlement_reference": "OPTION_EXPIRY_UNDERLYING_SETTLEMENT_REFERENCE",
+      "source_ids": [
+        "SILVERM-OPT-BIMONTHLY-2026",
+        "SILVERM-FUT-2026"
+      ],
+      "source_locator": "Option specification pages 1 and 4 + exact underlying specification and bound 2026 calendar; DERIVED expiry; no extrapolation"
+    },
+    {
+      "identity": "MCX-OPT-SERIES-COPPER-MONTHLY-2026-12-23",
+      "family": "COPPER",
+      "canonical_subject": "MCX-SUBJECT-COPPER",
+      "series_kind": "MONTHLY",
+      "expiry": "2026-12-23",
+      "underlying_future": "MCX-FUT-COPPER-2026-12-31",
+      "futures_expiry": "2026-12-31",
+      "quotation_unit": "INR per kilogram",
+      "settlement_reference": "OPTION_EXPIRY_UNDERLYING_SETTLEMENT_REFERENCE",
+      "source_ids": [
+        "COPPER-OPT-2026",
+        "COPPER-FUT-2026"
+      ],
+      "source_locator": "Option specification pages 1 and 4 + exact underlying specification and bound 2026 calendar; DERIVED expiry; no extrapolation; December 2026 launch row"
+    },
+    {
+      "identity": "MCX-OPT-SERIES-CRUDEOIL-MONTHLY-2026-12-16",
+      "family": "CRUDEOIL",
+      "canonical_subject": "MCX-SUBJECT-CRUDE",
+      "series_kind": "MONTHLY",
+      "expiry": "2026-12-16",
+      "underlying_future": "MCX-FUT-CRUDE-2026-12-18",
+      "futures_expiry": "2026-12-18",
+      "quotation_unit": "INR per barrel",
+      "settlement_reference": "OPTION_EXPIRY_UNDERLYING_SETTLEMENT_REFERENCE",
+      "source_ids": [
+        "CRUDEOIL-OPT-2026",
+        "CRUDEOIL-FUT-2026"
+      ],
+      "source_locator": "Option specification pages 1 and 4 + exact underlying specification and bound 2026 calendar; DERIVED expiry; no extrapolation; December 2026 launch row"
+    },
+    {
+      "identity": "MCX-OPT-SERIES-NATURALGAS-MONTHLY-2026-12-23",
+      "family": "NATURALGAS",
+      "canonical_subject": "MCX-SUBJECT-NATGAS",
+      "series_kind": "MONTHLY",
+      "expiry": "2026-12-23",
+      "underlying_future": "MCX-FUT-NATGAS-2026-12-28",
+      "futures_expiry": "2026-12-28",
+      "quotation_unit": "INR per MMBtu",
+      "settlement_reference": "OPTION_EXPIRY_UNDERLYING_SETTLEMENT_REFERENCE",
+      "source_ids": [
+        "NATURALGAS-OPT-2026",
+        "NATURALGAS-FUT-2026"
+      ],
+      "source_locator": "Option specification pages 1 and 4 + exact underlying specification and bound 2026 calendar; DERIVED expiry; no extrapolation; December 2026 launch row"
+    }
+  ]
+}

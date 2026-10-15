@@ -1,0 +1,25 @@
+{
+  "schema_identity": "KRONOS-MCX-OPTION-AUTHORITY-CURRENT-V1",
+  "schema_version": "1.0.0",
+  "identity": "KRONOS-MCX-OPTION-AUTHORITY-CURRENT-2026.1.0",
+  "instrument": {
+    "identity": "KRONOS-MCX-OPTION-SERIES-2026",
+    "version": "2026.1.0",
+    "sha256": "395bf9e7f4e3174b87febee43ceeacbcebffa203dc07f7ceccdae11d2c943280",
+    "filename": "2026.1.0.json"
+  },
+  "market": {
+    "identity": "KRONOS-MCX-OPTION-EXPIRY-2026",
+    "version": "2026.1.0",
+    "sha256": "923cbc6f7c6f7b12028ad91e2595412d7d4698a843f4cd6c06d5c9119eb6fa74",
+    "filename": "2026.1.0.json"
+  },
+  "effective_from": "2026-10-12T04:32:40Z",
+  "effective_through": "2026-11-30T23:59:59+05:30",
+  "owner_reviews": {
+    "INSTRUMENT": null,
+    "MARKET": null,
+    "CHIEF_ARCHITECT": null
+  },
+  "supersedes": null
+}

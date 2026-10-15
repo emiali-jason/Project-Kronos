@@ -4,6 +4,22 @@ All notable changes to PROJECT KRONOS will be documented in this file.
 
 This project follows a milestone-based development approach.
 
+## Unpublished hygiene replacement — PLC-03C, 2026-10-15
+
+- Preserve the original NIST HTML bytes in an exact-member ZIP transport.
+- Retain authority publications and hashes; reject corrupt raw or packaged sources.
+- Correct ten frozen documentation/test whitespace diagnostics, without semantic edits.
+- Retain the failed PLC-03B commit; renewed exact-byte review is a publication gate.
+- No publication, installation, production-source or runtime transition authority.
+
+## Unreleased offline candidate — PLC-02, 2026-10-15
+
+- Integrate retained Theta TE-01 through TE-09R2 with current Swing/Intraday.
+- Preserve frozen methodology, authority, evidence and approved compact UX.
+- Repair optional Theta startup failure isolation; existing owners remain registered.
+- Full pre-live qualification and exact freeze evidence are recorded separately.
+- No production publication, installation, runtime transition or trading authority.
+
 ## [0.6.0] — 2026-08-17
 
 ### Production promotion

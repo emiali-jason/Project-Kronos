@@ -1,5 +1,12 @@
 # KRONOS Architecture Knowledge Base
 
+Theta PLC-01: offline integration of the retained qualified Theta candidate.
+[ADR-0066](adr/ADR-0066-THETA-PROSPECTIVE-INFORMATION-SET-AND-RETRIEVAL-TIMES.md)
+preserves prospective T0/source/retrieval semantics;
+[ADR-0067](adr/ADR-0067-THETA-V1-RESEARCH-AND-ASSESSMENT-METHODOLOGY.md)
+binds separate research/assessment publications. Existing product records below
+remain intact. Qualification/publication/installation/load/acceptance are separate.
+
 Generation-bound shared maintenance admission and the authenticated V2 drain
 handoff are governed by [approved ADR-0059](adr/ADR-0059-GENERATION-BOUND-MAINTENANCE-ADMISSION-AND-V2-DRAIN-HANDOFF.md).
 The exact R2 source/test candidate passed 11,039 protected tests; launcher

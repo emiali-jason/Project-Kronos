@@ -1,5 +1,20 @@
 # Project KRONOS Engine Status
 
+## PLC-03C release hygiene replacement — 2026-10-15
+
+The unpublished replacement preserves exact NIST evidence in a bounded ZIP
+transport and corrects ten non-evidence whitespace diagnostics. No analytical,
+contract, Pine or engine-version change. Source qualification and renewed owner
+dispositions remain separate evidence; failed PLC-03B is not publication authority.
+
+## PLC-02 offline candidate checkpoint — 2026-10-15
+
+Theta TE-01 through TE-09R2 is integrated for pre-live qualification under
+ADR-0066/0067. This does not change the Pine production lineages below or grant
+Theta production/runtime acceptance. Existing Swing/Intraday methods and owners
+are preserved; exact qualification/freeze and owner dispositions are separate
+evidence in `output/plc02-evidence`. No Pine source changes or new engine numbers.
+
 **Document role:** Canonical current engine registry
 **Sources audited:** `KRONOS_FUTURES/source/KRONOS_FUTURES.pine`; `KRONOS_NSE/source/KRONOS_NSE.pine`
 **Audit date:** 2026-08-17

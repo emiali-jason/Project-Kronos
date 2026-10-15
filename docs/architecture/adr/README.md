@@ -1,5 +1,13 @@
 # Architecture Decision Records
 
+## Theta retained prospective governance — PLC-01 offline candidate
+
+- [ADR-0066 — Theta prospective information set and retrieval times](ADR-0066-THETA-PROSPECTIVE-INFORMATION-SET-AND-RETRIEVAL-TIMES.md)
+- [ADR-0067 — Theta V1 Astra Research and Analytical Assessment Methodology Governance](ADR-0067-THETA-V1-RESEARCH-AND-ASSESSMENT-METHODOLOGY.md)
+
+These exact retained decisions are not renumbered or reinterpreted. This index
+addition grants no production publication, runtime transition or trading authority.
+
 **Status:** Draft  
 **Owner:** Architecture Librarian  
 **Approved By:** Not approved

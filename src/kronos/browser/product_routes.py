@@ -43,6 +43,7 @@ class BrowserRouteResponse:
     status: HTTPStatus = HTTPStatus.OK
     content_type: str = "text/html; charset=utf-8"
     filename: str | None = None
+    location: str | None = None
 
     def __post_init__(self) -> None:
         if (
@@ -52,6 +53,13 @@ class BrowserRouteResponse:
             or not self.content_type
             or self.filename is not None
             and (type(self.filename) is not str or not self.filename)
+            or self.location is not None
+            and (type(self.location) is not str
+                 or not self.location.startswith("/")
+                 or self.location.startswith("//")
+                 or self.status is not HTTPStatus.SEE_OTHER
+                 or self.body not in {"", b""}
+                 or self.filename is not None)
         ):
             raise ValueError("BROWSER_ROUTE_RESPONSE_INVALID")
 
@@ -145,7 +153,8 @@ class ProductBrowserRoutes:
 
 
 def default_product_browser_routes(
-    *, intraday_workstation: object | None = None
+    *, intraday_workstation: object | None = None, theta_workflow: object | None = None,
+    theta_sponsor_workflow: object | None = None,
 ) -> ProductBrowserRoutes:
     """Compose current products without placing their policy in the server."""
 
@@ -157,7 +166,26 @@ def default_product_browser_routes(
         if intraday_workstation is None
         else intraday_workstation
     )
-    return ProductBrowserRoutes((IntradayBrowserRoutes(workstation),))
+    existing=ProductBrowserRoutes((IntradayBrowserRoutes(workstation),))
+    try:
+        return with_theta_routes(existing,theta_workflow=theta_workflow,
+                                 theta_sponsor_workflow=theta_sponsor_workflow)
+    except Exception:
+        # Qualified optional-product failure boundary: existing products stay
+        # available and no Theta mutation route is admitted on failed setup.
+        return existing
+
+
+def with_theta_routes(existing: ProductBrowserRoutes, *, theta_workflow=None,
+                      theta_sponsor_workflow=None) -> ProductBrowserRoutes:
+    """Add Theta without reconstructing/replacing current product owners."""
+    if type(existing) is not ProductBrowserRoutes:
+        raise ValueError("BROWSER_PRODUCT_ROUTES_INVALID")
+    from kronos.browser.theta_routes import ThetaBrowserRoutes
+    if any(type(route) is ThetaBrowserRoutes for route in existing._routes):
+        raise ValueError("THETA_BROWSER_ROUTE_ALREADY_REGISTERED")
+    return ProductBrowserRoutes((*existing._routes, ThetaBrowserRoutes(
+        theta_workflow, sponsor_workflow=theta_sponsor_workflow)))
 
 
 __all__ = [

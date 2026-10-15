@@ -1,5 +1,10 @@
 # KRONOS Architecture Repository
 
+Theta's retained prospective temporal and methodology governance is integrated
+in this PLC-01 offline candidate under [ADR-0066](adr/ADR-0066-THETA-PROSPECTIVE-INFORMATION-SET-AND-RETRIEVAL-TIMES.md)
+and [ADR-0067](adr/ADR-0067-THETA-V1-RESEARCH-AND-ASSESSMENT-METHODOLOGY.md).
+No production installation, runtime transition or trading authority follows.
+
 The isolated FAILED_ACTIVE recovery and Native preparation authority candidate is
 described by [ADR-0061](adr/ADR-0061-FAILED-ACTIVE-RECOVERY-AND-STARTUP-RESTORATION.md).
 Engineering is Sponsor-authorized; final exact-byte reviews and release remain
