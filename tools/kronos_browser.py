@@ -273,6 +273,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     from kronos.browser.intraday_wo08 import IntradayWo08Projection, IntradayVisualHistory
     intraday_wo08_projection = IntradayWo08Projection(
         intraday_runtime.wo08_store, intraday_runtime.probables_v2_store)
+    from kronos.application.intraday_machine_history import IntradayMachineHistory
+    intraday_machine_history = IntradayMachineHistory(
+        assessments=intraday_runtime.wo08_store,
+        probables=intraday_runtime.probables_v2_store,
+        readiness=intraday_runtime.wo09_store,
+        recent_attempts=intraday_probables_v2_control.analysis_history_document,
+    )
     intraday_visual_history = IntradayVisualHistory(
         intraday_runtime.review_v2_store, intraday_runtime.mcx_paired_review_store,
         intraday_runtime.visual_reconciliation_v2_store)
@@ -287,6 +294,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         probables_v2_control=intraday_probables_v2_control,
         wo08_projection=intraday_wo08_projection,
         visual_history=intraday_visual_history,
+        machine_history=intraday_machine_history,
         review_v2_control=intraday_review_v2_control,
         visual_reconciliation_v2_control=intraday_visual_reconciliation_v2_control,
         wo09_projection=intraday_wo09_projection,

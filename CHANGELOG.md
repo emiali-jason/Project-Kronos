@@ -4,6 +4,13 @@ All notable changes to PROJECT KRONOS will be documented in this file.
 
 This project follows a milestone-based development approach.
 
+## Unreleased candidate — Intraday limited machine history, 2026-10-16
+
+- Add recent-five retained Analysis navigation and exact selected-run history with complete validated assessments, 25-row default and 50-row maximum pages.
+- Inspect one supplied exact readiness identity only after lineage validation; retain explicit missing/unestablished proof and historical-only labels without current authority revival.
+- Preserve existing visual history and artifacts. No catalogue, producer write, reconstruction, Provider operation or new persistence API.
+- Record the candidate and engine-registry no-change assessment in [the Scope C engineering record](docs/engineering/INTRADAY-SCOPE-C-20261016.md). Implementation qualification and exact-byte owner review are separate from design approval; release/runtime authority is not granted.
+
 ## Unreleased — Intraday Sponsor UX A/B, 2026-10-16
 
 - Add independent local filtering and sorting to Machine Review Secondary Review and Diagnostics, with exact subject/MCX contract search, decimal price bounds, stable assessment/detail pairing and Clear All recovery.

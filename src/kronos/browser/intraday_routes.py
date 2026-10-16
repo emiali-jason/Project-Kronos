@@ -191,11 +191,17 @@ class IntradayBrowserRoutes:
         review_workstation: object | None = None,
         wo08_projection=None,
         visual_history=None,
+        machine_history=None,
     ) -> None:
         if not callable(getattr(workstation, "snapshot", None)):
             raise ValueError("INTRADAY_BROWSER_ROUTES_INVALID")
         self._wo08_projection = wo08_projection
         self._visual_history = visual_history
+        if machine_history is not None:
+            from kronos.application.intraday_machine_history import IntradayMachineHistory
+            if type(machine_history) is not IntradayMachineHistory:
+                raise ValueError("INTRADAY_MACHINE_HISTORY_DEPENDENCY_INVALID")
+        self._machine_history = machine_history
         self._lifecycle_control = lifecycle_control
         self._workstation = workstation
         self._review_workstation = (
@@ -397,6 +403,9 @@ class IntradayBrowserRoutes:
         request: BrowserGetRequest,
         snapshot_provider: BrowserSnapshotProvider,
     ) -> BrowserRouteResponse | None:
+        from kronos.browser.intraday_machine_history import MACHINE_HISTORY_ROUTE, history_response
+        if request.path == MACHINE_HISTORY_ROUTE:
+            return history_response(self._machine_history, request.query, snapshot_provider)
         if self._wo08_projection is not None:
             from kronos.browser.intraday_wo08 import (
                 WO08_STATUS_ROUTE, HISTORY_ROUTE, HISTORY_ARTIFACT_ROUTE, render_machine_review, render_sponsor_opportunities,

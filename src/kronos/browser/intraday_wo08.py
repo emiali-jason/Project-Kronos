@@ -12,6 +12,7 @@ import re
 from urllib.parse import urlencode
 
 from kronos.browser.intraday_machine_controls import table_controls, CONTROLS_CSS, CONTROLS_JS
+from kronos.browser.intraday_machine_history import MACHINE_HISTORY_ROUTE, RUN
 from kronos.browser.product_routes import BrowserRouteResponse
 from kronos.browser.intraday_chart_preview import _PreviewStore
 from kronos.intraday.review import ReviewError, ReviewFailure
@@ -233,6 +234,8 @@ def _analysis_history(control):
         + ' · ' + ('Population unavailable' if row.get('analysed_population') is None else
             str(row['analysed_population']) + ' analysed')
         + ' · ' + _duration_text(row.get('duration_microseconds'))
+        + (' · <a href="' + escape(MACHINE_HISTORY_ROUTE + '?' + urlencode({'run': row['run_identity']}), quote=True)
+            + '">View historical assessments</a>' if type(row.get('run_identity')) is str and RUN.fullmatch(row['run_identity']) else '')
         + '<details><summary>Exact operation timing</summary><pre>'
         + escape(json.dumps(row, indent=2, default=str)) + '</pre></details></li>' for row in rows)
     return '<details><summary>Analysis History · recent retained attempts</summary><ul>' + (
@@ -351,7 +354,9 @@ def render_machine_review(snapshot, status, readiness, *, candidate=None):
     from kronos.browser.intraday_views import _INTRADAY_CSS, _intraday_tabs
     return render_browser_page(title='Intraday — Machine Review', subtitle='Current opportunity detail and complete retained Analysis evidence',
         snapshot=snapshot, active_nav='Intraday', active_tab='Review',
-        body=_intraday_tabs(False, active='review') + _opportunity_body(status, readiness, candidate=candidate)
+        body=_intraday_tabs(False, active='review')
+             + '<p><a href="' + MACHINE_HISTORY_ROUTE + '">Machine Assessment History — historical only</a></p>'
+             + _opportunity_body(status, readiness, candidate=candidate)
              + '<script>' + CONTROLS_JS + '</script>',
         extra_styles=_INTRADAY_CSS + _MACHINE_REVIEW_CSS + CONTROLS_CSS)
 
