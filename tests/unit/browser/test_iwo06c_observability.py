@@ -104,7 +104,7 @@ def test_final_hierarchy_complete_diagnostics_and_unavailable_score(tmp_path):
     for label in ('ANALYSED','SECONDARY REVIEW','NEAR READY','READY','NOW'):assert label+'</span><strong>' in primary
     assert 'SECONDARY REVIEW</span><strong>11' in primary
     assert diagnostics.count('id="diagnostic-candidate-')==98
-    assert 'Secondary Review only' in diagnostics and 'row.hidden=this.checked' in diagnostics
+    assert 'Secondary Review only' in diagnostics and 'data-filter="secondary"' in diagnostics
     assert 'data-secondary-review="true"' in diagnostics
     opportunities=render_sponsor_opportunities(_snapshot(),status,readiness)
     assert 'NEAR READY' not in opportunities and 'SECONDARY REVIEW' not in opportunities

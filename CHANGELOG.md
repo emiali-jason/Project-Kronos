@@ -4,6 +4,16 @@ All notable changes to PROJECT KRONOS will be documented in this file.
 
 This project follows a milestone-based development approach.
 
+## Unreleased — Intraday Sponsor UX A/B, 2026-10-16
+
+- Add independent local filtering and sorting to Machine Review Secondary Review and Diagnostics, with exact subject/MCX contract search, decimal price bounds, stable assessment/detail pairing and Clear All recovery.
+- Show the latest retained Analysis attempt's own governed duration, result and population without combining another attempt's timing or reviving historical authority.
+- Retain unavailable/not-applicable evidence distinctly from numerical scores; controls create no analytical, monitoring, notification or trading authority.
+- A/B source and rendered behavior have exact-byte EA-Intraday, PCP and EA-Swing approval; retain 679 distinct code-test passes, 27 isolation-preflight passes and 26 disposable browser-rehearsal checks as separate evidence.
+- Preserve the [original candidate engineering record](docs/engineering/INTRADAY-SPONSOR-UX-20261016.md), including its sealing-time pending-review and blocked-rehearsal statements; later bound owner dispositions and visual continuation supersede those states without changing its bytes.
+- Change no engine version, source status, production lineage, responsibility or ownership contract; synchronize this release with the unchanged engine registries through the reviewed no-change assessment.
+- Exclude Scope C implementation and complete historical READY/NOW discovery. Publication, installation, runtime verification and Sponsor acceptance remain separate gates; no deployed or live acceptance is claimed here.
+
 ## Unpublished hygiene replacement — PLC-03C, 2026-10-15
 
 - Preserve the original NIST HTML bytes in an exact-member ZIP transport.

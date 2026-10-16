@@ -6,7 +6,8 @@ import json
 import subprocess
 import pytest
 from kronos.browser.product_routes import BrowserGetRequest
-from kronos.browser.intraday_wo08 import _SECONDARY_FILTER, _analysis_history
+from kronos.browser.intraday_wo08 import _analysis_history
+from kronos.browser.intraday_machine_controls import CONTROLS_JS
 from tests.unit.browser.test_iwo06c_observability import history_fixture, clone
 from tests.unit.browser.test_intraday_wo08_browser import _routes
 from tests.unit.browser.test_product_route_isolation import _snapshot
@@ -56,21 +57,43 @@ def test_history_transport_denies_corruption_without_repair_or_latest_invalidati
 
 
 def test_actual_filter_callback_only_changes_scoped_display():
-    code=_SECONDARY_FILTER.removeprefix('<script>').removesuffix('</script>')
-    prelude="""
-const rows=[true,true,false,false].map(x=>({dataset:{secondaryReview:String(x)},hidden:false}));
+    # Minimal DOM contract harness, not a visual/browser rehearsal. Execute the
+    # complete candidate handler, including pairing, reset and combined controls.
+    prelude = r"""
+const assert=require('node:assert/strict');
+const make=(price,score,secondary,security)=>({security,direction:'LONG',score,
+ status:'Retained evidence',waiting:['Follow-through'],monitoring:'INACTIVE',price,secondary});
+const records=[make('100','5',true,'Beta'),make('9.95','0',false,'Alpha'),make('UNAVAILABLE','UNAVAILABLE',false,'Conflict')];
+const rows=records.map(data=>({dataset:{assessmentControls:JSON.stringify(data)},hidden:false,
+ nextElementSibling:{hidden:false,open:true}}));
 const before=JSON.stringify(rows.map(x=>x.dataset));
-const control={checked:false,addEventListener:(event,fn)=>{if(event!=='change')throw Error(event);control.change=fn;}};
-const document={getElementById:(id)=>{if(id!=='secondary-review-only')throw Error(id);return control;},
- querySelectorAll:(s)=>{if(s!=='#intraday-diagnostics tr[data-secondary-review]')throw Error(s);return rows;}};
+const fields=Object.fromEntries(['security','direction','score','status','waiting','monitoring','minimum','maximum','sort','secondary'].map(key=>[key,{
+ dataset:{filter:key},type:key==='secondary'?'checkbox':'text',checked:false,value:key==='sort'?'original':'',options:[],append(option){this.options.push(option);}}]));
+const listeners={},count={},empty={},clear={},body={children:[],append(fragment){this.children=fragment.children;}};
+clear.addEventListener=(event,fn)=>clear.click=fn;
+const controls={hidden:true,querySelectorAll:()=>Object.values(fields),
+ querySelector:s=>s==='[data-filter-count]'?count:clear,addEventListener:(event,fn)=>listeners[event]=fn};
+const browser={dataset:{population:'Complete Diagnostics population'},
+ querySelector:s=>s==='.machine-controls'?controls:s==='[data-filter-empty]'?empty:body,
+ querySelectorAll:()=>rows};
+const document={querySelectorAll:()=>[browser],createElement:()=>({}),
+ createDocumentFragment:()=>({children:[],append(...items){this.children.push(...items);}})};
 """
-    checks="""
-control.checked=true;control.change.call(control);
-if(JSON.stringify(rows.map(x=>x.hidden))!==JSON.stringify([false,false,true,true]))throw Error('filter');
-control.checked=false;control.change.call(control);
-if(rows.some(x=>x.hidden)||JSON.stringify(rows.map(x=>x.dataset))!==before)throw Error('mutation');
+    checks = r"""
+assert.equal(controls.hidden,false);assert.equal(count.textContent,'Showing 3 of 3 · Complete Diagnostics population');
+assert.deepEqual(fields.score.options.map(x=>x.value),['0','5','UNAVAILABLE']);
+fields.secondary.checked=true;listeners.change();assert.deepEqual(rows.map(x=>x.hidden),[false,true,true]);
+fields.security.value='not found';listeners.input();assert.equal(empty.hidden,false);assert.ok(rows.every(x=>x.hidden));
+clear.click();assert.equal(empty.hidden,true);assert.ok(rows.every(x=>!x.hidden));assert.equal(fields.secondary.checked,false);
+fields.sort.value='price-asc';listeners.change();assert.equal(body.children[0],rows[1]);assert.equal(body.children[1],rows[1].nextElementSibling);
+assert.equal(body.children[4],rows[2]);assert.equal(rows[1].nextElementSibling.open,true);
+fields.minimum.value='10';listeners.input();assert.deepEqual(rows.map(x=>x.hidden),[false,true,true]);
+assert.ok(rows.every(x=>x.hidden===x.nextElementSibling.hidden));
+fields.minimum.value='invalid';listeners.input();assert.ok(count.textContent.startsWith('Enter valid'));
+clear.click();assert.equal(body.children[0],rows[0]);assert.ok(rows.every(x=>!x.hidden));
+assert.equal(JSON.stringify(rows.map(x=>x.dataset)),before);
 """
-    result=subprocess.run(['/usr/local/bin/node','-e',prelude+code+checks],capture_output=True,text=True)
+    result=subprocess.run(['/usr/local/bin/node','-e',prelude+CONTROLS_JS+checks],capture_output=True,text=True)
     assert result.returncode==0,result.stderr
 
 

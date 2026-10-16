@@ -11,6 +11,7 @@ import json
 import re
 from urllib.parse import urlencode
 
+from kronos.browser.intraday_machine_controls import table_controls, CONTROLS_CSS, CONTROLS_JS
 from kronos.browser.product_routes import BrowserRouteResponse
 from kronos.browser.intraday_chart_preview import _PreviewStore
 from kronos.intraday.review import ReviewError, ReviewFailure
@@ -121,7 +122,7 @@ _MACHINE_REVIEW_CSS = """
 """
 
 
-def _machine_table(rows, readiness, *, candidate=None, retained=False, current_assessments=(), secondary_ids=(), diagnostic=False):
+def _machine_table(rows, readiness, *, candidate=None, retained=False, current_assessments=(), secondary_ids=(), diagnostic=False, controls=True):
     from kronos.intraday.sponsor_presentation import security_name, waiting_for, CRITERION_NAMES, criterion_explanation, opportunity_label
     details = readiness.get('analysis_details', {})
     cards = {details.get(item.readiness_identity, {}).get('A. MACHINE WO08 ASSESSMENT', {}).get('identity'): item
@@ -161,16 +162,27 @@ def _machine_table(rows, readiness, *, candidate=None, retained=False, current_a
         identity = escape(row['probable_result_identity'], quote=True)
         secondary = row['identity'] in secondary_ids
         attributes = ' data-secondary-review="' + ('true' if secondary else 'false') + '"'
+        evidence_status = ('Retained evidence' if retained and row['identity'] not in current_assessments
+                           else 'Current eligible assessment')
+        score_match = re.fullmatch(r'([0-5])\s*/\s*5', score)
+        control_data = dict(security=security_name(row['subject']) + ' · ' + row['subject'] + ' · ' + (contract or ''),
+            direction=str(row.get('direction') or 'UNAVAILABLE'),
+            score=score_match.group(1) if score_match else ('NOT_APPLICABLE' if score == 'NOT_APPLICABLE' else 'UNAVAILABLE'),
+            status=label + ' · ' + state + ' · ' + evidence_status,
+            waiting=[CRITERION_NAMES[k] for k, c in states.items() if k in CRITERION_NAMES
+                     and c['state'] not in {'SATISFIED', 'DETERMINISTICALLY_ESTABLISHED'}] or ['No outstanding criteria'],
+            monitoring=monitoring['state'], price=price, secondary=secondary)
+        control_attributes = ' data-assessment-controls="' + escape(json.dumps(control_data), quote=True) + '"'
         prefix = 'diagnostic' if diagnostic else 'review'
         focus = ' tabindex="-1"' if candidate == row['probable_result_identity'] else ''
-        body.append('<tr id="' + prefix + '-candidate-' + identity + '"' + focus + attributes + '><td><strong>'
+        body.append('<tr id="' + prefix + '-candidate-' + identity + '"' + focus + attributes + control_attributes + '><td><strong>'
             + escape(security_name(row['subject'])) + '</strong>'
             + ('<span id="review-candidate-' + identity + '"></span>' if diagnostic and not secondary else '')
             + ('<span class="chip">SECONDARY REVIEW</span>' if secondary else '')
             + '<span class="sub">' + escape(row['market_family'])
             + ('' if contract is None else ' · ' + escape(contract)) + '</span></td><td>'
             + escape(str(row.get('direction') or 'Unavailable')) + '</td><td>' + escape(score.replace(' / ', '/'))
-            + '</td><td><strong>' + escape(label) + '</strong></td><td>' + escape(waiting_for(row['criteria']))
+            + '</td><td><strong>' + escape(label) + '</strong><span class="sub">' + escape(evidence_status) + '</span></td><td>' + escape(waiting_for(row['criteria']))
             + '</td><td><strong>' + escape(monitoring['state']) + '</strong><span class="sub">' + escape(monitoring['reason'])
             + ('' if not monitoring.get('since') else '<span class="sub">Since · ' + escape(monitoring['since']) + '</span>')
             + '</span></td><td>Assessment Price · ' + escape(price)
@@ -195,19 +207,14 @@ def _machine_table(rows, readiness, *, candidate=None, retained=False, current_a
             + '</p><details><summary>Method and evidence</summary><pre>'
             + escape(json.dumps(dict(assessment=row, wo09=None if card is None else details.get(card.readiness_identity)), indent=2, default=str))
             + '</pre></details></details></details></td></tr>')
-    return ('<div class="assessment-table-scroll" role="region" tabindex="0" aria-label="'
+    control_id = 'diagnostic-controls' if diagnostic else 'review-controls'
+    population = 'Complete Diagnostics population' if diagnostic else 'Current Secondary Review population'
+    return ('<div class="assessment-browser" data-assessment-browser data-population="' + population + '">'
+        + (table_controls(control_id, diagnostic=diagnostic) if controls else '')
+        + '<div class="assessment-table-scroll" role="region" tabindex="0" aria-label="'
         + ('Retained' if retained else 'Current') + ' assessment columns"><table aria-label="WO08 machine assessments"><thead><tr>'
         + ''.join('<th scope="col">' + c + '</th>' for c in ('Security', 'Direction', 'Score', 'Status', 'Waiting for', 'Monitoring', 'Assessment Price'))
-        + '</tr></thead><tbody>' + ''.join(body) + '</tbody></table></div>')
-
-
-_SECONDARY_FILTER = """<script>
-document.getElementById('secondary-review-only').addEventListener('change',function(){
- document.querySelectorAll('#intraday-diagnostics tr[data-secondary-review]').forEach(row=>{
-  row.hidden=this.checked && row.dataset.secondaryReview!=='true';
- });
-});
-</script>"""
+        + '</tr></thead><tbody>' + ''.join(body) + '</tbody></table></div></div>')
 
 
 def _duration_text(microseconds):
@@ -230,6 +237,24 @@ def _analysis_history(control):
         + escape(json.dumps(row, indent=2, default=str)) + '</pre></details></li>' for row in rows)
     return '<details><summary>Analysis History · recent retained attempts</summary><ul>' + (
         body or '<li>Duration unavailable · No retained operation timing.</li>') + '</ul></details>'
+
+
+def _latest_attempt_summary(control):
+    """One validated history entry supplies every field; never use success pointers."""
+    from kronos.browser.intraday_views import _status_time
+    rows = control.get('recent_analysis_history', ())
+    row = rows[0] if rows else {}
+    bound = bool(row.get('provenance_identity') and row.get('operation_accounting_identity')
+                 and row.get('duration_authority') == 'RETAINED_OPERATION_ACCOUNTING')
+    population = row.get('analysed_population') if bound else None
+    return ('<aside class="machine-review latest-analysis" aria-label="Latest retained Analysis attempt">'
+        + '<strong>Latest retained Analysis attempt</strong><p>Boundary · '
+        + escape(_status_time(row.get('boundary'))) + ' · Completed · '
+        + escape(_status_time(row.get('completed_at'))) + '</p><p>'
+        + escape(str(row.get('result') or 'Result unavailable').replace('_', ' ').title())
+        + ' · ' + _duration_text(row.get('duration_microseconds') if bound else None)
+        + ' · ' + (str(population) + ' analysed' if type(population) is int and population >= 0 else 'Population unavailable')
+        + '</p><p class="secondary">Retained operation timing; current opportunity eligibility is checked separately.</p></aside>')
 
 
 def _analysis_boundary_text(rows):
@@ -286,10 +311,9 @@ def _opportunity_body(status, readiness, *, candidate=None, opportunities_only=F
         diagnostic_rows = sorted(rows, key=lambda row: row['identity'] not in secondary_ids)
         diagnostic_panel = ('<details id="intraday-diagnostics"><summary>Diagnostics / Full Analysis · ' + str(len(rows))
             + '</summary><p class="secondary">Complete retained population; ordering is not a trading rank. Not Admitted / Unavailable / Retained.</p>'
-            + '<label><input type="checkbox" id="secondary-review-only"> Secondary Review only</label>'
             + _machine_table(diagnostic_rows, readiness, candidate=candidate, retained=True,
                 current_assessments=secondary_ids, secondary_ids=secondary_ids, diagnostic=True)
-            + '</details>' + _SECONDARY_FILTER)
+            + '</details>')
     method = next((row for row in current), next(iter(rows), None))
     method_text = ('KRONOS-INTRADAY-WO08-EXPERIMENTAL-PULLBACK-PAPER / 0.1.0' if method is None else str(method['methodology_identity']) + ' / ' + str(method['methodology_version']))
     scope = ('Current opportunity eligibility unavailable' if operational is None or operational.ready is None
@@ -301,7 +325,7 @@ def _opportunity_body(status, readiness, *, candidate=None, opportunities_only=F
         + '<div class="method"><span class="chip paper">EXPERIMENTAL PAPER</span><span class="chip">'
         + escape(scope) + '</span><details><summary>Method · Technical details</summary>' + escape(method_text) + '</details></div>'
         + (_machine_table(primary, readiness, candidate=candidate,
-                secondary_ids=() if opportunities_only else secondary_ids) if primary else
+                secondary_ids=() if opportunities_only else secondary_ids, controls=not opportunities_only) if primary else
             ('<div class="empty"><strong>No current READY/NOW opportunities.</strong><p>Other assessments remain in Review.</p></div>' if opportunities_only else
              '<div class="empty"><strong>No current Secondary Review assessments.</strong><p>Retained evidence remains readable in Diagnostics.</p></div>'))
         + diagnostic_panel
@@ -327,8 +351,9 @@ def render_machine_review(snapshot, status, readiness, *, candidate=None):
     from kronos.browser.intraday_views import _INTRADAY_CSS, _intraday_tabs
     return render_browser_page(title='Intraday — Machine Review', subtitle='Current opportunity detail and complete retained Analysis evidence',
         snapshot=snapshot, active_nav='Intraday', active_tab='Review',
-        body=_intraday_tabs(False, active='review') + _opportunity_body(status, readiness, candidate=candidate),
-        extra_styles=_INTRADAY_CSS + _MACHINE_REVIEW_CSS)
+        body=_intraday_tabs(False, active='review') + _opportunity_body(status, readiness, candidate=candidate)
+             + '<script>' + CONTROLS_JS + '</script>',
+        extra_styles=_INTRADAY_CSS + _MACHINE_REVIEW_CSS + CONTROLS_CSS)
 
 
 def render_sponsor_opportunities(snapshot, status, readiness, *, market_availability=(), refresh_status=None, latest_evaluable_run=None):
@@ -341,7 +366,7 @@ def render_sponsor_opportunities(snapshot, status, readiness, *, market_availabi
     attempt = control.get('last_refresh_attempt') or {}
     boundary = None if latest_evaluable_run is None else latest_evaluable_run.analysis_boundary.isoformat()
     retained_date = _status_time(boundary)
-    freshness = _analysis_history(control) + ('<details><summary>Last retained successful Analysis boundary ' + escape(retained_date)
+    freshness = _latest_attempt_summary(control) + _analysis_history(control) + ('<details><summary>Last retained successful Analysis boundary ' + escape(retained_date)
         + '</summary><p>Last refresh attempt · ' + escape(_status_time(attempt.get('attempted_at')))
         + ' · ' + escape(str(attempt.get('outcome') or 'Not yet run')) + '</p>'
         + '<p>Retained Analysis is evidence of its original boundary. Current opportunity eligibility is checked separately.</p></details>')
