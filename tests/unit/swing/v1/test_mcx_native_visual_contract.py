@@ -811,3 +811,173 @@ def test_legacy_mcx_q10_printed_rule_remains_unchanged():
     text = " ".join(" ".join(page.extract_text() for page in PdfReader(BytesIO(pdf)).pages).split())
     assert "Q10 finding NONE requires null; otherwise a nonempty explanation" in text
     assert "Q10 finding NONE or UNAVAILABLE requires null" not in text
+
+
+def _integrity_render(monkeypatch, family="CRUDEOIL", reference_version="2.1"):
+    """Synthetic disclosure fixture; no market data or genuine observations."""
+    from io import BytesIO
+    from PIL import Image
+    from pypdf import PdfReader
+    from kronos.swing.v1 import pdf_visual_review_v3_live as producer
+    pair = list(retained_mappings((family,)) if reference_version == "1.0"
+                else successor_mappings((family,)))
+    image = BytesIO()
+    Image.new("RGB", (360, 240), "white").save(image, format="PNG")
+    raw = image.getvalue()
+    checksum = sha256(raw).hexdigest()
+    for i, mapping in enumerate(pair):
+        value = mapping.value
+        if i == 1 and reference_version == "2.1":
+            value.update(schema=mcx.REFERENCE_REQUEST_SCHEMA_V3, version="2.1",
+                question_contract_identity=mcx.REFERENCE_QUESTIONS_V3,
+                question_contract_version="2.1", answer_contract_identity=mcx.REFERENCE_ANSWER_V3,
+                answer_contract_version="2.1")
+        for subject in value["subjects"]:
+            for response in subject["responses"]:
+                response["chart_revision_sha256"] = checksum
+        pair[i] = type(mapping).create(value)
+    blocks = []
+    original = producer.contract_block
+    def record(value):
+        try:
+            blocks.append(json.loads(value))
+        except json.JSONDecodeError:
+            pass
+        return original(value)
+    monkeypatch.setattr(producer, "contract_block", record)
+    native, reference, pdf = producer.render_mcx_successor_question_pdf(*pair, {checksum: raw})
+    text = " ".join(" ".join(page.extract_text() or "" for page in PdfReader(BytesIO(pdf)).pages).split())
+    return next(block for block in blocks if "root_fields" in block), native, reference, pdf, text
+
+
+@pytest.mark.parametrize("reference_version", ["1.0", "2.0", "2.1"])
+def test_integrity_pdf_discloses_readability_and_all_field_types(monkeypatch, reference_version):
+    shape, native, reference, _, text = _integrity_render(monkeypatch, reference_version=reference_version)
+    assert shape["readability"] == ["READABLE", "PARTIAL", "UNREADABLE"]
+    assert all(value in text for value in shape["readability"])
+    types = shape["field_types"]
+    assert set(types["response"]) == mcx.RESPONSE_FIELDS
+    assert set(types["observation"]) == mcx.OBSERVATION_FIELDS
+    assert set(types["subject"]) == (mcx.ANSWER_SUBJECT_FIELDS -
+        ({"observed_chart_identity"} if reference_version != "1.0" else set()))
+    ids = mcx.QUESTION_IDS if reference_version == "1.0" else mcx.QUESTION_IDS_V2
+    for i, qid in enumerate(ids):
+        assert set(types["results"][qid]) == mcx.RESULT_FIELDS[i] | (
+            {"identity_correspondence"} if i == 0 and reference_version != "1.0" else set())
+        for key in types["results"][qid]:
+            assert key in text
+    assert "All listed keys are required" in text
+    assert "No R or X observation wrappers" in text
+    assert "128 MiB" in text and "BEGIN KRONOS GOVERNED ANSWER DATA" in text
+    assert native.value["version"] == ("1.0" if reference_version == "1.0" else "2.0")
+    assert reference.value["version"] == reference_version
+
+
+def test_integrity_pdf_discloses_successor_availability_and_reference_limits(monkeypatch):
+    _, _, _, _, text = _integrity_render(monkeypatch)
+    for phrase in (
+        "Q7 UNAVAILABLE requires finding UNAVAILABLE",
+        "Q9 UNAVAILABLE requires NOT_OBSERVABLE and an empty components array",
+        "Q10 UNAVAILABLE status if and only if finding is UNAVAILABLE",
+        "COMEX readable unresolved correspondence is not admitted",
+        "non-null reference observed_timeframe must exactly equal",
+        "A separate unpopulated JSON template is optional",
+    ):
+        assert phrase in text
+
+
+@pytest.mark.parametrize("family", ["GOLDM", "SILVERM", "COPPER", "CRUDEOIL", "NATURALGAS"])
+def test_integrity_printed_shapes_and_pdf_transport_use_actual_validator(monkeypatch, tmp_path, family):
+    from tests.unit.browser.test_swing_visual_v3_live import _answer_pdf
+    from kronos.swing.v1.pdf_visual_review_v3_live import extract_successor_answer_pdf
+    shape, native, reference, _, text = _integrity_render(monkeypatch, family)
+    answer = successor_answer(native, reference)
+    for root in (answer, answer["supporting_reference_answer"]):
+        assert set(root) == set(shape["root_fields"]) | (
+            set(shape["native_root_additional_required_fields"]) if root is answer else set())
+        for subject in root["subjects"]:
+            assert set(subject) == set(shape["field_types"]["subject"])
+            for response in subject["responses"]:
+                assert response["question_set_identity"] in text
+                assert response["question_set_version"] in text
+                assert set(response) == set(shape["field_types"]["response"])
+                for observation in response["observations"]:
+                    assert set(observation) == set(shape["field_types"]["observation"])
+                    assert set(observation["result"]) == set(shape["field_types"]["results"][observation["question_id"]])
+    comparison = answer["comparison_answer"]
+    types = shape["comparison_contract"]["field_types"]
+    assert set(comparison) == set(types["root"])
+    for subject in comparison["subjects"]:
+        assert set(subject) == set(types["subject"])
+        for index, observation in enumerate(subject["observations"], 1):
+            assert set(observation) == set(types["observation"])
+            assert set(observation["result"]) == set(types["M" + str(index)])
+    path = tmp_path / "SYNTHETIC-ANSWER-NOT-ANALYST-EVIDENCE.pdf"
+    _answer_pdf(path, answer)
+    extracted = extract_successor_answer_pdf(path.read_bytes())
+    assert canonical(json.loads(extracted)) == canonical(answer)
+    assert mcx.validate_mcx_answer(extracted, mcx.mcx_question_pack_from_mappings(native, reference)) == answer
+    original = deepcopy(answer)
+    for fault in ("venue", "timeframe", "native_identity", "extra_R", "null_comparison"):
+        changed = deepcopy(answer)
+        if fault == "venue":
+            changed["supporting_reference_answer"]["subjects"][0]["responses"][0]["observations"][0]["result"]["observed_market"] = "NSE"
+        elif fault == "timeframe":
+            changed["subjects"][0]["responses"][0]["timeframe"] = "1W"
+        elif fault == "native_identity":
+            changed["subjects"][0]["responses"][0]["observations"][0]["result"]["observed_identity"] = "NYMEX:CL1!"
+        elif fault == "extra_R":
+            changed["subjects"][0]["responses"][0]["observations"][0]["R"] = {}
+        else:
+            changed["comparison_answer"]["subjects"][0]["observations"][1]["result"]["by_timeframe"] = None
+        with pytest.raises(ReviewEvidenceError):
+            mcx.validate_mcx_answer(canonical(changed), mcx.mcx_question_pack_from_mappings(native, reference))
+    assert answer == original
+
+
+@pytest.mark.parametrize("role", [mcx.NATIVE_ROLE, mcx.REFERENCE_ROLE])
+@pytest.mark.parametrize("question", [7, 9, 10])
+def test_integrity_printed_availability_rules_match_actual_rejections(monkeypatch, role, question):
+    _, native, reference, _, text = _integrity_render(monkeypatch)
+    answer = successor_answer(native, reference)
+    root = answer if role == mcx.NATIVE_ROLE else answer["supporting_reference_answer"]
+    obs = root["subjects"][0]["responses"][0]["observations"][question - 1]
+    obs.update(observation_status="UNAVAILABLE", ambiguity_reason="SYNTHETIC unavailable evidence")
+    if question == 9:
+        obs["result"].update(clustering="NOT_OBSERVABLE", components=[])
+    else:
+        obs["result"]["finding"] = "UNAVAILABLE"
+    request = mcx.mcx_question_pack_from_mappings(native, reference)
+    assert mcx.validate_mcx_answer(canonical(answer), request) == answer
+    assert f"Q{question} UNAVAILABLE" in text
+    if question == 7:
+        obs["result"]["finding"] = "SYNTHETIC non-unavailable narrative"
+    elif question == 9:
+        obs["result"].update(clustering="CLUSTERED", components=["CPR", "SMA20"])
+    else:
+        obs["observation_status"] = "OBSERVED"
+    with pytest.raises(ReviewEvidenceError):
+        mcx.validate_mcx_answer(canonical(answer), request)
+
+
+def test_integrity_disclosure_does_not_invent_a_q10_status_restriction(monkeypatch):
+    _, native, reference, _, text = _integrity_render(monkeypatch)
+    answer = successor_answer(native, reference)
+    obs = answer["subjects"][0]["responses"][0]["observations"][9]
+    obs.update(observation_status="NOT_APPLICABLE", not_applicable_reason=None)
+    assert mcx.validate_mcx_answer(canonical(answer), mcx.mcx_question_pack_from_mappings(native, reference)) == answer
+    assert "including NOT_APPLICABLE with null not_applicable_reason" in text
+
+
+def test_integrity_readable_comex_is_not_promoted_to_unresolved_nymex_exception(monkeypatch):
+    _, native, reference, _, text = _integrity_render(monkeypatch, "SILVERM")
+    answer = successor_answer(native, reference)
+    obs = answer["supporting_reference_answer"]["subjects"][0]["responses"][0]["observations"][0]
+    obs.update(observation_status="PARTIAL", ambiguity_reason="SYNTHETIC readable dated Silver; no alias proof")
+    obs["result"].update(observed_identity="SIZ2026", observed_market="COMEX", readability="READABLE",
+                         identity_correspondence="UNDETERMINED")
+    with pytest.raises(ReviewEvidenceError, match="MCX_IDENTITY_UNAVAILABLE"):
+        mcx.validate_mcx_answer(canonical(answer), mcx.mcx_question_pack_from_mappings(native, reference))
+    assert obs["result"]["observed_identity"] == "SIZ2026"
+    assert "COMEX readable unresolved correspondence is not admitted" in text
+    assert "SIZ2026 is not declared equivalent to COMEX:SI1!" in text

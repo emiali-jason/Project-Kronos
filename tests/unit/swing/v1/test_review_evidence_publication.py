@@ -61,6 +61,93 @@ def test_mcx_renderer_binds_both_logical_contracts_and_original_composites(tmp_p
         render_mcx_successor_question_pdf(*mappings, {key: b"wrong" for key in charts})
 
 
+@pytest.mark.parametrize("family", ["GOLDM", "SILVERM", "COPPER", "CRUDEOIL", "NATURALGAS"])
+def test_integrity_shared_composite_prints_physical_and_role_identity(tmp_path, family):
+    store = ReviewEvidenceStore(tmp_path / "store")
+    buffer = BytesIO()
+    image = PillowImage.new("RGB", (600, 400), "white")
+    draw = ImageDraw.Draw(image)
+    draw.text((15, 15), "SYNTHETIC REFERENCE PANELS: 1D / 4H / 1H", fill="black")
+    draw.text((15, 215), "SYNTHETIC NATIVE PANELS: 1D / 4H / 1H", fill="blue")
+    image.save(buffer, format="PNG")
+    raw = buffer.getvalue()
+    selections = _select_composite(store, _mcx_chart_bindings(family), raw)
+    pair = []
+    for mapping, role in zip(retained_mappings((family,)), ("NATIVE_MCX", "SUPPORTING_REFERENCE")):
+        value = mapping.value
+        for response in value["subjects"][0]["responses"]:
+            response.update(chart_revision_sha256=sha256(raw).hexdigest(),
+                chart_revision_identity=selections[role]["selection_sha256"])
+        pair.append(type(mapping).create(value))
+    before = inventory(tmp_path)
+    _, _, pdf = render_mcx_successor_question_pdf(*pair, {sha256(raw).hexdigest(): raw})
+    reader = PdfReader(BytesIO(pdf))
+    text = " ".join(" ".join(page.extract_text() or "" for page in reader.pages).split())
+    assert "Physical composite-image SHA-256" in text
+    assert "Role-bound chart-selection identities" in text
+    assert "not independent image acquisitions" in text
+    assert len({s["selection_sha256"] for s in selections.values()}) == 2
+    for selection in selections.values():
+        assert selection["selection_sha256"] in text
+        assert store.native_chart_bytes(selection) == raw
+    embedded = [item.image.convert("RGB").tobytes() for page in reader.pages for item in page.images]
+    assert len(embedded) == 2 and all(pixels == image.tobytes() for pixels in embedded)
+    assert inventory(tmp_path) == before
+
+
+def test_integrity_successor_publication_keeps_selected_charts_and_old_graph(tmp_path):
+    from swing.v1.test_mcx_native_visual_contract import successor_mappings, successor_answer
+    from kronos.swing.v1 import mcx_native_visual_contract as mcx
+    store = ReviewEvidenceStore(tmp_path / "store")
+    buffer = BytesIO()
+    PillowImage.new("RGB", (600, 400), "white").save(buffer, format="PNG")
+    raw = buffer.getvalue()
+    bindings = _mcx_chart_bindings("CRUDEOIL")
+    selected = _select_composite(store, bindings, raw)
+
+    def render(bundle):
+        pair = []
+        for mapping, role in zip(successor_mappings(("CRUDEOIL",)), (mcx.NATIVE_ROLE, mcx.REFERENCE_ROLE)):
+            value = mapping.value
+            value.update(request_bundle_identity=bundle, review_cycle_identity=bundle + "-PACK",
+                review_pack_identity=bundle + "-PACK", request_identity=bundle + "-" + role)
+            if role == mcx.REFERENCE_ROLE:
+                value.update(schema=mcx.REFERENCE_REQUEST_SCHEMA_V3, version="2.1",
+                    question_contract_identity=mcx.REFERENCE_QUESTIONS_V3, question_contract_version="2.1",
+                    answer_contract_identity=mcx.REFERENCE_ANSWER_V3, answer_contract_version="2.1")
+            value["subjects"][0]["subject_reference"] = bundle + "-" + role + "-SUBJECT"
+            for response in value["subjects"][0]["responses"]:
+                response.update(chart_revision_identity=selected[role]["selection_sha256"],
+                    chart_revision_sha256=sha256(raw).hexdigest())
+            pair.append(type(mapping).create(value))
+        return render_mcx_successor_question_pdf(*pair, {sha256(raw).hexdigest(): raw})
+
+    old_fixture = render("SYNTHETIC-ORIGINAL")
+    old = publish_mcx(store, old_fixture)
+    old_answer = successor_answer(old.native, old.reference)
+    assert store.validate_mcx_answer_for_publication(canonical(old_answer), old.identity) == old_answer
+    before = inventory(store.root)
+    new_fixture = render("SYNTHETIC-CORRECTED")
+    new = publish_mcx(store, new_fixture, old.identity)
+    assert new.identity != old.identity
+    assert new.value["predecessor_publication_identity"] == old.identity
+    assert new.value["question_pdf_sha256"] != old.value["question_pdf_sha256"]
+    assert store.load_mcx_request(old.identity) == old
+    for role, binding in bindings.items():
+        assert store.native_chart_selection(binding) == selected[role]
+        assert store.native_chart_bytes(selected[role]) == raw
+    after = inventory(store.root)
+    assert all(after[path] == value for path, value in before.items() if path != "current-mcx-request.json")
+    with pytest.raises(ReviewEvidenceError, match="REVIEW_BINDING_STALE"):
+        store.validate_mcx_answer_for_publication(canonical(old_answer), old.identity)
+    with pytest.raises(ReviewEvidenceError, match="MCX_REQUEST_MISMATCH"):
+        store.validate_mcx_answer_for_publication(canonical(old_answer), new.identity)
+    stable = inventory(store.root)
+    assert publish_mcx(store, new_fixture, old.identity) == new
+    assert inventory(store.root) == stable
+    assert ReviewEvidenceStore(tmp_path / "store").load_current_mcx_request() == new
+
+
 def test_successor_pdf_extraction_preserves_duplicate_keys_for_rejection():
     def pdf_for(text):
         buffer = BytesIO()

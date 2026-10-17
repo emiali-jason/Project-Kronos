@@ -29,3 +29,48 @@ The Analyst may report visible countdowns/forming indications in existing observ
 Changed production owners are Swing's MCX visual contract, PDF producer, prospective Native Review intake and V2 source-contract validation. No shared Provider, calendar, resolver, maintenance or Intraday interface changes. Targeted Browser/intake review is required; Intraday behavior is protected through affected tests rather than adopting its ADR-0034 semantics.
 
 Qualification must exercise the real canonical producer, extractable synthetic Answer PDF, strict importer, immutable receipt, restoration/replay, stale submission rejection and downstream V2 confirmation. Cover NSE plus GOLDM, SILVERM, COPPER, CRUDEOIL and NATURALGAS. Isolated synthetic observations establish machine compatibility only; no genuine Chart Analyst findings, production Answer import or live acceptance is claimed.
+
+## Prospective self-contained Question PDF — MCX03, 16 October 2026
+
+Status: Sponsor-approved handoff policy and bounded implementation authority;
+this isolated correction remains subject to MCX04 exact-byte review and separate
+release authorization. Earlier paragraphs retain their historical scope/status.
+
+The Sponsor explicitly approved the self-contained MCX V3 Question PDF policy
+for prospective packs, replacing the earlier mandatory matching-template
+expectation. A standalone unpopulated JSON template is optional, is not an
+intake prerequisite, and is outside this four-path correction. No old template,
+Question PDF, chart, request, Answer, receipt or V2 result is rewritten.
+
+The existing MCX renderer prints the existing closed Answer shapes, field types,
+nullability, enum domains and role/version-specific conditions, including Q1
+`READABLE / PARTIAL / UNREADABLE` and the Q7/Q9/Q10 availability rules. Broad
+historical enum domains are distinguished from successor admissibility. The
+successor Q10 validator's existing non-INVALID status domain is disclosed
+separately from reference Q4's `NOT_APPLICABLE` exception; no status rule is
+changed. No R/X wrapper exists in this MCX contract; M1–M3 remain their separate
+candidate-level comparison objects. The PDF remains actual unencrypted,
+text-extractable transport with one governed JSON marker pair; the strict
+extractor, importer, schemas, versions and acceptance authority remain unchanged.
+
+One original six-panel composite can supply distinct native/reference panel
+observations. Its physical image SHA-256 can therefore repeat. The PDF prints
+that digest separately from the existing role-bound selection identities and
+their exact subject, market and timeframe bindings. It does not represent
+shared bytes as separate acquisitions, edit/crop/restage images, infer panel
+identity from pixels, or resolve continuous-to-dated correspondence. Historical
+two-image selections remain readable under their original bindings.
+
+The readable unresolved reference2.1 branch remains NYMEX-only. In particular,
+`SIZ2026` is not declared equivalent to `COMEX:SI1!`, and readable unresolved
+COMEX evidence does not acquire the NYMEX exception through better wording.
+A truthful incompatibility remains a blocker; nulling readable fields or forcing
+`MATCHED` is not a remedy. No Instrument resolver, Market/Provider behavior,
+Intraday semantics or trading authority is added.
+
+Any later corrected production pack needs separate operational authorization and
+canonical eligibility/currentness checks. Existing generation issues fresh
+pack/bundle/request/subject and publication identities; unchanged eligible chart
+selections need no new revision solely for disclosure text. Accepted history
+never transfers automatically. No production generation or Answer import is
+authorized by this engineering record.

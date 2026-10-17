@@ -145,16 +145,28 @@ def render_mcx_successor_question_pdf(native, reference, charts: dict[str, bytes
                 image.drawWidth, image.drawHeight = image.imageWidth * scale, image.imageHeight * scale
                 story.extend([PageBreak(), Paragraph(escape(subject["subject_identity"] + " - " + subject["role"]), styles["Heading1"]),
                     contract_block(json.dumps({"subject_reference": subject["subject_reference"],
+                        "role": subject["role"], "expected_market": subject["market"],
+                        "expected_chart_identity": chart["expected_chart_identity"],
                         "chart_revision_sha256": revision, "timeframes": [item["timeframe"] for item in subject["charts"]
-                        if item["chart_revision_sha256"] == revision]}, indent=2)), image])
+                        if item["chart_revision_sha256"] == revision]}, indent=2)),
+                    Paragraph("Physical composite-image SHA-256: " + revision, styles["BodyText"]),
+                    Paragraph("Role-bound chart-selection identities (question-side provenance; not additional Answer fields):",
+                              styles["BodyText"]),
+                    contract_block(json.dumps({item["timeframe"]: item["chart_revision_identity"]
+                        for item in subject["charts"] if item["chart_revision_sha256"] == revision}, indent=2)),
+                    Paragraph("The same unchanged composite may contain both native and reference panels. Repeated physical "
+                        "image hashes are not independent image acquisitions. Assess only the panels for this bound role, "
+                        "market and timeframe; preserve visible labels and uncertainty. A hash does not prove visual "
+                        "correspondence or continuous-to-dated contract equivalence.", styles["BodyText"]), image])
     story.extend([PageBreak(), Paragraph("Exact Answer contract", styles["Title"]),
         Paragraph("Return one governed JSON block between " + BEGIN_GOVERNED_ANSWER_DATA + " and "
                   + END_GOVERNED_ANSWER_DATA + ". All listed keys are required. No extra fields or duplicate JSON keys. "
                   "No KRONOS provenance, run, timestamps, boundaries, machine hashes or authority fields may be supplied. "
                   "Model identity is an untrusted nonempty attribution label up to 128 characters only. "
                   "Answer identities are nonempty text up to 256 characters; versions are JSON strings.", styles["BodyText"])])
-    # Full closed shapes and enums are derived from the same frozen validator;
-    # no second question identity or alternative analytical rule is introduced.
+    # Disclosure describes the existing validator; these are not new Answer
+    # fields or a second schema accepted by intake. Inline constraints remain
+    # covered by real producer/extractor/validator parity tests.
     successor = native.value["version"] == mcx_contract.SUCCESSOR_VERSION
     supporting_observations = reference.value["version"] == mcx_contract.REFERENCE_OBSERVATION_VERSION
     shape = {"root_fields": ["schema", "version", "request_reference", "answer_identity", "subjects"],
@@ -175,6 +187,82 @@ def render_mcx_successor_question_pdf(native, reference, charts: dict[str, bytes
         "reference_relationship": list(mcx_contract.REFERENCE_RELATIONSHIP), "setup_quality": list(mcx_contract.QUALITY),
         "clustering": list(mcx_contract.CLUSTERING), "native_components": list(mcx_contract.NATIVE_COMPONENTS),
         "reference_components": list(mcx_contract.REFERENCE_COMPONENTS)}
+    shape["readability"] = ["READABLE", "PARTIAL", "UNREADABLE"]
+    shape["field_types"] = {
+        "root": {"schema": "string; exact Answer schema for this leg",
+                 "version": "string; exact Answer version for this leg, never a number",
+                 "request_reference": "object; exact request_identity/request_sha256 of this leg",
+                 "answer_identity": "nonempty string, maximum 256 characters; shared across Answer roots",
+                 "subjects": "array of objects; exact ordered population from this leg's Question contract",
+                 "supporting_reference_answer": "object; required only at native root"},
+        "request_reference": {"request_identity": "string; exact leg echo",
+                              "request_sha256": "string; exact lowercase 64-hex leg echo"},
+        "subject": {key: ("array of exactly three response objects, ordered 1D, 4H, 1H" if key == "responses" else
+                          "null for native; exact non-null reference-symbol string for reference" if key == "reference_symbol" else
+                          "string; exact first expected chart identity (legacy only)" if key == "observed_chart_identity" else
+                          "string; exact corresponding Question-subject echo")
+                    for key in sorted(mcx_contract.ANSWER_SUBJECT_FIELDS - {"observed_chart_identity"} if successor
+                                      else mcx_contract.ANSWER_SUBJECT_FIELDS)},
+        "response": {key: ("array of exactly ten observation objects, Q1-Q10 order" if key == "observations" else
+                           "nonempty string, maximum 128 characters; untrusted attribution only" if key == "model_identity" else
+                           "string; exact role/question-set/timeframe/chart/revision echo")
+                     for key in sorted(mcx_contract.RESPONSE_FIELDS)},
+        "observation": {
+            "question_id": "string; exact question ID at this Q1-Q10 position",
+            "timeframe": "string; exact enclosing response timeframe",
+            "observation_status": "string; printed status domain subject to the role/version constraints below",
+            "visible_basis": "nonempty string, maximum 512 characters",
+            "confidence_in_extraction": "nonempty string, maximum 64 characters; no confidence enum or probability",
+            "ambiguity_reason": "string, maximum 512 characters; may be empty only outside PARTIAL/UNAVAILABLE/INVALID",
+            "source_chart_identity": "string; exact expected chart identity, not raw visible label",
+            "source_chart_revision": "string; exact physical image SHA-256, not role-bound selection identity",
+            "why_not_covered_elsewhere": "string or null; Q1-Q9 required null, Q10 conditional below",
+            "not_applicable_reason": "string or null; exact REFERENCE_PERIOD_NOT_GOVERNED only for reference Q4, null otherwise",
+            "result": "object; exact closed question-specific fields below"},
+        "results": {},
+    }
+    raw_identity_type = ("nonempty string, maximum 256 characters, or null; governed Q1 availability rules below"
+                         if successor else "non-null exact expected string; unavailable identity rejects")
+    result_types = [
+        {"observed_identity": raw_identity_type, "observed_market": raw_identity_type,
+         "observed_timeframe": raw_identity_type, "readability": "string; READABLE/PARTIAL/UNREADABLE"},
+        {"presence": "string; presence enum", "price_relationship": "string; price_relationship enum",
+         "interaction": "string; interaction enum"},
+        {"finding": "nonempty string, maximum 512 characters; NONE permitted",
+         "machine_coverage_comparison": "string; native COMPARISON_UNAVAILABLE, reference NOT_APPLICABLE",
+         **{key: "finite nonnegative JSON number or null; point/zone rules below"
+            for key in ("point_price", "zone_low", "zone_high")}},
+        {"reference_period": "string; native exact chart-declared PREVIOUS_MONTH/PREVIOUS_WEEK; reference null",
+         "presence": "string; native presence enum; reference null",
+         "relationship": "string; native reference_relationship enum; reference null",
+         "interaction": "string; native interaction enum; reference null"},
+        {"setup_quality": "string; setup_quality enum", "finding": "nonempty string, maximum 512 characters"},
+        {"finding": "nonempty string, maximum 512 characters; NONE permitted",
+         **{key: "finite nonnegative JSON number or null; point/zone rules below"
+            for key in ("point_price", "zone_low", "zone_high")}},
+        {"finding": "nonempty string, maximum 512 characters"},
+        {"finding": "nonempty string, maximum 512 characters"},
+        {"clustering": "string; clustering enum", "components": "array of distinct strings in printed role-specific component order"},
+        {"finding": "nonempty string, maximum 512 characters; NONE permitted",
+         "machine_coverage_comparison": "string; native COMPARISON_UNAVAILABLE, reference NOT_APPLICABLE"},
+    ]
+    if successor:
+        result_types[0]["identity_correspondence"] = "string; MATCHED/CONTRADICTED/UNDETERMINED, subject to Q1 constraints"
+        shape["field_types"]["root"]["comparison_answer"] = "object; required only at native root"
+        shape["q1_conflict_only_labels"] = {
+            "identities": sorted(set(mcx_contract.MCX_REFERENCE_MAPPINGS)
+                | {entry[2] for entry in mcx_contract.MCX_REFERENCE_MAPPINGS.values()}),
+            "markets": ["MCX", "COMEX", "NYMEX", "NSE", "BSE"],
+            "timeframes": list(mcx_contract.NATIVE_TIMEFRAMES),
+        }
+        if supporting_observations:
+            shape["reference_conflict_only_families"] = {
+                "CLX2026": "CRUDEOIL", "NGX2026": "NATURALGAS",
+                **{entry[0]: family for family, entry in mcx_contract.MCX_REFERENCE_MAPPINGS.items()},
+            }
+    for qid, fields in zip(mcx_contract.QUESTION_IDS_V2 if successor else mcx_contract.QUESTION_IDS,
+                           result_types, strict=True):
+        shape["field_types"]["results"][qid] = fields
     if successor:
         shape["answer_versions_by_role"] = {mcx_contract.NATIVE_ROLE: native.value["answer_contract_version"],
                                              mcx_contract.REFERENCE_ROLE: reference.value["answer_contract_version"]}
@@ -210,7 +298,51 @@ def render_mcx_successor_question_pdf(native, reference, charts: dict[str, bytes
             m3_limitations=["DIFFERENT_SESSIONS", "INCOMPLETE_BAR", "EXPIRY_OR_ROLL",
                 "CONTINUOUS_BACK_ADJUSTMENT_UNKNOWN", "CONTRACT_IDENTITY_UNCLEAR",
                 "CURRENCY_OR_BASIS_DIFFERENCE", "MISSING_EVIDENCE", "OTHER_VISIBLE_LIMITATION"])
+        shape["comparison_contract"]["field_types"] = {
+            "root": {"schema": "string; exact comparison Answer schema", "version": "string; exactly 1.0",
+                     "request_references": "object; exactly native and reference request-reference objects",
+                     "answer_identity": "string; exact shared Answer identity", "subjects": "array of exact ordered paired subject objects"},
+            "request_reference": {"request_identity": "string; exact leg identity", "request_sha256": "string; exact leg digest"},
+            "subject": {key: ("array of exactly three observation objects, M1/M2/M3 order" if key == "observations" else
+                              "string; exact comparison Question-subject echo")
+                        for key in shape["comparison_contract"]["subject_fields"]},
+            "observation": {key: ("object; closed M1/M2/M3 result" if key == "result" else
+                                  "string; bounds, enums and conditions printed in comparison_contract")
+                            for key in shape["comparison_contract"]["observation_fields"]},
+            "M1": {"mapping_state": "string; mapping_state domain, MISMATCHED rejects",
+                   "coverage_state": "string; coverage_state enum", "finding": "nonempty string, maximum 512 characters"},
+            "M2": {"by_timeframe": "array of exactly three non-null closed row objects"},
+            "M2_row": {"timeframe": "string; exact ordered 1D/4H/1H", "relationship": "string; m2_relationship enum",
+                       "finding": "nonempty string, maximum 512 characters"},
+            "M3": {"relationship_to_native_direction": "string; m3_relationship enum",
+                   "affected_timeframes": "array of distinct timeframe strings in printed canonical order",
+                   "limitations": "array of distinct m3_limitations strings in printed canonical order",
+                   "finding": "nonempty string, maximum 512 characters"},
+        }
     story.append(contract_block(json.dumps(shape, indent=2)))
+    story.append(Paragraph(
+        "This prospective Question PDF is the self-contained Answer-contract handoff. A separate unpopulated JSON template is optional "
+        "and is not an intake prerequisite. All listed keys are required; null is a value, not permission to omit a key. "
+        "Every object is closed. Except for the explicitly nullable fields and conditions printed above/below, values are non-null. "
+        "Nonempty text means a JSON string containing a non-whitespace character within its stated length; preserve raw text. "
+        "No R or X observation wrappers exist in this MCX contract; extra wrappers reject. "
+        "Return an actual unencrypted, text-extractable PDF, not renamed JSON, with exactly one governed Answer marker pair. "
+        "The PDF limit is 128 MiB. Duplicate keys and nonfinite JSON constants reject.", styles["BodyText"]))
+    if successor:
+        story.append(Paragraph(
+            "The extracted successor Answer JSON limit is 8 MiB. Q1 availability: native must be MATCHED. "
+            "MATCHED requires all three observed identity fields available, readability READABLE or PARTIAL, "
+            "and observation_status OBSERVED or PARTIAL. CONTRADICTED rejects. A genuinely unavailable reference may be "
+            "UNDETERMINED only with at least one observed field null, readability PARTIAL or UNREADABLE and status UNAVAILABLE. "
+            "PARTIAL/UNAVAILABLE observations require a nonempty ambiguity_reason. Do not null readable evidence. "
+            "Recognizable canonical identity, venue and timeframe contradictions reject. The known native families and printed "
+            "reference symbols are conflict checks, not an alias resolver. Unknown raw labels do not establish correspondence. "
+            "Native/ref2.0 retain their existing conflict-only raw-text checks; they do not gain the reference2.1 exception. "
+            "Q7 UNAVAILABLE requires finding UNAVAILABLE. Q9 UNAVAILABLE requires NOT_OBSERVABLE and an empty components array. "
+            "Q10 UNAVAILABLE status if and only if finding is UNAVAILABLE. Q10 otherwise retains the printed non-INVALID status domain, "
+            "including NOT_APPLICABLE with null not_applicable_reason; this is not the reference-Q4 exception. "
+            "INVALID observations reject in the successor; "
+            "it is a broad historical domain value, not an admissible successor status.", styles["BodyText"]))
     if supporting_observations:
         story.append(Paragraph(
             "Supporting reference version 2.1 preserves readable dated NYMEX labels with UNDETERMINED correspondence, "
@@ -218,7 +350,14 @@ def render_mcx_successor_question_pdf(native, reference, charts: dict[str, bytes
             "equivalence. Only the exact expected symbol may be MATCHED. Unresolved M2 rows are NOT_COMPARABLE and M3 is "
             "NOT_ESTABLISHED. The Analyst reports visible evidence, forming-bar indications and uncertainty; KRONOS owns "
             "sessions, completed candles, analytical cutoffs, currentness and downstream authority. This is not readiness, "
-            "admission or execution permission. Native version 2.0 and its identity checks remain unchanged.", styles["BodyText"]))
+            "admission or execution permission. Native version 2.0 and its identity checks remain unchanged. "
+            "The readable unresolved branch requires all three observed fields available, expected market NYMEX, "
+            "readability READABLE, status PARTIAL, correspondence UNDETERMINED and nonempty ambiguity_reason. "
+            "COMEX readable unresolved correspondence is not admitted by this exception. SIZ2026 is not declared equivalent to COMEX:SI1!. "
+            "Each non-null reference observed_market must exactly equal its bound market; each non-null reference observed_timeframe must exactly equal "
+            "its bound 1D/4H/1H value. MATCHED requires the exact expected reference symbol. Known CLX2026/NGX2026 or canonical "
+            "reference-description family conflicts reject, but these labels never establish alias or continuous membership. "
+            "No normalization or Provider mapping supplies missing visual correspondence.", styles["BodyText"]))
     for paragraph in (
         "Echo each logical request reference from its own question contract. Preserve independently identified native and reference Answers. "
         "Preserve exact ordered subject references, candidate references, roles, subject identities, markets and reference symbols. "
@@ -242,7 +381,9 @@ def render_mcx_successor_question_pdf(native, reference, charts: dict[str, bytes
         "Native Q4 uses the chart-declared PREVIOUS_MONTH for 1D/4H and PREVIOUS_WEEK for 1H. If the governed reference basis is UNAVAILABLE, "
         "return UNAVAILABLE, presence NOT_IDENTIFIABLE, relationship NOT_OBSERVABLE and interaction NOT_OBSERVABLE. "
         "Reference Q4 is NOT_APPLICABLE with not_applicable_reason REFERENCE_PERIOD_NOT_GOVERNED and all four result values null. "
-        "Every other not_applicable_reason is null; NOT_APPLICABLE status is permitted only for reference Q4.",
+        "Every other not_applicable_reason is null; "
+        + ("for Q2-Q9, NOT_APPLICABLE status is permitted only for reference Q4. Successor Q1/Q10 follow their own printed rules."
+           if successor else "NOT_APPLICABLE status is permitted only for reference Q4."),
         "Q5 setup_quality is a printed bounded enum; finding is visual extraction relative to supplied Native direction as orientation only. "
         "Do not produce reconciliation, direction changes, Readiness, promotion or trading consequences. Q7/Q8 finding is bounded text. "
         "Q8 NOT_VISIBLE or UNAVAILABLE requires finding NONE.",

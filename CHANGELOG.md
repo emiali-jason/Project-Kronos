@@ -4,6 +4,49 @@ All notable changes to PROJECT KRONOS will be documented in this file.
 
 This project follows a milestone-based development approach.
 
+## Unreleased — Swing MCX V3 Question Pack Contract Correction, 2026-10-16
+
+- Make prospective MCX V3 Question PDFs self-contained by
+  disclosing the existing governed Answer fields, types,
+  nullability, enums and conditional requirements.
+
+- Include the existing Q1 readability values and
+  Q7/Q9/Q10 availability rules, including the governed
+  Q10 NOT_APPLICABLE/null-reason case.
+
+- Distinguish physical composite-image SHA-256 from
+  role-specific native/reference chart-selection identities.
+  Shared composite bytes do not establish independent
+  image acquisitions.
+
+- Preserve the existing validator, Answer schema, chart
+  selection, publication/currentness contracts and Swing
+  Review/V2 methodology.
+
+- Retain immutable historical Question Packs, Answers,
+  receipts and accepted evidence without migration.
+
+- Preserve the existing COMEX Silver/SIZ2026 acceptance
+  limitation; no continuous-to-dated contract equivalence
+  is introduced.
+
+- The correction changes one PDF-rendering function.
+  Retained qualification: 280 owning and 882 affected
+  tests, 1,162 distinct PASS, with zero final failures,
+  errors or skips.
+
+- EA-Swing and PCP exact-byte reviews approved the
+  unchanged four-path engineering candidate. The
+  documentation supplement requires separate release-
+  composition reconciliation.
+
+- No Pine, engine-registry, analytical, Provider, Intraday,
+  broker or trading authority is changed.
+
+- Publication, installation, production restoration,
+  genuine Question Pack generation and deployed
+  acceptance remain separate authorization gates.
+
 ## Unpublished candidate — Intraday Review source reads, 2026-10-16
 
 - Reuse validated invariant Probables/WO08 sources inside one existing guarded read span, preserving per-subject joins and fresh final source/currentness comparisons.
