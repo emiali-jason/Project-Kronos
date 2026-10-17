@@ -95,13 +95,17 @@ def project_intraday_dashboard(store, boundary=None, *, monitoring_projection=No
             opportunities = []
             now = ready = 0
             current_population = None
+            source_pointers = None
             for pointer, record in before:
                 if record.source_authority != "WO08" or pointer.currentness is not CurrentnessState.CURRENT:
                     continue
                 try:
-                    # Compare retained owner identities; never run an evaluator on GET.
-                    probable = owner.probables.load_current()
-                    machine = owner.wo08.current_pointer()
+                    # Canonical producers share these existing owner guards. Reuse
+                    # this request's validated source identities, not cached authority.
+                    # Per-subject joins stay live; recheck sources after callbacks.
+                    if source_pointers is None:
+                        source_pointers = (owner.probables.load_current(), owner.wo08.current_pointer())
+                    probable, machine = source_pointers
                     if probable is None or machine is None:
                         raise ValueError('INTRADAY_DASHBOARD_SOURCE_UNAVAILABLE')
                     if (probable.run_identity != record.probables_run_identity
@@ -149,9 +153,7 @@ def project_intraday_dashboard(store, boundary=None, *, monitoring_projection=No
                                 or binding.active_binding.derivative_contract_id != record.exact_mcx_contract_identity):
                             continue
                     owner._session(record, "readiness")
-                    if (store.load_pointer(record.canonical_subject_identity) != pointer
-                            or probable != owner.probables.load_current()
-                            or machine != owner.wo08.current_pointer()):
+                    if store.load_pointer(record.canonical_subject_identity) != pointer:
                         raise ValueError("INTRADAY_DASHBOARD_SOURCE_CHANGED")
                 except NewWorkNotEligible as error:
                     if error.reason.value == "ELIGIBILITY_AUTHORITY_UNAVAILABLE":
@@ -171,6 +173,11 @@ def project_intraday_dashboard(store, boundary=None, *, monitoring_projection=No
                         monitoring=None if monitoring_projection is None else monitoring_projection(record.readiness_identity)))
                 now += record.readiness_state in {ReadinessState.BUY_NOW, ReadinessState.SELL_NOW}
                 ready += record.readiness_state in {ReadinessState.BUY_READY, ReadinessState.SELL_READY}
+            # No pointer/generation survives this protected request. Fresh reads
+            # also fence reentrant callbacks or unexpected external replacement.
+            if (source_pointers is not None and source_pointers != (
+                    owner.probables.load_current(), owner.wo08.current_pointer())):
+                raise ValueError("INTRADAY_DASHBOARD_SOURCE_CHANGED")
             if before != store.restore_current():
                 raise ValueError("INTRADAY_DASHBOARD_SOURCE_CHANGED")
             return IntradayDashboardSummary(now, ready, "CURRENT_SESSION_VERIFIED" if current else "NO_CURRENT_READINESS", tuple(current), opportunities=tuple(opportunities))

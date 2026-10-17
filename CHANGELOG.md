@@ -4,6 +4,12 @@ All notable changes to PROJECT KRONOS will be documented in this file.
 
 This project follows a milestone-based development approach.
 
+## Unpublished candidate — Intraday Review source reads, 2026-10-16
+
+- Reuse validated invariant Probables/WO08 sources inside one existing guarded read span, preserving per-subject joins and fresh final source/currentness comparisons.
+- Preserve analytical policy, requirement population reads, shared owners and all persistence contracts. Add real-store fault/concurrency coverage.
+- Track qualification, isolated before/after measurement and exact-byte review in [the engineering record](docs/engineering/INTRADAY-REVIEW-PERFORMANCE-20261016.md). No release/runtime authority; historical timeout causation remains unestablished.
+
 ## Unreleased candidate — Intraday limited machine history, 2026-10-16
 
 - Add recent-five retained Analysis navigation and exact selected-run history with complete validated assessments, 25-row default and 50-row maximum pages.
