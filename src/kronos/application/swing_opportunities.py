@@ -865,6 +865,8 @@ class SwingOpportunitiesApplication:
         self.__market_calendar_publisher = market_calendar_publisher
         self.__research_capture = None
         self.__research_capture_failure = None
+        self.__local_analysis = None
+        self.__local_analysis_failure = None
         self.__mtf_fact_evidence_store = mtf_fact_evidence_store
         self.__native_discovery_evidence_store = native_discovery_evidence_store
         self.__relative_context_evidence_store = relative_context_evidence_store
@@ -1235,6 +1237,68 @@ class SwingOpportunitiesApplication:
     def research_capture_status(self) -> str | None:
         with self.__lock:
             return self.__research_capture_failure
+
+    def register_local_analysis(self, owner) -> None:
+        """One local research owner; no extra Provider or worker authority."""
+        if not all(callable(getattr(owner, name, None))
+                   for name in ("on_committed", "prepare", "projection", "close")):
+            raise TypeError("NSE_LOCAL_OWNER_INVALID")
+        with self.__lock:
+            if self.__local_analysis is not None:
+                raise ValueError("NSE_LOCAL_OWNER_ALREADY_BOUND")
+            self.__local_analysis = owner
+
+    def clear_local_analysis(self, owner) -> None:
+        """Detach this composition only after its counted work has drained."""
+        with self.__lock:
+            if self.__local_analysis is owner:
+                self.__local_analysis = None
+
+    def local_analysis_workflow(self):
+        with self.__lock:
+            return self.__local_analysis
+
+    def local_analysis_status(self):
+        with self.__lock:
+            return self.__local_analysis_failure
+
+    def __capture_local_analysis(self, work, committed):
+        # The original analysis/maintenance ticket remains counted until this
+        # synchronous calculation, retention and page preparation have finished.
+        # Never run at restoration, GET, dedicated MCX or failed/cancelled work.
+        from kronos.swing.v1.native_discovery import NativeProductPath, NativeDiscoveryStatus
+        with self.__lock:
+            owner = self.__local_analysis
+            admitted = (owner is not None and work.mcx_handoff is None
+                and self.__analysis_work_current_locked(work)
+                and self.__committed_run is committed
+                and self.__analysis_request_result == "SUCCEEDED"
+                and not self.__reconciliation_failure
+                and any(item.product_path is NativeProductPath.NSE
+                        and item.status is NativeDiscoveryStatus.PROBABLE
+                        for item in committed.native.assessments))
+        if not admitted:
+            return
+        try:
+            _, native, _, status = self.opportunities_bundle_projection()
+            if (status["reconciliation_unavailable"] or native is not committed.native):
+                return
+            outcome = owner.on_committed(committed)
+            failure = outcome.get("state") != "READY"
+        except Exception:
+            failure = True
+        # Exactly one preparation follows either completed capture or failure.
+        # Publish a truthful local-unavailable capsule so the otherwise successful
+        # Native/Review page remains usable; never retry the calculation or erase
+        # the failure. This work remains under the original analysis ticket.
+        try:
+            if not owner.intake.prepare_page_state():
+                failure = True
+        except Exception:
+            failure = True
+        with self.__lock:
+            self.__local_analysis_failure = (
+                "NSE_LOCAL_CAPTURE_UNAVAILABLE" if failure else None)
 
     def governed_calendar_publisher(self):
         return self.__market_calendar_publisher
@@ -2634,6 +2698,7 @@ class SwingOpportunitiesApplication:
                     else:
                         with self.__lock:
                             self.__research_capture_failure = None
+                self.__capture_local_analysis(work, committed)
                 return
             if not self.__analysis_work_current(work):
                 return
@@ -2795,6 +2860,7 @@ class SwingOpportunitiesApplication:
                 self.__analysis_request_result = "SUCCEEDED"
                 work.phase = "RECONCILING"
             self.reconcile_committed_analysis()
+            self.__capture_local_analysis(work, committed)
             return True
 
         owner.execute(

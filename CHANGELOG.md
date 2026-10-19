@@ -220,3 +220,29 @@ Frozen
 ### Design Decisions
 - DD-0002: CPR is a value zone
 - DD-0005: CPR Relationship Engine
+
+
+## Unreleased candidate — Swing local research Release A, 2026-10-19
+
+- Add the deterministic `KRONOS-NSE-LOCAL-RESEARCH-1.0` Python methodology and
+  retained-evidence integration for eligible NSE Swing opportunities. Compare
+  independent LONG/SHORT evidence across three holding horizons; disclose
+  supporting/conflicting facts, conditional scenarios and unavailable levels.
+- Evaluate after genuinely committed eligible Native analysis, or through
+  retained-only **Refresh Local Analysis**. Reuse unchanged source/methodology
+  originals and display prepared findings on existing Opportunities and Review.
+- Retain immutable originals and separate current/stale dispositions through
+  existing WO-12 ownership. Ordinary page GETs neither calculate nor retain
+  assessments. The WO-08 local path makes no Provider or model inference calls.
+- Preserve Native, KR-370, K4/V2, NSE/MCX WO-07F, Intraday, Theta and historical
+  evidence. Local research creates no accepted visual Answer, admission,
+  position, broker instruction or replacement decision authority. Q3/Q5/Q10
+  independent visual conclusions remain UNKNOWN where evidence is absent.
+- Retain 1,075 distinct isolated qualification passes, zero final failures,
+  errors or skips, with actual exit status 0 for each final run. Desktop and
+  narrow demonstrations use labelled synthetic evidence; genuine retained-data
+  acceptance and prospective accuracy remain unestablished.
+- Exact-source EA-Swing/PCP review, final release-policy composition, publication,
+  installation and Sponsor inspection remain separate gates. No deployment is
+  claimed. LOCAL-03 daily recording/Journey and LOCAL-04 outcomes remain pending;
+  the retired API-based SW-FAST-03 product remains excluded.

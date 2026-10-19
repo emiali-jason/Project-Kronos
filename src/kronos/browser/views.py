@@ -742,6 +742,245 @@ def _swing_intake_row(native_intake, item):  # type: ignore[no-untyped-def]
         and (not row.get("eligible") or row.get("assessment_sha256") == item.result_sha256)), None)
 
 
+def _nse_technical_panel(projection, instrument, run_identity, assessment_sha256,
+                         direction, requirement_sha256, *, compact=False):
+    """Present only the exact source-bound numerical subprojection, never a vote."""
+    if projection is None or projection.get("error") or not requirement_sha256:
+        return ""
+    workspace = projection.get("workspace")
+    if (workspace is None or workspace.get("state") != "CURRENT"
+            or workspace.get("run_identity") != run_identity):
+        return ""
+    matches = [report for report in projection.get("technical_summaries", ())
+        if report["binding"] == dict(run_identity=run_identity,
+            publication_sha256=workspace["manifest"], instrument=instrument,
+            direction=direction, assessment_sha256=assessment_sha256,
+            requirement_sha256=requirement_sha256,
+            provider_source_identity=report["binding"]["provider_source_identity"])]
+    if len(matches) != 1:
+        return ""
+    report = matches[0]
+    if (report["schema"] != "KRONOS-SWING-NSE-TECHNICAL-SUMMARY-V1"
+            or report["authority"] != "FACTUAL_EXPLANATORY_ONLY"
+            or report["independence"] != "NOT_ESTABLISHED"):
+        return ""
+    def value(v):
+        return "UNAVAILABLE" if v is None else str(v)
+    frames = ""
+    for frame in report["frames"]:
+        findings = "".join('<li>' + escape(name.replace("_", " ")) + ' · <strong>'
+            + escape(result["state"]) + '</strong>'
+            + (' <small>' + escape(result["reason"]) + '</small>' if result["reason"] else '')
+            + '</li>' for name, result in frame["comparisons"].items())
+        # These labels describe arithmetic direction only. Volume is deliberately
+        # not assigned bullish/bearish meaning and no count or score is produced.
+        with_direction = {"ABOVE", "RISING", "UP"} if direction == "LONG" else {"BELOW", "FALLING", "DOWN"}
+        against_direction = {"BELOW", "FALLING", "DOWN"} if direction == "LONG" else {"ABOVE", "RISING", "UP"}
+        directional = [(name, result["state"]) for name, result in frame["comparisons"].items()
+                       if name != "volume_reference"]
+        supporting = ", ".join(name.replace("_", " ") for name, state in directional if state in with_direction)
+        conflicting = ", ".join(name.replace("_", " ") for name, state in directional if state in against_direction)
+        evidence = ('<p>With ' + escape(direction) + ' numerically · ' + escape(supporting or "NONE")
+                    + '<br>Against ' + escape(direction) + ' numerically · ' + escape(conflicting or "NONE") + '</p>')
+        raw = ''.join('<dt>' + escape(name.replace('_', ' ')) + '</dt><dd>'
+                      + escape(value(v)) + '</dd>' for name, v in frame["values"].items())
+        provenance = ' · '.join((frame["calendar_identity"], frame["calendar_version"],
+            frame["session_identity"], frame["provider_identity"], *frame["provenance"]))
+        detail = ('<details><summary>Source facts and times</summary><dl>' + raw + '</dl>'
+            '<p>Completed observation boundary · <code>' + escape(frame["observed_boundary"])
+            + '</code><br>Source timestamp · <code>' + escape(frame["source_timestamp"])
+            + '</code></p><p>' + escape(provenance) + '</p></details>')
+        frames += ('<div class="nse-technical-frame"><strong>' + escape(frame["timeframe"])
+            + ' · ' + escape(frame["context"]) + '</strong><ul>' + findings + '</ul>'
+            + ('' if compact else evidence + detail)
+            + '<small>Q3 / Q5 / Q10 · UNKNOWN · METHOD_NOT_APPROVED</small></div>')
+    binding = '<details><summary>Numerical source binding</summary>' + ''.join(
+        '<p>' + escape(k.replace('_', ' ')) + ' · <code>' + escape(str(v)) + '</code></p>'
+        for k, v in report["binding"].items()) + '</details>'
+    atr = report["atr"]
+    atr_text = ('1H ATR14 · ' + value(atr['value']) + ' · ' + atr['state']
+                + (' · ' + atr['reason'] if atr['reason'] else ''))
+    atr_evidence = ('' if compact else '<details><summary>ATR source evidence</summary>'
+        + ''.join('<p>' + escape(k.replace('_', ' ')) + ' · <code>' + escape(str(v)) + '</code></p>'
+                  for k, v in atr.items() if k not in {'value', 'state', 'reason'}) + '</details>')
+    style = ('<style>.nse-technical{min-width:0;max-width:100%;margin:10px 0;padding:10px;border:1px solid var(--border,#ddd);'
+        'border-radius:8px;font-size:12px;overflow-wrap:anywhere}.nse-technical *{min-width:0;max-width:100%;overflow-wrap:anywhere}'
+        '.nse-technical-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}'
+        '.nse-technical-frame>strong{display:block}.nse-technical-frame{padding:6px;border:1px solid var(--border,#ddd);border-radius:5px}'
+        '.nse-technical ul{padding-left:16px;margin:6px 0}.nse-technical dl{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:3px}'
+        '.nse-technical dd{margin:0}.nse-technical code{white-space:normal;word-break:break-word}'
+        '@media(max-width:600px){.nse-technical-grid{grid-template-columns:minmax(0,1fr)}}</style>')
+    content = '<div class="nse-technical-grid">' + frames + '</div><p>' + escape(atr_text) + '</p>' + atr_evidence + binding
+    if compact:
+        content = '<details><summary>Four-timeframe numerical findings</summary>' + content + '</details>'
+    return (style + '<section class="nse-technical" aria-label="NSE numerical technical findings">'
+        '<strong>NSE numerical technical findings · ' + escape(report['coverage']) + ' DATA</strong>'
+        '<p>Factual comparisons only · not independent visual confirmation or K4/V2 approval.</p>'
+        + content + '</section>')
+
+
+def _nse_local_panel(projection, instrument, run_identity, assessment_sha256,
+                     native_direction, requirement_sha256):
+    """Render the prepared original only under its exact current owner binding."""
+    if projection is None or projection.get("error") or not requirement_sha256:
+        return ""
+    workspace = projection.get("workspace")
+    local = projection.get("local_analysis")
+    if (workspace is None or workspace.get("state") != "CURRENT"
+            or workspace.get("run_identity") != run_identity or local is None):
+        return ""
+    rows = local.get("rows", ())
+    matching = [row for row in rows if row.get("instrument") == instrument
+                and row.get("requirement_id") == requirement_sha256]
+    row = matching[0] if len(matching) == 1 else None
+    state = "UNAVAILABLE" if row is None else row.get("state", "UNAVAILABLE")
+    reason = (local.get("reason") or "LOCAL_ASSESSMENT_NOT_PREPARED") if row is None else row.get("reason")
+    result = None if row is None else row.get("result")
+    if result is not None:
+        binding = result.get("binding", {})
+        if (state != "SUCCEEDED" or local.get("state") != "READY"
+                or local.get("run_identity") != run_identity
+                or local.get("publication_sha256") != workspace["manifest"]
+                or binding.get("instrument") != instrument
+                or binding.get("run_identity") != run_identity
+                or binding.get("publication_sha256") != workspace["manifest"]
+                or binding.get("assessment_sha256") != assessment_sha256
+                or binding.get("requirement_sha256") != requirement_sha256
+                or binding.get("direction") != native_direction
+                or result.get("contract") != "KRONOS-SWING-NSE-LOCAL-RESULT-V1"
+                or result.get("authority") != "RESEARCH_ONLY_NO_ADMISSION_OR_EXECUTION"
+                or result.get("input_sha256") != row.get("input_sha256")
+                or not row.get("original_identity") or not row.get("result_sha256")):
+            state, reason, result = "UNAVAILABLE", "LOCAL_RESEARCH_BINDING_MISMATCH", None
+    elif state == "SUCCEEDED":
+        state, reason = "UNAVAILABLE", "LOCAL_ORIGINAL_OUTPUT_UNAVAILABLE"
+
+    def text(value):
+        return escape(str(value).replace("_", " "))
+
+    def number(value):
+        return "UNAVAILABLE" if value is None else escape(format(value, ".6g"))
+
+    def listing(items):
+        return '<ul>' + ''.join('<li>' + text(item) + '</li>' for item in items) + '</ul>'
+
+    def citations(values):
+        if not values:
+            return ""
+        references = result["source_references"]
+        entries = []
+        for citation in values:
+            reference = references.get(citation)
+            entries.append('<li><code>' + escape(citation) + '</code>'
+                + (' · ' + escape(str(reference["value"])) + ' · <code>'
+                   + escape(reference["input_pointer"]) + '</code>' if reference is not None
+                   else ' · UNAVAILABLE') + '</li>')
+        return '<details><summary>Exact retained source facts</summary><ul>' + ''.join(entries) + '</ul></details>'
+
+    style = ('<style>.nse-local{margin:12px 0;padding:12px;border:1px solid var(--line);border-radius:8px;'
+        'min-width:0;max-width:100%;font-size:12px;line-height:1.5;overflow-wrap:anywhere}'
+        '.nse-local *{box-sizing:border-box;min-width:0;max-width:100%;overflow-wrap:anywhere}'
+        '.nse-local h4,.nse-local h5{margin:6px 0;font-size:13px}.nse-local p{margin:6px 0}'
+        '.nse-local-head{display:flex;gap:8px;justify-content:space-between;flex-wrap:wrap}'
+        '.nse-local-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}'
+        '.nse-local-frame,.nse-local-horizon,.nse-local-scenario{padding:8px;border:1px solid var(--line);border-radius:5px}'
+        '.nse-local-frame>strong,.nse-local-horizon>strong{display:block}.nse-local details{font-size:12px;margin:8px 0}'
+        '.nse-local summary{cursor:pointer;min-height:32px;align-content:center;font-weight:700}'
+        '.nse-local dl{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:3px 8px}'
+        '.nse-local dd{margin:0}.nse-local ul{padding-left:17px;margin:6px 0}.nse-local code{white-space:normal;word-break:break-word}'
+        '.nse-local form{display:block!important;margin:8px 0}.nse-local button{white-space:normal;min-height:40px;width:100%}'
+        '.nse-local-warning{border-left:3px solid var(--amber);padding-left:8px}.nse-local small{display:block}'
+        '@media(max-width:600px){.nse-local-grid{grid-template-columns:minmax(0,1fr)}.nse-local{padding:9px}}</style>')
+    body = ('<section class="nse-local" aria-label="Independent local NSE analysis">'
+        '<div class="nse-local-head"><strong>Independent local analysis</strong><strong>'
+        + text(state) + '</strong></div><p>Native direction · <strong>' + text(native_direction)
+        + '</strong> · Retained completed evidence only · No model API</p>')
+    if reason:
+        body += '<p class="nse-local-warning">' + text(reason) + '</p>'
+    original_id = None if row is None else row.get("original_identity")
+    if original_id:
+        body += '<p>Immutable original · <a href="#local-original-' + escape(original_id, quote=True) + '"><code>' + escape(original_id) + '</code></a></p>'
+    if result is None:
+        body += ('<p>No current local recommendation is established. Any retained original remains historical evidence.</p>')
+    else:
+        thesis, overall = result["thesis"], result["thesis"]["overall"]
+        body += ('<h4>' + text(overall["disposition"]) + ' · ' + text(overall["direction"])
+                 + '</h4><p>' + text(overall["reason"]) + '</p>'
+                 '<p>Research conviction · ' + text(overall["conviction"])
+                 + ' · qualitative heuristic, not a probability.</p>'
+                 '<p>Method · <code>' + escape(result["method_version"]) + '</code><br>'
+                 'Evidence cutoff · <code>' + escape(result["information_cutoff"]) + '</code><br>'
+                 'Native observation · <code>' + escape(result["native_observed_at"]) + '</code></p>')
+        horizons = ''
+        for horizon in thesis["horizons"]:
+            sessions = "–".join(str(value) for value in horizon["trading_sessions"])
+            horizons += ('<div class="nse-local-horizon"><strong>' + text(horizon["identity"])
+                + ' · ' + text(horizon["direction"]) + '</strong><p>' + text(sessions)
+                + ' sessions · ' + escape(' / '.join(horizon["frames"])) + '</p><p>'
+                + text(horizon["reason"]) + '</p></div>')
+        body += '<div class="nse-local-grid">' + horizons + '</div>'
+        body += '<details><summary>LONG and SHORT evidence — examined independently</summary>'
+        for hypothesis in thesis["directional_hypotheses"]:
+            body += '<h5>' + text(hypothesis["direction"]) + '</h5>'
+            for name, label in (("supporting_domains", "Supporting"), ("opposing_domains", "Conflicting")):
+                body += '<strong>' + label + '</strong>'
+                body += listing([item["timeframe"] + ' · ' + item["domain"] for item in hypothesis[name]] or ["NONE ESTABLISHED"])
+                body += citations(sorted({citation for item in hypothesis[name] for citation in item["citations"]}))
+        body += '</details>'
+        frames = ''
+        for frame in thesis["frame_assessments"]:
+            metrics = ''.join('<dt>' + text(name) + '</dt><dd>' + number(metric["value"])
+                + (' · ' + text(metric["reason"]) if metric["reason"] else '') + '</dd>'
+                for name, metric in frame["metrics"].items())
+            missing = [item.get("metric", item.get("domain", "")) + ' · ' + item["reason"] for item in frame["missing"]]
+            frames += ('<div class="nse-local-frame"><strong>' + escape(frame["timeframe"]) + ' · '
+                + text(frame["direction"]) + '</strong><p>Completed boundary · <code>'
+                + escape(frame["completed_boundary"]) + '</code><br>Source timestamp · <code>'
+                + escape(frame["source_timestamp"]) + '</code></p><p>Candle · ' + text(frame["candle_direction"])
+                + ' · Volume · ' + text(frame["volume_participation"]) + '</p><dl>' + metrics + '</dl>'
+                + '<strong>Contradictory evidence</strong>' + listing(frame["contradictions"] or ["NONE ESTABLISHED"])
+                + '<strong>Missing facts</strong>' + listing(missing or ["NONE IN CONSUMED FACTS"]) + '</div>')
+        body += '<details><summary>Four-timeframe analysis and missing evidence</summary><div class="nse-local-grid">' + frames + '</div></details>'
+        body += '<details><summary>Conditional scenarios — immediate, pullback, breakout and alternative</summary>'
+        body += '<p>Both directions and pivot definitions remain separate. Research geometry is not an order, current quote, fill prediction or admission.</p>'
+        for horizon in thesis["horizons"]:
+            body += '<details><summary>' + text(horizon["identity"]) + ' scenarios</summary><div class="nse-local-grid">'
+            for scenario in thesis["scenarios"]:
+                if scenario["horizon"] != horizon["identity"]:
+                    continue
+                body += ('<article class="nse-local-scenario"><h5>' + text(scenario["kind"]) + ' · '
+                    + text(scenario["direction"]) + '</h5><p>' + escape(scenario["timeframe"])
+                    + ' · Pivot radius ' + str(scenario["structural_radius"]) + ' · ' + text(scenario["state"])
+                    + '</p><p>' + text(scenario["reason"]) + '</p>')
+                if scenario["state"] == "AVAILABLE":
+                    entry, target, risk = scenario["entry_zone"], scenario["target_zone"], scenario["risk_reward"]
+                    body += ('<dl><dt>Entry zone</dt><dd>' + number(entry["low"]) + ' – ' + number(entry["high"])
+                        + '</dd><dt>Invalidation</dt><dd>' + number(scenario["stop_reference"]["value"])
+                        + '</dd><dt>Observed target</dt><dd>' + number(target["low"]) + ' – ' + number(target["high"])
+                        + '</dd><dt>Conservative reward/risk</dt><dd>' + number(risk["conservative_ratio"])
+                        + '</dd></dl>' + listing(scenario["activation"]) + citations(scenario["source_citations"]))
+                else:
+                    body += '<p>Entry, invalidation, target and reward/risk: UNAVAILABLE.</p>'
+                body += '</article>'
+            body += '</div></details>'
+        body += '</details>'
+        body += '<details><summary>Research limitations</summary>' + listing(thesis["limitations"]) + '</details>'
+    if row is not None and original_id:
+        body += '<details id="local-original-' + escape(original_id, quote=True) + '"><summary>Immutable original identity and timestamps</summary>'
+        for key in ("original_identity", "operation_identity", "input_sha256", "result_sha256", "captured_at", "completed_at"):
+            body += '<p>' + text(key) + ' · <code>' + escape(str(row.get(key))) + '</code></p>'
+        body += '</details>'
+    body += ('<p>Q3 / Q5 / Q10 · <strong>UNKNOWN</strong> · No independent visual confirmation. '
+        'Native, KR-370, K4/V2, WO-07F and trading authority are unchanged.</p>')
+    fields = {"action": "REFRESH_LOCAL_ANALYSIS", "run_identity": run_identity,
+              "publication_sha256": workspace["manifest"], "requirement_id": requirement_sha256}
+    body += ('<form method="post" action="/swing/v1/native-review-refresh">'
+        + ''.join('<input type="hidden" name="' + key + '" value="' + escape(value, quote=True) + '">' for key, value in fields.items())
+        + '<button type="submit">Refresh Local Analysis — retained evidence only</button>'
+        '<small>No new market acquisition, model call or Native analysis.</small></form></section>')
+    return style + body
+
+
 def _swing_review_readiness(row):  # type: ignore[no-untyped-def]
     if row is None:
         return (
@@ -1050,6 +1289,13 @@ def _native_opportunity_card(
         '</div>' + sponsor_summary
         + _swing_continuity_warning(continuity)
         + intake_summary
+        + (_nse_technical_panel(native_intake, item.canonical_instrument, item.run_identity,
+             item.result_sha256, item.direction.value,
+             None if intake_row is None else intake_row.get("requirement_sha256"), compact=True)
+           + _nse_local_panel(native_intake, item.canonical_instrument, item.run_identity,
+             item.result_sha256, item.direction.value,
+             None if intake_row is None else intake_row.get("requirement_sha256"))
+           if item.product_path is NativeProductPath.NSE else '')
         + ('<p class="v2-downstream">DOWNSTREAM — MCX STEP-31 NOT COMMISSIONED</p>'
            if item.product_path is NativeProductPath.MCX else '')
         + '<div class="swing-review-readiness"><div class="swing-readiness-states">'
@@ -5033,6 +5279,11 @@ def _receipt_native_review(projection, promotions_v2=(), bulk_import=None, *, an
                 body += '<p class="wo07-card-warning">REFERENCE EVIDENCE MISSING<br>Complete MCX evidence acceptance is unavailable.</p>'
         if row["error"]:
             body += _intake_error(row["error"])
+        if market == "NSE" and row.get("eligible", True):
+            body += _nse_technical_panel(projection, instrument, row.get("run_identity"),
+                row.get("assessment_sha256"), row.get("direction"), row.get("requirement_sha256"))
+            body += _nse_local_panel(projection, instrument, row.get("run_identity"),
+                row.get("assessment_sha256"), row.get("direction"), row.get("requirement_sha256"))
         if not promotions_v2:
             detail_lines = ["Run · " + str(row.get("run_identity")),
                 "Assessment SHA-256 · " + str(row.get("assessment_sha256")),

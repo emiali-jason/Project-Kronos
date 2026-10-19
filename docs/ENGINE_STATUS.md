@@ -140,3 +140,31 @@ Symbol mappings present for planned models are scaffolding, not proof that the c
 3. KR-380 repository history describes v1.0 Frozen, while its source header says v0.1.0 FOUNDATION.
 4. KR-705 source comments still describe a developer validation panel, while current architecture assigns it trader-facing display and translation.
 5. Product-level source constants remain Version `0.5.0`, Build `0004`; this Phase 1 task does not alter release metadata.
+
+
+## Swing local Python research — Release A candidate, 2026-10-19
+
+**Status:** Isolated implementation and qualification complete; exact-source
+EA-Swing/PCP review and production release/acceptance pending.
+
+The unnumbered local research methodology `KRONOS-NSE-LOCAL-RESEARCH-1.0`
+consumes existing completed NSE Native/MTF facts and produces deterministic,
+source-bound independent research conclusions, three horizons and conditional
+scenario geometry. `SwingLocalAnalysisWorkflow` integrates that unchanged method
+with existing application/currentness, WO-12 retention and Browser owners.
+No new KR engine number, Pine version, production lineage or Native/KR-370/K4/V2
+status is assigned or changed by this entry.
+
+The combined LOCAL-01/02 source manifest is
+`9bf1118d0c97f4c127da2999bce5aa3ec7e1c6cc55f7993c221e85ff70c08327`.
+Retained qualification: 1,075 distinct PASS, zero final failures/errors/skips;
+all final process exits 0. This qualifies isolated engineering, not live market
+usefulness or predictive accuracy. Both Pine sources remain unchanged. Their
+prior compile/symbol evidence is not automatically qualification of this release.
+
+See [methodology](engineering/SWING-NSE-LOCAL-RESEARCH-METHOD-V1.md) and
+[integration](engineering/SWING-NSE-LOCAL-ANALYSIS-INTEGRATION.md). Local research
+owns no independent visual confirmation, entry activation, position or broker
+operation. Q3/Q5/Q10 remain UNKNOWN where visual evidence is unavailable.
+No WO-08 model inference or Provider acquisition is introduced; the retired
+API-based SW-FAST-03 product remains uninstalled. LOCAL-03/04 remain pending.

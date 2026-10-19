@@ -168,3 +168,33 @@ Native owns the commissioned PULLBACK-only selection, exact completed 15M cycle,
 Status: Approved bounded engineering, direct Sponsor / EA 2026-09-11.
 
 [ADR-0042](adr/ADR-0042-WO10-ADVISORY-RISK-AND-FINAL-FUTURES-COMPOSITION.md) supersedes prospective Risk permission with advisory facts/reference/quantity warnings. No Risk magnitude or missing monetary fact independently vetoes Sponsor selection. Native PULLBACK V1, five-tab navigation, exact trade hard gates and historical contracts remain preserved. No WO11 lifecycle, broker margin, production operation or runtime load is commissioned.
+
+
+## Swing local research integration — Release A candidate, 2026-10-19
+
+**Status:** Sponsor-authorized isolated implementation; exact-source owner review
+and production release remain pending. This records implementation boundaries,
+not a new architectural approval or a change to the engine matrix above.
+
+The unnumbered `KRONOS-NSE-LOCAL-RESEARCH-1.0` methodology owns its deterministic
+research assessment of already-governed NSE facts, including independent
+LONG/SHORT hypotheses and conditional geometry. Its conclusion may disagree
+with Native for Sponsor research; it does not change Native eligibility or
+KR-370/K4/V2 decisions and is not an accepted Chart Analyst Answer. Existing
+Native/MTF, Instrument and Market owners retain factual/source authority.
+
+`SwingLocalAnalysisWorkflow` consumes exact current Native requirements and
+same-run MTF evidence under existing application/publication ownership. It
+retains immutable originals and separate current/stale dispositions through
+existing commissioned Swing WO-12 research ownership. Browser owns guarded
+manual-action admission and prepared display only. Ordinary GETs do not create
+assessments, write history or acquire evidence. Existing maintenance accounting,
+analysis drain, currentness and restoration boundaries remain in force.
+
+No Provider, model transport, database, scheduler, competing research owner or KR
+number is added. Source/currentness failure withholds current display without
+rewriting history. No local output grants visual confirmation, admission,
+position, fill, execution or broker authority. NSE/MCX WO-07F, Intraday, Theta,
+unrelated Chart Analyst integrations and all historical owners remain intact.
+See the [integration contract](../engineering/SWING-NSE-LOCAL-ANALYSIS-INTEGRATION.md)
+and [methodology](../engineering/SWING-NSE-LOCAL-RESEARCH-METHOD-V1.md).

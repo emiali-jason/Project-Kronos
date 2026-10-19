@@ -872,6 +872,7 @@ class NativeReviewIntakeWorkflow:
         self._v2_promotions: dict[tuple[str, str], V2PromotionRecord] = {}
         self._research_capture = None
         self.research_capture_failure = None
+        self._local_analysis = None
         self.errors = {}
         self._prospective_cache = None
         self._page_prepare_lock = Lock()
@@ -911,6 +912,17 @@ class NativeReviewIntakeWorkflow:
         require(self._page_revision_builder is None,
                 "SWING_PAGE_PREPARATION_INVALID")
         self._page_revision_builder = builder
+
+    def register_local_analysis(self, owner):
+        """Composition-only attachment; research never acquires Review authority."""
+        require(self._local_analysis is None and owner.intake is self
+                and owner.application is self.application,
+                "NSE_LOCAL_OWNER_BINDING_INVALID")
+        self._local_analysis = owner
+
+    def clear_local_analysis(self, owner):
+        if self._local_analysis is owner:
+            self._local_analysis = None
 
     def register_research_capture(self, capture):
         """Accepted V2 events only; restoration and page reads do not capture."""
@@ -1088,6 +1100,10 @@ class NativeReviewIntakeWorkflow:
         try:
             with self._page_prepare_lock:
                 with self._validated_response() as (prepared, reads):
+                    # Explicit preparation only. Ordinary GETs reuse the frozen
+                    # capsule and may neither evaluate nor scan research history.
+                    if self._local_analysis is not None:
+                        self._local_analysis.prepare(_response=prepared)
                     projection = self.snapshot(_response=prepared)
                     context, authority = prepared.context, prepared.authority
                     has_control = self.has_control(_response=prepared)
@@ -1228,14 +1244,25 @@ class NativeReviewIntakeWorkflow:
         )
         try:
             self.recheck_response(prepared)
+            self._recheck_local_projection(state.projection, prepared)
             yield prepared
             state.current_fence.check()
             self._check_compact_components(state)
             self.recheck_response(prepared)
+            self._recheck_local_projection(state.projection, prepared)
         finally:
             prepared.active = False
             prepared.context = prepared.authority = None
             prepared.values.clear()
+
+    def _recheck_local_projection(self, projection, prepared):
+        # Admission of a successor can change currentness before publication
+        # advances. Compare the cached local projection under its own control
+        # fence; never reconstruct the engine or research history from a GET.
+        if self._local_analysis is not None:
+            require(projection.get("local_analysis") ==
+                    self._local_analysis.projection(_response=prepared),
+                    "REVIEW_BINDING_STALE")
 
     @staticmethod
     def _check_compact_components(state):
@@ -2003,6 +2030,15 @@ class NativeReviewIntakeWorkflow:
         except (OSError, ValueError) as error:
             return dict(rows=(), packages=(), error=self._reason(error, "REVIEW_BINDING_UNAVAILABLE"),
                         workspace=None)
+        # Port the unchanged SW-FAST-02 arithmetic presentation alongside the
+        # local owner. Neither findings nor research grant Review/V2 authority.
+        from kronos.swing.v1.nse_technical_summary import build_nse_technical_summary
+        technical_summaries = tuple(build_nse_technical_summary(
+            requirement, _response.authority.native, facts, manifest)
+            for requirement in review.requirements
+            if requirement.thesis.product_path is NativeProductPath.NSE)
+        local_analysis = (None if self._local_analysis is None else
+                          self._local_analysis.projection(_response=_response))
         rows, packages = [], []
         for market in ("NSE", "MCX"):
             requirements = tuple(item for item in review.requirements if item.thesis.product_path is
@@ -2088,6 +2124,7 @@ class NativeReviewIntakeWorkflow:
             row["continuity"] = next((item for item in continuity_rows
                 if item.canonical_instrument == row["instrument"]), None)
         result = dict(rows=tuple(rows), packages=tuple(packages), error=None,
+            technical_summaries=technical_summaries, local_analysis=local_analysis,
             workspace=dict(run_identity=facts.run_identity, manifest=manifest,
                 analysis_time=review.analysis_time, state="CURRENT", population=len(rows),
                 eligible=len(review.requirements), excluded=len(review.excluded),

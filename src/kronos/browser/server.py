@@ -852,6 +852,14 @@ class KronosBrowserServer(ThreadingHTTPServer):
                     lambda: (None if self.connection_governance is None else
                              self.connection_governance.process.loaded_revision)))
         self.swing_research_control = swing_research_control
+        self.local_analysis = None
+        if self.native_intake is not None:
+            from kronos.application.swing_local_analysis import SwingLocalAnalysisWorkflow
+            self.local_analysis = SwingLocalAnalysisWorkflow(
+                self.application, self.native_intake, swing_research_control.research,
+                capture=swing_research_control.capture)
+            self.native_intake.register_local_analysis(self.local_analysis)
+            self.application.register_local_analysis(self.local_analysis)
         capture = swing_research_control.capture
         self._research_owner_bindings = []
         def bind_research_owner(owner, callback):
@@ -1160,6 +1168,11 @@ class KronosBrowserServer(ThreadingHTTPServer):
         # Governed maintenance quiesces these producers before its final drain.
         if not self._monitoring_quiesced:
             self.application.close()
+        local_analysis = getattr(self, "local_analysis", None)
+        if local_analysis is not None:
+            local_analysis.close()
+            self.application.clear_local_analysis(local_analysis)
+            self.native_intake.clear_local_analysis(local_analysis)
         self.refresh_reminders.close()
         self.ux10_notifications.close()
         if not self._monitoring_quiesced:
@@ -6062,7 +6075,60 @@ class _BrowserHandler(BaseHTTPRequestHandler):
 
     def _refresh_native_review(self) -> None:
         if urlsplit(self.path).query:
+            self._swing_post_failed = True
             self._text(HTTPStatus.BAD_REQUEST, "Review refresh rejected.")
+            return
+        # The legacy empty-body Review refresh remains unchanged. A nonempty
+        # body must be the exact retained-only local action, never an acquiring
+        # Analysis/WO-12 request or an implicit fall-through to visual refresh.
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+            if length < 0 or length > 1024:
+                raise ValueError("NSE_LOCAL_REQUEST_INVALID")
+            if length:
+                self._swing_post_failed = True  # Local-only preparation below.
+                if self.headers.get("Content-Type", "").split(";", 1)[0] != "application/x-www-form-urlencoded":
+                    raise ValueError("NSE_LOCAL_REQUEST_INVALID")
+                payload = self.rfile.read(length)
+                if len(payload) != length:
+                    raise ValueError("NSE_LOCAL_REQUEST_INVALID")
+                fields = parse_qs(payload.decode("ascii"),
+                                  strict_parsing=True, keep_blank_values=True)
+                if (set(fields) != {"action", "run_identity", "publication_sha256", "requirement_id"}
+                        or any(len(values) != 1 for values in fields.values())
+                        or fields["action"][0] != "REFRESH_LOCAL_ANALYSIS"
+                        or re.fullmatch(r"SWING-RUN-[A-F0-9]{32}", fields["run_identity"][0]) is None
+                        or any(re.fullmatch(r"[a-f0-9]{64}", fields[name][0]) is None
+                               for name in ("publication_sha256", "requirement_id"))):
+                    raise ValueError("NSE_LOCAL_REQUEST_INVALID")
+                owner = getattr(self.server, "local_analysis", None)
+                if owner is None or self.server.native_intake is None:
+                    self._text(HTTPStatus.CONFLICT, "Local analysis owner is unavailable.")
+                    return
+                completed = False
+                try:
+                    owner.refresh(run_identity=fields["run_identity"][0],
+                        publication_sha256=fields["publication_sha256"][0],
+                        requirement_id=fields["requirement_id"][0], trigger="MANUAL")
+                    completed = True
+                except (OSError, ValueError, TypeError, RuntimeError):
+                    pass  # Retain the owner's exact failure for presentation.
+                # One explicit preparation even when the local operation fails.
+                # It does not retry analysis, clear a failure or repair evidence;
+                # valid Native/Review stays readable with local UNAVAILABLE.
+                try:
+                    prepared = self.server.native_intake.prepare_page_state()
+                except (OSError, ValueError, TypeError, RuntimeError):
+                    prepared = False
+                if not completed or not prepared:
+                    self._text(HTTPStatus.CONFLICT,
+                        "Local analysis unavailable or source changed; retained originals preserved.")
+                    return
+                self._redirect("/swing/v1-review")
+                return
+        except (UnicodeError, ValueError):
+            self._swing_post_failed = True
+            self._text(HTTPStatus.BAD_REQUEST, "Local analysis request rejected.")
             return
         native_run = self.server.application.native_discovery_run()
         facts = self.server.application.mtf_fact_snapshot()
