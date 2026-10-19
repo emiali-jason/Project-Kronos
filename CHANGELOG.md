@@ -246,3 +246,21 @@ Frozen
   installation and Sponsor inspection remain separate gates. No deployment is
   claimed. LOCAL-03 daily recording/Journey and LOCAL-04 outcomes remain pending;
   the retired API-based SW-FAST-03 product remains excluded.
+
+
+## Unreleased — Swing Release A presentation follow-up, 2026-10-19
+
+- Keep Opportunities available with validated retained Native information only
+  during a specifically proven successor-analysis admission; clearly withhold the
+  previous Local opinion and Review/V2 readiness/actions. Invalid, ambiguous or
+  changing source authority continues to fail closed. Review remains guarded.
+- Add a retained analysis execution summary and expandable latest-attempt / last-
+  successful-run disclosure. Use actual source-owned timestamps, elapsed duration
+  and bound Native assessment count; unavailable facts remain Unavailable.
+- Preserve LOCAL-01 mathematics, immutable originals, Native/KR-370/K4/V2,
+  WO-07F, WO-12, Intraday, Theta and unrelated Chart Analyst behavior.
+- Retained exact-source qualification: 169 distinct PASS, zero failures/errors/
+  skips, two final exits 0; 16 isolated desktop/narrow render checks PASS.
+- Candidate only: owner review, release-policy closure, publication, installation
+  and genuine deployed acceptance remain separate gates. No model dependency,
+  acquisition, analytical authority or trading authority is introduced.

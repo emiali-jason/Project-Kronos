@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
-from datetime import date
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from html import escape
 from urllib.parse import quote, urlencode
@@ -551,7 +551,8 @@ def render_opportunities(
             raise ValueError("SWING_CONTINUITY_PRESENTATION_BINDING_INVALID")
         committed_continuity.contribution.validate()
         continuity_rows = {r.canonical_instrument: r for r in committed_continuity.contribution.rows}
-    body = _analysis_run_strip(snapshot)
+    body = _swing_analysis_execution_summary(snapshot, discovery, publication_status)
+    body += _analysis_run_strip(snapshot)
     if publication_status:
         control = publication_status.get("control")
         attempt = None if control is None else control["latest_attempt"]
@@ -7409,6 +7410,93 @@ def _analysis_run_strip(snapshot: BrowserWorkspaceSnapshot) -> str:
         f'{escape(completed.strftime("%d %b %Y %H:%M %Z").upper())}'
         '</strong></div></div>'
     )
+
+
+def _analysis_status_timestamp(value):
+    """Intraday-style IST formatting; missing/naive times remain unavailable."""
+    if type(value) is str:
+        try:
+            value = datetime.fromisoformat(value)
+        except ValueError:
+            return None
+    return value if (isinstance(value, datetime) and value.tzinfo is not None
+                     and value.utcoffset() is not None) else None
+
+
+def _analysis_status_time(value):
+    stamp = _analysis_status_timestamp(value)
+    return ('Unavailable' if stamp is None else
+            stamp.astimezone(_KOLKATA).strftime('%d %b %Y %H:%M IST').upper())
+
+
+def _analysis_status_duration(started, completed):
+    start, end = _analysis_status_timestamp(started), _analysis_status_timestamp(completed)
+    if start is None or end is None or end < start:
+        return 'Unavailable'
+    # Match Intraday's nearest-second display using exact retained timestamps.
+    microseconds = (end - start) // timedelta(microseconds=1)
+    seconds = (microseconds + 500000) // 1000000
+    minutes, seconds = divmod(seconds, 60)
+    return f'{minutes}m {seconds}s' if minutes else f'{seconds}s'
+
+
+def _swing_analysis_execution_summary(snapshot, discovery, publication_status):
+    """Format already supplied owning facts; never scan history or acquire data."""
+    status = publication_status if type(publication_status) is dict else {}
+    control = status.get('control')
+    control = control if type(control) is dict else {}
+    attempt = control.get('latest_attempt')
+    attempt = attempt if type(attempt) is dict else {}
+    run = attempt.get('run_id')
+    run = run if is_swing_analysis_run_id(run) else None
+    state = attempt.get('state') if run is not None else None
+    label = {'SUCCEEDED':'Success', 'FAILED':'Failed', 'RUNNING':'Running',
+             'INTERRUPTED':'Interrupted'}.get(state, 'Unavailable')
+    terminal = state in {'SUCCEEDED', 'FAILED', 'INTERRUPTED'}
+    completed = attempt.get('completed_at') if terminal else None
+    started = attempt.get('accepted_at') if run is not None else None
+    native_bound = (type(discovery) is NativeDiscoveryRun
+                    and snapshot.swing_analysis_run_identity == discovery.run_identity)
+    latest_bound = native_bound and run == discovery.run_identity and state == 'SUCCEEDED'
+    boundary = snapshot.observation_boundary if latest_bound else None
+    count = len(discovery.assessments) if latest_bound else None
+
+    def population(value):
+        return str(value) + ' analysed' if value is not None else 'Unavailable'
+
+    def field(name, value):
+        return '<p><span>' + escape(name) + ' · </span><strong>' + escape(value) + '</strong></p>'
+
+    style = ('<style>.swing-analysis-execution{border:1px solid var(--line);border-radius:9px;'
+        'background:#071827;padding:12px 13px;margin-bottom:12px;min-width:0;overflow-wrap:anywhere}'
+        '.swing-analysis-execution p{margin:5px 0}.swing-analysis-execution span{color:var(--muted)}'
+        '.swing-analysis-execution-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 18px}'
+        '.swing-analysis-execution details{margin-top:8px}.swing-analysis-execution summary{cursor:pointer;min-height:32px;align-content:center}'
+        '.swing-analysis-execution code{white-space:normal;overflow-wrap:anywhere}.swing-analysis-execution small{display:block;color:var(--muted);margin-top:6px}'
+        '@media(max-width:600px){.swing-analysis-execution-grid{grid-template-columns:minmax(0,1fr)}'
+        '.swing-analysis-execution{padding:10px}}</style>')
+    body = (style + '<aside class="swing-analysis-execution" aria-label="Latest retained Swing analysis attempt">'
+        '<strong>Latest retained analysis attempt</strong><div class="swing-analysis-execution-grid">'
+        + field('Boundary', _analysis_status_time(boundary))
+        + field('Completed', _analysis_status_time(completed)) + '</div><p class="swing-analysis-attempt-result">'
+        + escape(label) + ' · ' + _analysis_status_duration(started, completed)
+        + ' · ' + population(count) + '</p>'
+        '<small>Retained attempt timing; opportunity eligibility is checked separately.</small>'
+        '<details><summary>Analysis history · retained attempt and successful run</summary>'
+        '<p>Latest attempt · <code>' + escape(run or 'Unavailable') + '</code></p>'
+        + field('Started', _analysis_status_time(started))
+        + '<small>Duration uses retained admission and completion timestamps. '
+        'An admission time is not substituted for an unavailable analysis boundary.</small>'
+        '<hr><strong>Latest successful analysis</strong><p>Run · <code>'
+        + escape(discovery.run_identity if native_bound else 'Unavailable') + '</code></p>'
+        + field('Boundary', _analysis_status_time(snapshot.observation_boundary if native_bound else None))
+        + field('Completed', _analysis_status_time(snapshot.completed_at if native_bound else None))
+        + '<p>' + (_analysis_status_duration(snapshot.run_created_at, snapshot.completed_at) if native_bound else 'Unavailable')
+        + ' · ' + population(len(discovery.assessments) if native_bound else None) + '</p>'
+        '<small>Analysed count is the retained Native assessment population, including unavailable outcomes. '
+        'Only these two retained records are shown; older attempt history is not reconstructed.</small>'
+        '</details></aside>')
+    return body
 
 
 def _analysis_boundary_time(snapshot: BrowserWorkspaceSnapshot) -> str:

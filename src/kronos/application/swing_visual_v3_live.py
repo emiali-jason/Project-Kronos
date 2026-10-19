@@ -43,6 +43,7 @@ from kronos.swing.v1.review_evidence_binding import (
 from kronos.swing.v1.review_evidence_store import (
     ReviewEvidenceStore, PreparedReadFence, capture_prepared_reads, record_prepared_read,
 )
+from kronos.swing.run_identity import is_swing_analysis_run_id
 from kronos.swing.v1.pdf_visual_review_v3_live import (
     VisualV3AnswerImportRecord,
     VisualV3LiveReviewPack,
@@ -856,6 +857,14 @@ class _NativePageAuthority:
     current_manifest: bytes
 
 
+class LocalAnalysisAdmissionPending(ReviewEvidenceError):
+    """One proven Local-only admission mismatch; never Review/action authority."""
+
+    def __init__(self, owner, projection, control):
+        super().__init__("REVIEW_BINDING_STALE")
+        self.owner, self.projection, self.control = owner, projection, control
+
+
 class NativeReviewIntakeWorkflow:
     """Prospective Browser intake. Historical review transport is not a fallback.
 
@@ -1206,7 +1215,16 @@ class NativeReviewIntakeWorkflow:
                 yield prepared
 
     @contextmanager
-    def _prepared_page_response(self):
+    def admission_unavailable_response(self, admission):
+        """Fence a Native-only warning response, without reconstructing Review."""
+        require(type(admission) is LocalAnalysisAdmissionPending
+                and admission.owner is self, "REVIEW_BINDING_STALE")
+        with self._page_reader():
+            with self._prepared_page_response(admission=admission) as prepared:
+                yield prepared
+
+    @contextmanager
+    def _prepared_page_response(self, *, admission=None):
         with diagnostic_lock(self._page_state_lock, "INTAKE_STATE_LOCK"):
             slot = self._page_publication
             epoch = self._page_epoch
@@ -1214,7 +1232,9 @@ class NativeReviewIntakeWorkflow:
         require(slot.page is not None, slot.failure or "SWING_PAGE_PREPARATION_MISSING")
         require(not writers and slot.ticket is not None and slot.ticket.epoch == epoch
                 and not slot.reconciliation_failure, "REVIEW_BINDING_STALE")
-        with self._prepared_state_response(slot.page) as prepared:
+        if admission is not None:
+            require(slot.page.projection is admission.projection, "REVIEW_BINDING_STALE")
+        with self._prepared_state_response(slot.page, admission=admission, display=True) as prepared:
             yield prepared
         with diagnostic_lock(self._page_state_lock, "INTAKE_STATE_LOCK"):
             current = (self._page_publication is slot and self._page_epoch == epoch
@@ -1222,7 +1242,7 @@ class NativeReviewIntakeWorkflow:
         require(current, "REVIEW_BINDING_STALE")
 
     @contextmanager
-    def _prepared_state_response(self, state):
+    def _prepared_state_response(self, state, *, admission=None, display=False):
         require(
             state.identity == self._compact_page_identity(
                 state.context,
@@ -1244,25 +1264,77 @@ class NativeReviewIntakeWorkflow:
         )
         try:
             self.recheck_response(prepared)
-            self._recheck_local_projection(state.projection, prepared)
+            self._recheck_local_projection(state.projection, prepared, admission=admission, display=display)
             yield prepared
             state.current_fence.check()
             self._check_compact_components(state)
             self.recheck_response(prepared)
-            self._recheck_local_projection(state.projection, prepared)
+            self._recheck_local_projection(state.projection, prepared, admission=admission, display=display)
         finally:
             prepared.active = False
             prepared.context = prepared.authority = None
             prepared.values.clear()
 
-    def _recheck_local_projection(self, projection, prepared):
+    def _recheck_local_projection(self, projection, prepared, *, admission=None, display=False):
         # Admission of a successor can change currentness before publication
         # advances. Compare the cached local projection under its own control
         # fence; never reconstruct the engine or research history from a GET.
         if self._local_analysis is not None:
-            require(projection.get("local_analysis") ==
-                    self._local_analysis.projection(_response=prepared),
-                    "REVIEW_BINDING_STALE")
+            retained = projection.get("local_analysis")
+            current = self._local_analysis.projection(_response=prepared)
+            equal = retained == current
+            # Explicit preparation can freeze unavailable rows during admission.
+            # GETs must still withhold Review/actions and show the admission notice.
+            if equal and not (display and type(current) is dict and current.get("state") == "STALE"):
+                require(admission is None, "REVIEW_BINDING_STALE")
+                return
+            control = self._local_admission_control(retained, current, prepared)
+            if equal and control is None and admission is None:
+                return
+            if admission is None and control is not None:
+                raise LocalAnalysisAdmissionPending(self, projection, control)
+            require(admission is not None and control is not None
+                    and control == admission.control, "REVIEW_BINDING_STALE")
+        else:
+            require(admission is None, "REVIEW_BINDING_STALE")
+
+    def _local_admission_control(self, retained, current, prepared):
+        """Recognize only a different RUNNING successor of this committed source."""
+        if (type(retained) is not dict or type(current) is not dict
+                or retained.get("state") not in {"READY", "STALE"}
+                or (retained.get("state") == "STALE" and
+                    (retained.get("reason") != "NSE_LOCAL_SOURCE_STALE" or retained.get("rows") != ()))
+                or current.get("state") != "STALE"
+                or current.get("reason") != "NSE_LOCAL_SOURCE_STALE"
+                or current.get("rows") != ()
+                or any(current.get(key) != retained.get(key) for key in
+                       ("run_identity", "publication_sha256", "method_version"))
+                or retained.get("run_identity") != prepared.authority.native.run_identity
+                or retained.get("publication_sha256") != prepared.context[0]):
+            return None
+        native, control = self.application.current_run_control_authority()
+        if (native is not prepared.authority.native or type(control) is not dict
+                or set(control) != {"schema_version", "admission_generation",
+                                    "latest_attempt", "current_manifest"}
+                or control["schema_version"] != "KRONOS-SWING-RUN-PUBLICATION-V1"
+                or type(control["admission_generation"]) is not int
+                or control["admission_generation"] <= 0):
+            return None
+        attempt, manifest = control["latest_attempt"], control["current_manifest"]
+        if (type(attempt) is not dict or type(manifest) is not dict
+                or set(attempt) != {"run_id", "state", "predecessor_manifest",
+                                    "accepted_at", "completed_at", "failure_reason"}
+                or attempt["state"] != "RUNNING"
+                or not is_swing_analysis_run_id(attempt["run_id"])
+                or attempt["run_id"] == native.run_identity
+                or attempt["predecessor_manifest"] != manifest
+                or canonical(manifest) != prepared.authority.current_manifest
+                or type(attempt["accepted_at"]) is not str
+                or attempt["completed_at"] is not None
+                or attempt["failure_reason"] is not None):
+            return None
+        timestamp(datetime.fromisoformat(attempt["accepted_at"]))
+        return canonical(control)
 
     @staticmethod
     def _check_compact_components(state):

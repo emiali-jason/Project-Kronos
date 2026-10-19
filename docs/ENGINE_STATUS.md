@@ -168,3 +168,23 @@ owns no independent visual confirmation, entry activation, position or broker
 operation. Q3/Q5/Q10 remain UNKNOWN where visual evidence is unavailable.
 No WO-08 model inference or Provider acquisition is introduced; the retired
 API-based SW-FAST-03 product remains uninstalled. LOCAL-03/04 remain pending.
+
+
+## Swing Release A presentation follow-up — 2026-10-19
+
+Status: Isolated engineering qualified; combined exact-source owner reviews and
+release gates remain pending. This entry does not certify deployment.
+
+The five-path F01/status candidate binds manifest
+`26a14270b69c788055b3de677d503ec9a8d503562de0eb19d4ae8a512c979f70`.
+It changes retained presentation/currentness handling, not an analytical engine.
+Only proven successor admission enables Native-only Opportunities with explicit
+Local unavailability; all invalid or changing authority still fails closed. The
+new execution summary uses existing run/publication provenance and Native
+assessment counts, separates the latest attempt from the last success, and
+never invents missing values. No engine/Pine version or ownership change.
+Retained qualification: 169 distinct PASS, final exits 0, no failures/errors/
+skips; 16 synthetic responsive checks PASS. LOCAL-01/02, immutable WO-12,
+Native/KR-370/K4/V2, WO-07F, Intraday and Theta remain protected.
+Existing unavailable/stale evidence and operational limitations remain explicit.
+No paid-model requirement or new Provider/analysis operation is added.

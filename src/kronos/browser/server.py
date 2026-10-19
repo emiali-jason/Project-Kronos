@@ -76,7 +76,9 @@ from kronos.application.swing_native_review import (
 from kronos.application.swing_visual_v3 import CompletedVisualV3Review, SwingVisualV3ReviewCycle
 from kronos.swing.v1.analytical_promotion import Kr370AnalyticalPromotionRecord
 from kronos.swing.v1.analytical_promotion_v2 import V2PromotionRecord
-from kronos.application.swing_visual_v3_live import SwingVisualV3LiveWorkflow, NativeReviewIntakeWorkflow
+from kronos.application.swing_visual_v3_live import (
+    SwingVisualV3LiveWorkflow, NativeReviewIntakeWorkflow, LocalAnalysisAdmissionPending,
+)
 from kronos.application.swing_bulk_import import (
     DEFAULT_BULK_IMPORT_ROOT,
     SwingBulkImportOwner,
@@ -2665,6 +2667,10 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                     with diagnostic_stage("CURRENTNESS"):
                         if (not current() or promotions_v2 !=
                                 self.server.current_v2_promotions(discovery, prepared=prepared)):
+                            if intake is not None:
+                                intake.recheck_response(prepared)
+                                intake._recheck_local_projection(
+                                    intake.snapshot(_response=prepared), prepared)
                             raise ValueError("REVIEW_BINDING_STALE")
                 with diagnostic_stage("RESPONSE_WRITE"):
                     self._html(body)
@@ -6616,6 +6622,33 @@ class _BrowserHandler(BaseHTTPRequestHandler):
     def _swing_page_unavailable(self, error):
         reason = NativeReviewIntakeWorkflow._reason(error, "REVIEW_BINDING_UNAVAILABLE")
         intake = self.server.native_intake
+        if (intake is not None and type(error) is LocalAnalysisAdmissionPending
+                and urlsplit(self.path).path == "/swing/opportunities"):
+            try:
+                with intake.admission_unavailable_response(error) as prepared:
+                    snapshot, native, continuity, publication = (
+                        self.server.application.opportunities_bundle_projection())
+                    publication = deepcopy(publication)
+                    if (publication.get("reconciliation_unavailable")
+                            or canonical(publication.get("control")) != error.control):
+                        raise ValueError("REVIEW_BINDING_STALE")
+                    unavailable = intake.unavailable(error)
+                    unavailable["error"] = (
+                        "New analysis in progress. Previous Local opinion is "
+                        "unavailable until current evidence is established.")
+                    body = render_opportunities(snapshot, native,
+                        committed_continuity=continuity, publication_status=publication,
+                        native_intake=unavailable)
+                    _, current, current_continuity, status = (
+                        self.server.application.opportunities_bundle_projection())
+                    if (current is not native or current_continuity is not continuity
+                            or status != publication):
+                        raise ValueError("REVIEW_BINDING_STALE")
+                self._html(body)
+                return
+            except (OSError, ValueError):
+                self._text(HTTPStatus.CONFLICT, "Swing page unavailable. Reason: REVIEW_BINDING_STALE")
+                return
         if intake is not None and reason == "SWING_PUBLICATION_BUNDLE_INVALID":
             # Preserve the existing unavailable-workspace presentation. No
             # selected evidence, historical projection or intake control is used.
