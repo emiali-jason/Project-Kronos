@@ -173,6 +173,17 @@ class SwingLocalAnalysisWorkflow:
             dispositions[key] = item
         return originals, dispositions
 
+    def retained_research(self):
+        """Exact already-validated originals for WO12; no engine/Provider call."""
+        with self._lock:
+            _require(self._history_failure is None, "NSE_LOCAL_HISTORY_UNAVAILABLE")
+            values = tuple(sorted(self._originals.values(), key=lambda r:r.identity))
+            for item in values:
+                proof = self._validated_originals.get(item.identity)
+                _require(proof is not None and self._fence_record(item) == proof[0],
+                         "NSE_LOCAL_HISTORY_UNAVAILABLE")
+            return values
+
     def restore(self):
         """Validate only this record namespace; never repair or run acquisition."""
         with self._lock:

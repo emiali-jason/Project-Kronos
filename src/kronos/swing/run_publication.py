@@ -219,6 +219,88 @@ class SwingRunPublication:
         manifest = json.loads(raw)
         return self._validate(manifest, reference)
 
+    def retained_daily_sources(self, reporting_date):
+        """Read committed ancestry, retaining large facts by exact reference.
+
+        This is an archival source cut, never current Review eligibility or a
+        replay of analysis. Only the requested completion day loads Native;
+        large MTF artifacts are streamed, not decoded into another live run.
+        No recovery, pointer writes, discovery or independent latest scan.
+        """
+        from datetime import date
+        from zoneinfo import ZoneInfo
+        _require(type(reporting_date) is date)
+        before = self._control()
+        reference = before['current_manifest']
+        seen, result, previous = set(), [], None
+
+        def file_hash(path):
+            _require(not path.is_symlink())
+            digest = sha256()
+            with path.open('rb') as stream:
+                for block in iter(lambda: stream.read(1024 * 1024), b''):
+                    digest.update(block)
+            return digest.hexdigest()
+
+        while reference is not None:
+            _require(reference['sha256'] not in seen and len(seen) < 10000)
+            seen.add(reference['sha256'])
+            path = self._manifest_path(reference)
+            _require(not path.is_symlink() and path.stat().st_size <= 65536)
+            raw = path.read_bytes()
+            _require(sha256(raw).hexdigest() == reference['sha256'])
+            manifest = json.loads(raw)
+            _require(set(manifest) == {'schema_version','generation','run_id',
+                                     'predecessor_manifest','kind','artifacts'})
+            _require(manifest['schema_version'] == SCHEMA)
+            generation = manifest['generation']
+            _require(type(generation) is int and generation >= 0)
+            # Admissions can fail or be superseded without a committed manifest.
+            # Match committed_history: selected ancestry strictly decreases.
+            _require(previous is None or generation < previous)
+            previous = generation
+            adopted = manifest['kind'] == 'ADOPTED_EXISTING_CHECKPOINT'
+            _require(manifest['kind'] in {'ANALYSIS','ADOPTED_EXISTING_CHECKPOINT'})
+            _require((generation == 0) == adopted)
+            _require((manifest['predecessor_manifest'] is None) == adopted)
+            rid = manifest['run_id']; paths = self._paths(rid)
+            _require(set(manifest['artifacts']) == set(paths))
+            for kind, artifact_path in paths.items():
+                ref = manifest['artifacts'][kind]
+                if kind == 'continuity' and adopted:
+                    _require(ref is None)
+                else:
+                    _require(type(ref) is dict and set(ref) == {'path','sha256'})
+                    _require(ref['path'] == str(artifact_path) and _digest_valid(ref['sha256']))
+            ppath = paths['provenance']
+            _require(file_hash(ppath) == manifest['artifacts']['provenance']['sha256'])
+            provenance = self.provenance_store.load(rid)
+            at = provenance.successful_completed_at
+            _require(provenance.run_id == rid and at is not None)
+            if at.astimezone(ZoneInfo('Asia/Kolkata')).date() == reporting_date:
+                for kind, artifact_path in paths.items():
+                    ref = manifest['artifacts'][kind]
+                    if ref is not None:
+                        _require(file_hash(artifact_path) == ref['sha256'])
+                _require(paths['native'].stat().st_size <= 4 * 1024 * 1024)
+                native = self.native_store.load(rid)
+                _require(native.run_identity == rid and native.observed_at == provenance.run_created_at)
+                _require({a.canonical_instrument for a in native.assessments} ==
+                         {a.canonical_identity for a in SWING_PHASE1_UNIVERSE})
+                result.append(dict(run_identity=rid, publication=dict(reference),
+                    completed_at=at.isoformat(), evidence_cutoff=native.observed_at.isoformat(),
+                    artifacts=manifest['artifacts'], assessments=[dict(
+                        instrument=a.canonical_instrument, direction=a.direction.value,
+                        assessment_sha256=a.result_sha256, status=a.status.value,
+                        product_path=a.product_path.value, weekly_state=a.weekly_state.value)
+                        for a in native.assessments]))
+                # Detect mutations during typed Native loading too.
+                _require(file_hash(paths['native']) == manifest['artifacts']['native']['sha256'])
+            _require(file_hash(ppath) == manifest['artifacts']['provenance']['sha256'])
+            reference = manifest['predecessor_manifest']
+        _require(self._control() == before)
+        return tuple(reversed(result))
+
     def _exact_commit_fence(self, bundle):
         reference = bundle.reference
         _require(

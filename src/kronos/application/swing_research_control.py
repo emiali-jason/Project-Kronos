@@ -45,6 +45,8 @@ class SwingResearchControl:
         self.trade_window = trade_window
         self.mcx_control = mcx_control
         self.equity_basis = equity_basis
+        # Read the existing retained corporate-action owner; never acquire data.
+        self.research.local_outcome_basis = self._local_outcome_basis
         self.release_verifier = release_verifier
         self._worker_lock = Lock()
         self._authority_lock = Lock()
@@ -64,7 +66,8 @@ class SwingResearchControl:
                 "observation_capture": None if self.trade_window is None else self.trade_window.research_capture_failure,
                 "mcx_capture": None if self.mcx_control is None else self.mcx_control.research_capture_failure,
                 "operation": None if operation is None else operation.data,
-                "capture_receipts": None if self.capture.inbox is None else self.capture.inbox.count()}
+                "capture_receipts": None if self.capture.inbox is None else self.capture.inbox.count(),
+                "daily": self.daily_status()}
 
     def _operation_state(self, identity: str, state: str, *, phase: str,
                          result=None, failure: str | None = None) -> dict:
@@ -378,3 +381,207 @@ class SwingResearchControl:
                                     sessions=self._calendars(as_of),
                                     fetch_missing=self._fetcher(as_of), as_of=as_of,
                                     equity_basis=self._basis_for)
+
+    def _local_outcome_basis(self, origin, start, through, as_of):
+        binding = origin.data.get('contract_binding') or {}
+        if self.equity_basis is None or binding.get('instrument_type') != 'EQ':
+            return 'UNKNOWN', None
+        if not self._authority_lock.acquire(blocking=False):
+            return 'UNKNOWN', None
+        try:
+            return self.equity_basis.basis(binding['trading_symbol'], 'EQ', start, through, as_of=as_of)
+        finally:
+            self._authority_lock.release()
+
+    def configure_daily(self, *, admission, shutdown_lock, shutdown_started, ready, source_runtime=lambda: {"availability":"UNAVAILABLE"}):
+        """Reuse service pulse/executor and existing ordinary-Exit handshake."""
+        from kronos.application.swing_daily_research import daily_chain
+        self._daily_admission = admission
+        self._daily_shutdown_lock = shutdown_lock
+        self._daily_shutdown_started = shutdown_started
+        self._daily_ready = ready
+        self._daily_source_runtime = source_runtime
+        self._daily_stopping = False
+        self._daily_epoch = None
+        self._daily_attempted = set()
+        self._daily_next_check = 0.0
+        self._daily_restore_failure = None
+        self._last_daily_result = None
+        self._daily_receipts = ()
+        try:
+            values = self.research.store.records('DAILY_PUBLICATION')
+            for day in sorted({r.data['reporting_date'] for r in values}):
+                daily_chain(self.research.store, day, self.research.publication_root)
+            self._daily_receipts = values
+        except (ValueError, OSError, TypeError, KeyError):
+            self._daily_restore_failure = 'DAILY_RESTORATION_UNAVAILABLE'
+
+    def daily_status(self):
+        if not hasattr(self, '_daily_ready'):
+            return {'state': 'NOT_CONFIGURED', 'publications': [], 'last_attempt': None}
+        with self._worker_lock:
+            return {'state': ('BLOCKED' if self._daily_restore_failure else
+                             'STOPPED' if self._daily_stopping else 'READY'),
+                    'failure': self._daily_restore_failure,
+                    'timezone': 'Asia/Kolkata', 'scheduled_time': '23:00',
+                    'last_attempt': self._last_daily_result,
+                    'publications': [dict(identity=r.identity, **r.data)
+                                     for r in self._daily_receipts]}
+
+    def work_status(self):
+        with self._worker_lock:
+            return {'state': ('RUNNING' if self._active_operation is not None else
+                              'STOPPED' if self._worker_closed else 'IDLE'),
+                    'owned_workers': int(self._active_operation is not None),
+                    'queued_items': 0, 'cleanup_state': 'COMPLETE' if self._active_operation is None else 'OWNED',
+                    'closed': self._worker_closed}
+
+    def quiesce_daily(self):
+        with self._worker_lock:
+            self._daily_stopping = True
+
+    def submit_daily(self, identity, parent=None, *, reporting_date=None, trigger='MANUAL'):
+        if re.fullmatch(r'[0-9a-f]{32}',identity) is None:
+            raise ValueError('SWING_RESEARCH_OPERATION_IDENTITY_INVALID')
+        if not hasattr(self,'_daily_ready') or not self._daily_ready() or self._daily_restore_failure:
+            raise ValueError('SWING_DAILY_NOT_READY')
+        self.capture.commissioned_at()
+        now=self.clock()
+        if now.tzinfo is None or now.utcoffset() is None:
+            raise ValueError('SWING_DAILY_CLOCK_UNAVAILABLE')
+        day = reporting_date or now.astimezone(IST).date()
+        if parent is not None and (type(parent) is not AdmissionTicket or parent._released
+                or parent._owner is not self._daily_admission):
+            raise ValueError('SWING_DAILY_PARENT_INVALID')
+        ticket = (self._daily_admission.admit_root('SWING_RESEARCH') if parent is None
+                  else parent.fork('SWING_RESEARCH'))
+        if ticket is None:
+            return {'state':'FENCED','operation_identity':identity}
+        accepted = False
+        try:
+            with self._daily_shutdown_lock:
+                with self._worker_lock:
+                    if self._daily_shutdown_started() or self._daily_stopping or self._worker_closed or not self._daily_ready():
+                        return {'state':'STOPPED','operation_identity':identity}
+                    if self._active_operation is not None:
+                        return {'state':'BUSY','operation_identity':identity}
+                    # Register before leaving ordinary Exit's short lock. No I/O
+                    # or research record exists before this registration wins.
+                    self._active_operation = 'DAILY:' + identity
+                    self._last_daily_result = {'state':'QUEUED','operation_identity':identity,
+                                               'reporting_date':day.isoformat()}
+                    try:
+                        self._worker.submit(self._run_daily, identity, day, trigger, ticket)
+                    except BaseException:
+                        self._active_operation = None
+                        raise
+                    accepted = True
+            return dict(self._last_daily_result)
+        finally:
+            if not accepted:
+                ticket.release()
+
+    def _run_daily(self, identity, day, trigger, ticket):
+        result = {'state':'FAILED','operation_identity':identity,'reporting_date':day.isoformat()}
+        try:
+            with ticket.activate():
+                prior=[r for r in self.research.store.records('DAILY_ATTEMPT')
+                       if r.data['operation_identity']==identity]
+                if len(prior)>1:raise ValueError('SWING_DAILY_OPERATION_CONFLICT')
+                if prior:
+                    if prior[0].data['reporting_date']!=day.isoformat():
+                        raise ValueError('SWING_DAILY_OPERATION_CONFLICT')
+                    result=dict(prior[0].data['result'],attempt_receipt=prior[0].identity)
+                    return
+                status=self.application.publication_status()
+                control={k:status.get(k) for k in ('control','reconciliation_unavailable')}
+                # Canonical archival read: stream large facts, no full MTF replay.
+                history = self.application.retained_daily_research_sources(day)
+                after=self.application.publication_status()
+                if control!={k:after.get(k) for k in ('control','reconciliation_unavailable')}:
+                    raise ValueError('SWING_DAILY_SOURCE_CHANGED')
+                receipts=[]
+                if self.capture.inbox is not None:
+                    for kind in sorted(self.capture.inbox.KINDS):
+                        for path in sorted((self.capture.inbox.root/kind).glob('*.json')):
+                            if path.is_symlink():raise ValueError('SWING_DAILY_INBOX_INVALID')
+                            envelope=json.loads(path.read_bytes())
+                            self.capture.inbox.read(kind,envelope['event_identity'])
+                            receipts.append({'kind':kind,'event_identity':envelope['event_identity'],
+                                'sha256':sha256(path.read_bytes()).hexdigest(),
+                                'captured_at':None,'capture_time_authority':'NOT_RETAINED_IN_LEGACY_ENVELOPE'})
+                            if len(receipts)>5000:raise ValueError('SWING_DAILY_CAPACITY_UNAVAILABLE')
+                result.update(self.research.record_daily(reporting_date=day,trigger=trigger,
+                    history=history,attempt_identity=identity, publication_control=control,
+                    capture_receipts=receipts,source_runtime=self._daily_source_runtime()))
+        except Exception as error:
+            result.update(state='FAILED',failure=type(error).__name__,
+                          reason=str(error) if re.fullmatch(r'[A-Z0-9_]{1,120}',str(error)) else 'RETAINED_EVIDENCE_UNAVAILABLE')
+        finally:
+            # Retain completion/failure while registration and counted ticket
+            # still own all final writes. No failure is an empty-day success.
+            try:
+                if 'attempt_receipt' in result:
+                    value=None
+                else:
+                    value=record('DAILY_ATTEMPT',operation_identity=identity,reporting_date=day.isoformat(),
+                    trigger=trigger,result=result,completed_at=self.clock().isoformat(),
+                    authority='RETAINED_RESEARCH_ONLY')
+                if value is not None:
+                    with self.research.store.transaction():self.research.store.retain(value)
+                    result['attempt_receipt']=value.identity
+            except (ValueError,OSError):
+                result['attempt_receipt']='UNAVAILABLE'
+            try:
+                receipts=self.research.store.records('DAILY_PUBLICATION')
+            except (ValueError,OSError):
+                receipts=()
+            with self._worker_lock:
+                self._daily_receipts=receipts
+                self._last_daily_result=result
+                self._active_operation=None
+            ticket.release()
+
+    def poll_daily(self):
+        """Cheap post-READY dispatch in existing server pulse, no new timer."""
+        from time import monotonic
+        from uuid import uuid4
+        if not hasattr(self,'_daily_ready') or self._daily_stopping or not self._daily_ready():
+            return
+        moment=monotonic()
+        if moment < self._daily_next_check:return
+        self._daily_next_check=moment+1
+        if self._daily_restore_failure:return
+        observed=self.clock()
+        if observed.tzinfo is None or observed.utcoffset() is None:
+            self._daily_restore_failure='DAILY_CLOCK_UNAVAILABLE'
+            return
+        now=observed.astimezone(IST)
+        try:
+            marker=self.capture.commissioned_at()
+            if marker is None:return
+            start=marker.astimezone(IST).date()
+        except (OSError,ValueError):return
+        today=now.date();last=today if now.time() >= time(23) else today-timedelta(days=1)
+        if last < start:return
+        epoch=today.isoformat()+('AFTER_2300' if last==today else 'CATCHUP')
+        if epoch!=self._daily_epoch:
+            self._daily_epoch=epoch;self._daily_attempted=set()
+        # Finite catch-up: one day per existing worker task. Current due day
+        # first, then oldest unexamined date; no futures backlog or retry loop.
+        if (last-start).days>3660:
+            self._daily_restore_failure='DAILY_CATCHUP_RANGE_UNAVAILABLE'
+            return
+        dates=[last]+[start+timedelta(days=i) for i in range((last-start).days)]
+        day=next((d for d in dates if d not in self._daily_attempted),None)
+        if day is None:return
+        try:
+            result=self.submit_daily(uuid4().hex,reporting_date=day,
+                                     trigger='SCHEDULE' if day==today else 'CATCHUP')
+        except (ValueError,OSError,RuntimeError,TypeError,KeyError):
+            # A product recorder failure must not terminate the shared server
+            # pulse. Block this component; never manufacture a publication.
+            self._daily_restore_failure='DAILY_DISPATCH_UNAVAILABLE'
+            return
+        if result['state'] not in {'BUSY','FENCED','STOPPED'}:
+            self._daily_attempted.add(day)

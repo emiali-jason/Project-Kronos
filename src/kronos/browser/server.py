@@ -854,12 +854,23 @@ class KronosBrowserServer(ThreadingHTTPServer):
                     lambda: (None if self.connection_governance is None else
                              self.connection_governance.process.loaded_revision)))
         self.swing_research_control = swing_research_control
+        self.swing_research_control.configure_daily(
+            admission=self.maintenance_admission, shutdown_lock=self._shutdown_lock,
+            shutdown_started=lambda: self._shutdown_started,
+            ready=lambda: (self.connection_governance is not None
+                and getattr(self.connection_governance, "startup_state", None) == "READY"
+                and not getattr(self.connection_governance, "maintenance_active", True)
+                and not getattr(self.connection_governance, "shutting_down", True)),
+            source_runtime=lambda: ({"availability":"UNAVAILABLE"} if self.connection_governance is None
+                else {"loaded_revision":self.connection_governance.process.loaded_revision,
+                      "process_id":self.connection_governance.process.pid}))
         self.local_analysis = None
         if self.native_intake is not None:
             from kronos.application.swing_local_analysis import SwingLocalAnalysisWorkflow
             self.local_analysis = SwingLocalAnalysisWorkflow(
                 self.application, self.native_intake, swing_research_control.research,
                 capture=swing_research_control.capture)
+            swing_research_control.research.local_history_reader = self.local_analysis.retained_research
             self.native_intake.register_local_analysis(self.local_analysis)
             self.application.register_local_analysis(self.local_analysis)
         capture = swing_research_control.capture
@@ -1053,6 +1064,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
         super().service_actions()
 
     def _service_actions_admitted(self) -> None:
+        daily = getattr(getattr(self, "swing_research_control", None), "poll_daily", None)
+        if callable(daily):
+            daily()
         # Reuse the admitted server maintenance pulse. Notification GETs never
         # synchronize sources, expire cards or append reminder history.
         if hasattr(self, "_swing_notification_lock"):
@@ -1130,6 +1144,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
         with self._domain_close_lock:
             if self._monitoring_quiesced:
                 return
+            daily = getattr(getattr(self, "swing_research_control", None), "quiesce_daily", None)
+            if callable(daily):
+                daily()
             self.progression_watches.close_monitoring()
             self.native_review.close()
             self.trade_window.close_monitoring()
@@ -1139,6 +1156,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
 
     def _close_domain_owners_once(self, bulk_timeout_seconds: float,
                                   require_proof: bool) -> None:
+        research_close = getattr(getattr(self, "swing_research_control", None), "close", None)
+        if require_proof and callable(research_close):
+            research_close()
         housekeeping = getattr(self, "housekeeping", None)
         if housekeeping is not None:
             result = (housekeeping.shutdown(timeout_seconds=bulk_timeout_seconds)
@@ -2274,6 +2294,11 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 return False
             if self._active_sponsor_work or not self._domain_closed:
                 return False
+            research_work = getattr(getattr(self, "swing_research_control", None), "work_status", None)
+            if callable(research_work):
+                research = research_work()
+                if research["owned_workers"] or not research["closed"]:
+                    return False
             lifecycle = self.intraday_lifecycle.work_status()
             wo17 = self.intraday_wo17_monitoring.work_status()
             if any(int(status[field]) for status in (lifecycle, wo17)
@@ -2451,7 +2476,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 or not self.restart_control.owns_current_process()
             ):
                 return "RUNTIME_OWNERSHIP_UNVERIFIED"
-            if self._active_sponsor_work:
+            research_work = getattr(getattr(self, "swing_research_control", None), "work_status", None)
+            if self._active_sponsor_work or (callable(research_work)
+                    and research_work()["owned_workers"]):
                 return "SPONSOR_WORK_IN_PROGRESS"
             snapshot = self.application.snapshot()
             if (
@@ -3446,6 +3473,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         if path == "/runtime/status":
             from kronos.browser.runtime_state import status_document
             payload = status_document(self.server)
+            payload["swing_research_work"] = self.server.swing_research_control.work_status()
             # This observational marker distinguishes a fenced-drain-capable
             # predecessor from older binaries before the launcher can stop it.
             payload["maintenance_drain"] = self.server.maintenance_admission.snapshot()
@@ -3567,7 +3595,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 self._dispatch_post(path)
                 if (path.startswith("/swing/") and path not in {
                         "/swing/analysis", "/swing/reconcile",
-                        "/swing/research/update",
+                        "/swing/research/update", "/swing/research/record",
                         "/swing/v1/native-chart", "/swing/v1/native-chart/remove",
                         "/swing/mcx-contract-choice", "/swing/mcx-reserved-analysis",
                         "/swing/mcx-v1/reserve", "/swing/mcx-v1/plan", "/swing/mcx-v1/observe",
@@ -3624,14 +3652,61 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 + '<form method="post" action="/swing/research/update">'
                 + '<input type="hidden" name="operation_identity" value="' + operation + '">'
                 + '<button type="submit"' + (" disabled" if commissioned is None else "")
-                + '>UPDATE SWING RESEARCH</button></form></section>')
+                + '>Historical Research Update — UPDATE SWING RESEARCH</button></form>'
+                + '<form method="post" action="/swing/research/record">'
+                + '<input type="hidden" name="operation_identity" value="' + uuid4().hex + '">'
+                + '<button type="submit"' + (" disabled" if commissioned is None else "")
+                + '>Record Today’s Research</button></form></section>')
+        from kronos.browser.swing_daily_research import render_daily_research
+        daily = status.get("daily", {})
+        control = self.server.swing_research_control
+        if query.get("download"):
+            identities = query["download"]
+            rows = daily.get("publications", ())
+            selected = [r for r in rows if len(identities)==1 and r["identity"]==identities[0]]
+            if len(selected)!=1:
+                self._text(HTTPStatus.NOT_FOUND, "Retained research workbook unavailable.")
+                return
+            selected=selected[0]
+            from kronos.application.swing_daily_research import publication_path
+            try:
+                target=publication_path(control.research.publication_root, selected)
+            except (ValueError,TypeError,KeyError,OSError):
+                self._text(HTTPStatus.CONFLICT, "Retained research workbook unavailable.")
+                return
+            root=control.research.publication_root / "daily"
+            if (not target.is_relative_to(root) or target.is_symlink()
+                    or not target.is_file()):
+                self._text(HTTPStatus.CONFLICT, "Retained research workbook unavailable.")
+                return
+            if target.stat().st_size!=selected["workbook_bytes"] or target.stat().st_size>16*1024*1024:
+                self._text(HTTPStatus.CONFLICT, "Retained research workbook unavailable.")
+                return
+            payload=target.read_bytes()
+            if sha256(payload).hexdigest()!=selected["workbook_sha256"]:
+                self._text(HTTPStatus.CONFLICT, "Retained research workbook unavailable.")
+                return
+            self._respond(HTTPStatus.OK, payload,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", filename=target.name)
+            return
+        observations=()
+        if getattr(control, "research", None) is not None:
+            try:
+                authority=self.server.application.publication_status()
+                observations=control.research.local_journey(authority)
+                if authority!=self.server.application.publication_status():
+                    raise ValueError("REVIEW_BINDING_STALE")
+            except (ValueError,OSError,TypeError,KeyError):
+                daily={**daily,"state":"LOCAL_HISTORY_UNAVAILABLE"}
+                observations=()
+        body += render_daily_research(daily, observations)
         self._html(render_browser_page(
             title="Swing Research", subtitle="Explicit prospective direction research",
             snapshot=self.server.application.snapshot(), active_nav="Swing",
             active_tab="Opportunities", body=body,
             back_link='<a href="/swing/opportunities">← Opportunities</a>'))
 
-    def _swing_research_update(self) -> None:
+    def _swing_research_update(self, *, retained_only=False) -> None:
         try:
             length = int(self.headers.get("Content-Length", ""))
             if (not 0 < length <= 256 or self.headers.get("Content-Type", "").split(";", 1)[0]
@@ -3642,13 +3717,16 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                     or len(fields["operation_identity"]) != 1
                     or re.fullmatch(r"[0-9a-f]{32}", fields["operation_identity"][0]) is None):
                 raise ValueError("SWING_RESEARCH_REQUEST_INVALID")
-            admitted = self.server.swing_research_control.submit_update(
+            submit = (self.server.swing_research_control.submit_daily if retained_only
+                      else self.server.swing_research_control.submit_update)
+            admitted = submit(
                 fields["operation_identity"][0],
                 self.server._sponsor_tickets.current)
         except (OSError, ValueError, TypeError):
             self._swing_post_failed = True
             self._text(HTTPStatus.SERVICE_UNAVAILABLE,
-                       "Swing research source or acquisition unavailable; verified workbooks retained.")
+                       ("Retained-only recording unavailable; no acquisition attempted." if retained_only else
+                        "Swing research source or acquisition unavailable; verified workbooks retained."))
             return
         self._redirect("/swing/research?" + urlencode({
             "operation": admitted["operation_identity"]}))
@@ -3701,6 +3779,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
     def _dispatch_post(self, path: str) -> None:
         if path in {"/control/swing-research/commission", "/control/swing-research/corporate-actions/import"}:
             self._swing_research_authority(path)
+            return
+        if path == "/swing/research/record":
+            self._swing_research_update(retained_only=True)
             return
         if path == "/swing/research/update":
             self._swing_research_update()

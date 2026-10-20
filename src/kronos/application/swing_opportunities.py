@@ -1002,6 +1002,12 @@ class SwingOpportunitiesApplication:
         return (() if publication is None or not publication.initialized
                 else publication.committed_history())
 
+    def retained_daily_research_sources(self, reporting_date):
+        """Archival cut through the existing publication owner; no analysis."""
+        publication = self.__publication
+        return (() if publication is None or not publication.initialized
+                else publication.retained_daily_sources(reporting_date))
+
     @contextmanager
     def publication_mutation_guard(self):
         """WO-SWING-07-WO05-GUARD-01: explicit commit coordination only.

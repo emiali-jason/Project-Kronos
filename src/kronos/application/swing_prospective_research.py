@@ -56,6 +56,15 @@ class SwingProspectiveResearchApplication:
         if not self.publication_root.is_absolute():
             raise ValueError("SWING_WO12_PUBLICATION_ROOT_INVALID")
 
+    def record_daily(self, **kwargs):
+        """Retained-only versioned publication; never calls acquiring UPDATE."""
+        from kronos.application.swing_daily_research import record_daily
+        return record_daily(self, **kwargs)
+
+    def local_journey(self, current=None, *, as_of=None):
+        from kronos.application.swing_daily_research import local_observations
+        return local_observations(self, current, as_of=as_of)
+
     def capture_admitted(self, source: Record, *milestones: Record,
                          decision: Record | None = None) -> None:
         """A future owner hook calls this; no Browser/analysis path calls it yet."""
@@ -374,8 +383,39 @@ class SwingProspectiveResearchApplication:
         projection_identity = _digest({"month": month, "source": source_identity,
                                        "opportunities": opportunities, "tracks": tracks,
                                        "analysis": analysis, "quality": quality})
+        from kronos.application.swing_daily_research import local_rows
+        from kronos.swing.v1.local_research_outcomes import CONTRACT as OUTCOME_CONTRACT, aggregate
+        journey = self.local_journey(as_of=as_of)
+        local = local_rows(journey, month)
+        outcomes = tuple(o['outcomes'] for o in journey if o['outcomes'] is not None
+                         and o['observation_date'][:7].replace('-', '_') == month)
+        outcome_rows = []
+        from kronos.browser.swing_research_workbook import OUTCOME_COLUMNS
+        for o in outcomes:
+            measured = [dict(row, measurement_kind='DIRECTION', cohort_or_setup=row['cohort'])
+                        for row in o['direction']]
+            measured += [dict(row, measurement_kind='SCENARIO_TOUCH',
+                             horizon_sessions=row['entry_window_sessions'],
+                             cohort_or_setup=row['kind']+' / '+row['horizon']+' / radius '+str(row['structural_radius']))
+                         for row in o['scenarios']]
+            for index, row in enumerate(measured):
+                values = dict(original_identity=o['original_identity'], instrument=o['instrument'],
+                              signal_at=o['signal_at'], method_version=o['method_version'],
+                              outcome_identity=o['identity'],
+                              retained_measurement_json=json.dumps(o, sort_keys=True, separators=(',', ':')) if index == 0 else None,
+                              **row)
+                outcome_rows.append(tuple(values.get(k) for k in OUTCOME_COLUMNS))
+        outcome_rows = tuple(outcome_rows)
+        from kronos.browser.swing_research_workbook import PERFORMANCE_COLUMNS
+        performance = tuple(tuple(v.get(k) for k in PERFORMANCE_COLUMNS) for v in aggregate(outcomes))
+        if local:
+            projection_identity = _digest({"legacy": projection_identity, "local": local,
+                                           "contract": "LOCAL_RESEARCH_1.0", "outcomes": outcome_rows, "performance": performance})
         return SwingResearchProjection(month, generated, projection_identity,
-                                       opportunities, tracks, events, analysis, quality, metadata)
+            opportunities, tracks, events, analysis, quality, metadata,
+            local_research=local, local_contract="LOCAL_RESEARCH_1.0" if local else None,
+            local_outcomes=outcome_rows, local_performance=performance,
+            outcome_contract=OUTCOME_CONTRACT if outcomes else None)
 
     @staticmethod
     def _analysis(origins: tuple[Record, ...], milestones: tuple[Record, ...],

@@ -45,6 +45,23 @@ ANALYSIS_COLUMNS = (
     "min_direction_adjusted_pct", "max_direction_adjusted_pct", "inclusion_rule",
 )
 QUALITY_COLUMNS = ("opportunity_identity", "milestone_identity", "horizon_sessions", "quality_code", "detail")
+LOCAL_COLUMNS = (
+    "original_identity", "instrument", "native_direction", "local_direction",
+    "local_conclusion", "conviction", "reason", "method_version", "run_identity",
+    "publication_sha256", "assessment_sha256", "captured_at", "completed_at",
+    "evidence_cutoff", "observation_date", "horizon", "scenario", "scenario_direction",
+    "structural_radius", "availability", "entry_low", "entry_high", "invalidation",
+    "target_low", "target_high", "reward_risk", "unavailable_reason", "missing_evidence",
+    "currentness", "authority", "opportunity_identity",
+)
+OUTCOME_COLUMNS = ('original_identity', 'instrument', 'signal_at', 'method_version',
+                   'outcome_identity', 'measurement_kind', 'horizon_sessions', 'cohort_or_setup',
+                   'direction', 'status', 'reason', 'direction_adjusted_pct', 'candle_mfe_pct',
+                   'candle_mae_pct', 'entry_touch', 'target_touch', 'invalidation_touch',
+                   'theoretical_rr', 'realized_rr', 'realized_pnl', 'retained_measurement_json')
+PERFORMANCE_COLUMNS = ('horizon_sessions', 'cohort', 'method_version', 'observations', 'distinct_instruments',
+                       'observed', 'pending', 'unavailable', 'abstained', 'with_direction',
+                       'against_direction', 'unchanged', 'observed_missed_native', 'native_disagreements', 'win_probability')
 METADATA_COLUMNS = ("key", "value")
 COLUMNS = (OPPORTUNITY_COLUMNS, TRACK_COLUMNS, EVENT_COLUMNS,
            ANALYSIS_COLUMNS, QUALITY_COLUMNS, METADATA_COLUMNS)
@@ -61,30 +78,48 @@ class SwingResearchProjection:
     analysis: tuple[tuple[object, ...], ...]
     data_quality: tuple[tuple[object, ...], ...]
     metadata: tuple[tuple[object, ...], ...]
+    local_research: tuple[tuple[object, ...], ...] = ()
+    local_contract: str | None = None
+
+    local_outcomes: tuple[tuple[object, ...], ...] = ()
+    local_performance: tuple[tuple[object, ...], ...] = ()
+    outcome_contract: str | None = None
+
+    @property
+    def sheets(self):
+        sheets = SHEETS if self.local_contract is None else (*SHEETS, "Local_Research")
+        return sheets if self.outcome_contract is None else (*sheets, "Local_Outcomes", "Local_Performance")
+
+    @property
+    def columns(self):
+        columns = COLUMNS if self.local_contract is None else (*COLUMNS, LOCAL_COLUMNS)
+        return columns if self.outcome_contract is None else (*columns, OUTCOME_COLUMNS, PERFORMANCE_COLUMNS)
 
     @property
     def rows(self) -> tuple[tuple[tuple[object, ...], ...], ...]:
-        return (self.opportunities, self.tracks, self.events,
-                self.analysis, self.data_quality, self.metadata)
+        legacy = (self.opportunities, self.tracks, self.events,
+                  self.analysis, self.data_quality, self.metadata)
+        rows = legacy if self.local_contract is None else (*legacy, self.local_research)
+        return rows if self.outcome_contract is None else (*rows, self.local_outcomes, self.local_performance)
 
 
 def export_swing_research_workbook(projection: SwingResearchProjection) -> bytes:
     if type(projection) is not SwingResearchProjection:
         raise TypeError("SWING_WO12_PROJECTION_REQUIRED")
     if any(any(len(row) != len(columns) for row in rows)
-           for columns, rows in zip(COLUMNS, projection.rows, strict=True)):
+           for columns, rows in zip(projection.columns, projection.rows, strict=True)):
         raise ValueError("SWING_WO12_WORKBOOK_COLUMNS_INVALID")
     output = BytesIO()
     with ZipFile(output, "w", compression=ZIP_DEFLATED, compresslevel=9) as archive:
-        _write(archive, "[Content_Types].xml", _content_types())
+        _write(archive, "[Content_Types].xml", _content_types(len(projection.sheets)))
         _write(archive, "_rels/.rels", _package_relationships())
         _write(archive, "docProps/core.xml", _core_properties(projection.generated_at).replace(
             "KRONOS Intraday Monthly Research Ledger", "KRONOS Swing Monthly Research Ledger"))
-        _write(archive, "docProps/app.xml", _app_properties())
-        _write(archive, "xl/workbook.xml", _workbook())
-        _write(archive, "xl/_rels/workbook.xml.rels", _workbook_relationships())
+        _write(archive, "docProps/app.xml", _app_properties(projection.sheets))
+        _write(archive, "xl/workbook.xml", _workbook(projection.sheets))
+        _write(archive, "xl/_rels/workbook.xml.rels", _workbook_relationships(len(projection.sheets)))
         _write(archive, "xl/styles.xml", _styles())
-        for index, (name, columns, rows) in enumerate(zip(SHEETS, COLUMNS, projection.rows, strict=True), 1):
+        for index, (name, columns, rows) in enumerate(zip(projection.sheets, projection.columns, projection.rows, strict=True), 1):
             all_rows = (columns, *rows)
             _write(archive, f"xl/worksheets/sheet{index}.xml",
                    _sheet(all_rows, _widths(columns), table_id=index))
@@ -104,15 +139,15 @@ def validate_swing_research_workbook(payload: bytes,
     with ZipFile(BytesIO(payload)) as archive:
         names = set(archive.namelist())
         required = {"xl/workbook.xml", "xl/styles.xml",
-                    *{f"xl/worksheets/sheet{i}.xml" for i in range(1, 7)},
-                    *{f"xl/tables/table{i}.xml" for i in range(1, 7)}}
+                    *{f"xl/worksheets/sheet{i}.xml" for i in range(1, len(projection.sheets)+1)},
+                    *{f"xl/tables/table{i}.xml" for i in range(1, len(projection.sheets)+1)}}
         if (not required <= names or any("vbaProject" in name or "externalLinks" in name
                                          or name.startswith("xl/media/") for name in names)):
             raise ValueError("SWING_WO12_WORKBOOK_PACKAGE_INVALID")
         workbook = archive.read("xl/workbook.xml").decode()
-        if any(f'name="{name}"' not in workbook for name in SHEETS):
+        if any(f'name="{name}"' not in workbook for name in projection.sheets):
             raise ValueError("SWING_WO12_WORKBOOK_SCHEMA_INVALID")
-        for index, (columns, rows) in enumerate(zip(COLUMNS, projection.rows, strict=True), 1):
+        for index, (columns, rows) in enumerate(zip(projection.columns, projection.rows, strict=True), 1):
             end = f"{_column(len(columns))}{len(rows) + 1}"
             sheet = archive.read(f"xl/worksheets/sheet{index}.xml").decode()
             table = archive.read(f"xl/tables/table{index}.xml").decode()

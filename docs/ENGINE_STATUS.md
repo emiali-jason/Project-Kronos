@@ -188,3 +188,8 @@ skips; 16 synthetic responsive checks PASS. LOCAL-01/02, immutable WO-12,
 Native/KR-370/K4/V2, WO-07F, Intraday and Theta remain protected.
 Existing unavailable/stale evidence and operational limitations remain explicit.
 No paid-model requirement or new Provider/analysis operation is added.
+
+
+## LOCAL-03/04 Release B engineering candidate — 20 October 2026
+
+Retained-only daily recording and Opportunity Journey reuse WO-12 ownership. LOCAL03-F01 allows strictly decreasing selected publication ancestry across failed/superseded admissions while preserving integrity and root guards. LOCAL-04 adds versioned retained-session directional and scenario-touch measurements, matched Native/Local cohorts, optional 20-session coverage and additive Excel output. Unknown coverage, corporate-action basis and intrabar ordering remain explicit. No fills, positions or model calls are inferred. LOCAL-01 mathematics, Native/K4/V2, WO-07F, Intraday and Theta are unchanged. No engine or domain ownership transfer. Isolated candidate only; successor owner reviews, Release Policy closure and operational authorization remain required. See `docs/engineering/SWING-LOCAL-RESEARCH-OUTCOMES-LOCAL04.md`.
