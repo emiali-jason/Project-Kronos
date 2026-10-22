@@ -2883,15 +2883,27 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         if path == "/swing/layer1-history":
             self._html(render_legacy_opportunities(snapshot))
             return
-        if path == "/swing/v1-review":
+        if path in {"/swing/v1-review", "/swing/nse-review", "/swing/mcx-review"}:
+            from kronos.browser.swing_research_views import render_nse_review, scope_review, validate_focus, mcx_contract_projection
+
             intake = self.server.native_intake
             notice_query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
+            market = ("NSE" if path == "/swing/nse-review" else "MCX" if path == "/swing/mcx-review"
+                      else notice_query.get("market", [None])[0])
+            allowed = {"answer_notice", "bulk_import", "market"} if path == "/swing/v1-review" else {"run", "candidate"}
+            if (not set(notice_query) <= allowed or any(len(v) != 1 for v in notice_query.values())
+                    or market not in {None, "NSE", "MCX"}
+                    or (("run" in notice_query) != ("candidate" in notice_query))
+                    or ("run" in notice_query and (re.fullmatch(r"SWING-RUN-[0-9A-F]{32}", notice_query["run"][0]) is None
+                        or re.fullmatch(r"[0-9a-f]{64}", notice_query["candidate"][0]) is None))):
+                self._text(HTTPStatus.BAD_REQUEST, "Invalid Review presentation request")
+                return
             notice = (self.server.answer_notice(notice_query["answer_notice"][0])
-                      if set(notice_query).issubset({"answer_notice", "bulk_import"})
+                      if set(notice_query).issubset({"answer_notice", "bulk_import", "market"})
                       and "answer_notice" in notice_query
                       and len(notice_query["answer_notice"]) == 1 else None)
             bulk_identity = (notice_query["bulk_import"][0]
-                if set(notice_query).issubset({"answer_notice", "bulk_import"})
+                if set(notice_query).issubset({"answer_notice", "bulk_import", "market"})
                 and "bulk_import" in notice_query
                 and len(notice_query["bulk_import"]) == 1 else None)
             try:
@@ -2904,16 +2916,25 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                     review = self.server.native_review.snapshot()
                     _, discovery = self.server.application.opportunities_projection()
                     promotions_v2 = self.server.current_v2_promotions(discovery)
-                    body = render_v1_review(
-                        snapshot, self.server.v1_review.snapshot(), review,
-                        (self.server.visual_v3_live.snapshot(review.native_run_identity)
-                         if intake is None and self.server.native_review_version() == "V3" else None),
-                        self.server.mcx_supporting_context.snapshot(),
-                        self.server.relative_context_for_run(review.native_run_identity)
-                        if intake is None and review.native_run_identity is not None else None,
-                        None if intake is None else intake.snapshot(_response=prepared),
-                        answer_notice=notice, bulk_import=bulk_status,
-                        promotions_v2=promotions_v2)
+                    projection = None if intake is None else intake.snapshot(_response=prepared)
+                    focus = validate_focus(scope_review(projection or dict(rows=(), workspace=None), market),
+                        notice_query.get("run", [None])[0], notice_query.get("candidate", [None])[0]) if market else None
+                    if path == "/swing/nse-review":
+                        body = render_nse_review(snapshot, projection, discovery, focus=focus)
+                    else:
+                        body = render_v1_review(
+                            snapshot, self.server.v1_review.snapshot(), review,
+                            (self.server.visual_v3_live.snapshot(review.native_run_identity)
+                             if intake is None and self.server.native_review_version() == "V3" else None),
+                            self.server.mcx_supporting_context.snapshot(),
+                            self.server.relative_context_for_run(review.native_run_identity)
+                            if intake is None and review.native_run_identity is not None else None,
+                            projection,
+                            answer_notice=notice, bulk_import=bulk_status,
+                            promotions_v2=promotions_v2, market=market,
+                            mcx_contracts=(mcx_contract_projection(None if prepared is None else prepared.context[1],
+                                None if projection is None or projection.get("workspace") is None else projection["workspace"]["run_identity"])
+                                if market == "MCX" else None))
                     _, latest = self.server.application.opportunities_projection()
                     if (latest is not discovery or promotions_v2 !=
                             self.server.current_v2_promotions(discovery)):
@@ -6738,8 +6759,12 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             unavailable = intake.unavailable(error)
             if urlsplit(self.path).path == "/swing/opportunities" and native is not None:
                 body = render_opportunities(snapshot, native, native_intake=unavailable)
+            elif urlsplit(self.path).path == "/swing/nse-review":
+                from kronos.browser.swing_research_views import render_nse_review
+                body = render_nse_review(snapshot, unavailable)
             else:
-                body = render_v1_review(snapshot, self.server.v1_review.snapshot(), native_intake=unavailable)
+                market = "MCX" if urlsplit(self.path).path == "/swing/mcx-review" else None
+                body = render_v1_review(snapshot, self.server.v1_review.snapshot(), native_intake=unavailable, market=market)
             _, current, _, status = self.server.application.opportunities_bundle_projection()
             if current is native and status == publication:
                 self._html(body)

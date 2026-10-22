@@ -147,7 +147,7 @@ def test_default_empty_refresh_review_remains_its_existing_operation(tmp_path, m
         assert not _originals(rig)
 
 
-@pytest.mark.parametrize('path', ['/swing/opportunities','/swing/v1-review'])
+@pytest.mark.parametrize('path', ['/swing/opportunities','/swing/v1-review','/swing/nse-review'])
 def test_prepared_gets_are_read_only_without_recomputation_history_scan_or_api(tmp_path, monkeypatch, path):
     from kronos.application import swing_local_analysis as local_module
     rig = _rig(tmp_path)
@@ -163,10 +163,16 @@ def test_prepared_gets_are_read_only_without_recomputation_history_scan_or_api(t
         for _ in range(2):
             status, _, body = _request(server, 'GET', path)
             assert status == 200
-            assert 'Independent local analysis' in body
-            assert 'KRONOS-NSE-LOCAL-RESEARCH-1.0' in body
-            assert 'Immutable original identity and timestamps' in body
-            assert 'No independent visual confirmation' in body
+            if path == '/swing/opportunities':
+                assert 'Independent Local' in body and 'NSE Local completed' in body
+                assert 'VIEW NSE REVIEW' in body
+                assert 'Immutable original identity and timestamps' not in body
+                assert 'Conditional scenarios' not in body
+            else:
+                assert 'Independent local analysis' in body
+                assert 'KRONOS-NSE-LOCAL-RESEARCH-1.0' in body
+                assert 'Immutable original identity and timestamps' in body
+                assert 'No independent visual confirmation' in body
         assert _inventory(rig.research.store.root) == before
 
 
@@ -403,7 +409,7 @@ def test_existing_opportunities_and_review_show_actual_local_result_and_preserve
     rig = _rig(tmp_path, arguments=_case(**kwargs))
     with _serving(rig) as server:
         assert _post(server, rig)[0] == 303
-        for path in ('/swing/opportunities','/swing/v1-review'):
+        for path in ('/swing/nse-review','/swing/v1-review'):
             status, _, body = _request(server, 'GET', path)
             assert status == 200
             for expected in ('Independent local analysis','NSE numerical technical findings',

@@ -1943,6 +1943,46 @@ def test_late_prepared_page_cannot_erase_newer_chart_generation(native_intake):
         assert row["selected"]["NATIVE_NSE"] is not None
 
 
+def _assert_published_successor_page(body, route, successor_run):
+    """A successful publication need not contain an admitted opportunity."""
+    assert successor_run in body
+    if route == "/swing/opportunities":
+        assert 'No Native Probables were found in the current successful analysis.' in body
+        assert 'BINDING CURRENT' not in body
+        assert '<article class="opportunity native-opportunity">' not in body
+    else:
+        assert 'BINDING CURRENT' in body
+
+
+def _current_authority_html(body, current_run, successor_run, attempt_state):
+    """Exclude only the explicit retained-attempt aside from admission checks.
+
+    Every other byte, including links, forms and scripts, remains governed by
+    the successor exclusion. Telemetry must retain both exact run identities
+    and truthfully label its state; it cannot contain navigation or actions.
+    """
+    import re
+
+    opening = '<aside class="swing-analysis-execution" aria-label="Latest retained Swing analysis attempt">'
+    assert body.count(opening) <= 1
+    if '<title>Swing Opportunities · KRONOS</title>' in body:
+        assert opening in body  # Removing truthful history must fail.
+    if opening not in body:
+        return body  # Review has no attempt aside: retain whole-page checks.
+    history = re.search(re.escape(opening) + r".*?</aside>", body, re.DOTALL)
+    assert history is not None
+    history = history.group()
+    assert '<summary>Analysis history · retained attempt and successful run</summary>' in history
+    assert 'Retained attempt timing; opportunity eligibility is checked separately.' in history
+    assert f'Latest attempt · <code>{successor_run}</code>' in history
+    assert f'<strong>Latest successful analysis</strong><p>Run · <code>{current_run}</code>' in history
+    assert f'class="swing-analysis-attempt-result">{attempt_state} · ' in history
+    assert not re.search(r"<(?:a|form|button|input|script)\b", history, re.IGNORECASE)
+    current = body.replace(history, '', 1)
+    assert current_run in current
+    return current
+
+
 @pytest.mark.parametrize("successor_preparation", ("success", "failure"))
 def test_compact_routes_keep_committed_generation_while_analysis_is_blocked(
     checkpoint, tmp_path, monkeypatch, successor_preparation
@@ -2069,7 +2109,8 @@ def test_compact_routes_keep_committed_generation_while_analysis_is_blocked(
             status, _, body = _request(server, "GET", route)
             assert status == 200
             assert committed_run_identity in body and "BINDING CURRENT" in body
-            assert successor_facts.run_identity not in body
+            assert successor_facts.run_identity not in _current_authority_html(
+                body, committed_run_identity, successor_facts.run_identity, "Running")
             if route == "/swing/opportunities":
                 assert "Analysis running" in body
         assert _inventory(tmp_path) == during_inventory
@@ -2079,7 +2120,9 @@ def test_compact_routes_keep_committed_generation_while_analysis_is_blocked(
         for route in routes:
             status, _, body = _request(server, "GET", route)
             assert status == 200
-            assert committed_run_identity in body and successor_facts.run_identity not in body
+            assert committed_run_identity in body
+            assert successor_facts.run_identity not in _current_authority_html(
+                body, committed_run_identity, successor_facts.run_identity, "Running")
             if route == "/swing/opportunities":
                 assert "Duplicate request rejected" in body
 
@@ -2093,7 +2136,8 @@ def test_compact_routes_keep_committed_generation_while_analysis_is_blocked(
         assert all(status == 200 for status, _, _ in concurrent)
         assert all(
             committed_run_identity in body
-            and successor_facts.run_identity not in body
+            and successor_facts.run_identity not in _current_authority_html(
+                body, committed_run_identity, successor_facts.run_identity, "Running")
             for _, _, body in concurrent
         )
 
@@ -2134,10 +2178,13 @@ def test_compact_routes_keep_committed_generation_while_analysis_is_blocked(
         if successor_preparation == "success":
             assert not final_status["reconciliation_unavailable"]
             assert all(status == 200 for status, _, _ in transitioned)
-            assert all(
-                successor_facts.run_identity in body and "BINDING CURRENT" in body
-                for _, _, body in transitioned
-            )
+            assert publication.current().native == successor_continuity.native_run
+            # later() advances the run, retaining the adopted 4H candle. The
+            # continuity guard correctly withholds fresh Probables from it.
+            assert not any(a.status.value == "PROBABLE"
+                           for a in successor_continuity.native_run.assessments)
+            for route, (_, _, body) in zip(routes, transitioned, strict=True):
+                _assert_published_successor_page(body, route, successor_facts.run_identity)
         else:
             assert final_status["reconciliation_unavailable"]
             assert all(status == 409 for status, _, _ in transitioned)
@@ -2151,7 +2198,7 @@ def test_compact_routes_keep_committed_generation_while_analysis_is_blocked(
             status, _, body = _request(server, "GET", route)
             if successor_preparation == "success":
                 assert status == 200
-                assert successor_facts.run_identity in body and "BINDING CURRENT" in body
+                _assert_published_successor_page(body, route, successor_facts.run_identity)
             else:
                 assert status == 409
                 assert "SWING_PAGE_PREPARATION_UNAVAILABLE" in body
@@ -2250,7 +2297,8 @@ def test_compact_routes_retain_committed_generation_after_unsuccessful_analysis(
         for route in routes:
             status, _, body = _request(server, "GET", route)
             assert status == 200 and current_run in body
-            assert successor_facts.run_identity not in body
+            assert successor_facts.run_identity not in _current_authority_html(
+                body, current_run, successor_facts.run_identity, "Failed")
             if route == "/swing/opportunities":
                 assert "Latest attempt failed" in body
     finally:

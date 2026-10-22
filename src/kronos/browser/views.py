@@ -551,6 +551,7 @@ def render_opportunities(
             raise ValueError("SWING_CONTINUITY_PRESENTATION_BINDING_INVALID")
         committed_continuity.contribution.validate()
         continuity_rows = {r.canonical_instrument: r for r in committed_continuity.contribution.rows}
+    from kronos.browser.swing_research_views import RESEARCH_CSS
     body = _swing_analysis_execution_summary(snapshot, discovery, publication_status)
     body += _analysis_run_strip(snapshot)
     if publication_status:
@@ -597,8 +598,10 @@ def render_opportunities(
         commodities = tuple(
             item for item in probables if item.product_path is NativeProductPath.MCX
         )
-        if native_intake is not None:
-            body += _intake_workspace_header(native_intake, show_internal=not promotions_v2)
+        from kronos.browser.swing_research_views import render_stage_counts
+        body += render_stage_counts(native_intake, discovery)
+        if native_intake is not None and native_intake.get("error"):
+            body += _intake_error(native_intake["error"])
         body += '<div class="swing-opportunities-grid" data-layout="equities-left-mcx-right">'
         body += _native_opportunity_panel(
             "EQUITY / INDEX", equities, review, progression, visual_v3,
@@ -617,9 +620,10 @@ def render_opportunities(
         snapshot=snapshot,
         active_nav="Swing",
         active_tab="Opportunities",
-        body=body,
+        body='<div class="swing-compact-dashboard">' + body + '</div>',
         swing_projection_revision=projection_revision,
         swing_research_navigation=True,
+        extra_styles=RESEARCH_CSS,
     )
 
 
@@ -710,7 +714,7 @@ def _native_opportunity_direction_group(
             item, review, progression, visual_v3, trade_windows, refresh_reminders,
             None if continuity_rows is None else continuity_rows.get(item.canonical_instrument),
             native_intake,
-            promotions_v2,
+            promotions_v2, compact=True,
         )
         for item in probables
     )
@@ -830,31 +834,11 @@ def _nse_local_panel(projection, instrument, run_identity, assessment_sha256,
     if (workspace is None or workspace.get("state") != "CURRENT"
             or workspace.get("run_identity") != run_identity or local is None):
         return ""
-    rows = local.get("rows", ())
-    matching = [row for row in rows if row.get("instrument") == instrument
-                and row.get("requirement_id") == requirement_sha256]
-    row = matching[0] if len(matching) == 1 else None
-    state = "UNAVAILABLE" if row is None else row.get("state", "UNAVAILABLE")
-    reason = (local.get("reason") or "LOCAL_ASSESSMENT_NOT_PREPARED") if row is None else row.get("reason")
-    result = None if row is None else row.get("result")
-    if result is not None:
-        binding = result.get("binding", {})
-        if (state != "SUCCEEDED" or local.get("state") != "READY"
-                or local.get("run_identity") != run_identity
-                or local.get("publication_sha256") != workspace["manifest"]
-                or binding.get("instrument") != instrument
-                or binding.get("run_identity") != run_identity
-                or binding.get("publication_sha256") != workspace["manifest"]
-                or binding.get("assessment_sha256") != assessment_sha256
-                or binding.get("requirement_sha256") != requirement_sha256
-                or binding.get("direction") != native_direction
-                or result.get("contract") != "KRONOS-SWING-NSE-LOCAL-RESULT-V1"
-                or result.get("authority") != "RESEARCH_ONLY_NO_ADMISSION_OR_EXECUTION"
-                or result.get("input_sha256") != row.get("input_sha256")
-                or not row.get("original_identity") or not row.get("result_sha256")):
-            state, reason, result = "UNAVAILABLE", "LOCAL_RESEARCH_BINDING_MISMATCH", None
-    elif state == "SUCCEEDED":
-        state, reason = "UNAVAILABLE", "LOCAL_ORIGINAL_OUTPUT_UNAVAILABLE"
+    from kronos.browser.swing_research_views import local_view
+    value = local_view(projection, dict(market="NSE", eligible=True,
+        instrument=instrument, run_identity=run_identity, assessment_sha256=assessment_sha256,
+        direction=native_direction, requirement_sha256=requirement_sha256))
+    row, state, reason, result = value["row"], value["state"], value["reason"], value["result"]
 
     def text(value):
         return escape(str(value).replace("_", " "))
@@ -1043,6 +1027,7 @@ def _native_opportunity_card(
     continuity=None,
     native_intake=None,
     promotions_v2=(),
+    *, compact=False,
 ) -> str:  # type: ignore[no-untyped-def]
     review_run_identity = None if review is None else review.native_run_identity
     readiness_records = () if review is None else review.readiness_records
@@ -1280,54 +1265,81 @@ def _native_opportunity_card(
         + ' · </span><strong>' + state_value + '</strong></div>'
         + pending_markup + '</div>'
     )
+    if not compact:
+        # Retain the full legacy renderer for existing evidence consumers and
+        # its owning qualification; the Opportunities route explicitly selects
+        # the compact presentation below.
+        return (
+            '<article class="opportunity native-opportunity"><div class="opp-head">'
+            f'<div class="opp-identity"><h3>{escape(item.canonical_instrument)}</h3>'
+            f'<span class="setup-family">'
+            f'{"NSE" if item.product_path is NativeProductPath.NSE else "MCX"} · '
+            f'{escape(item.canonical_instrument)}</span></div>'
+            f'<span class="direction direction-{escape(direction.lower())}">{escape(direction)}</span>'
+            '</div>' + sponsor_summary
+            + _swing_continuity_warning(continuity)
+            + intake_summary
+            + (_nse_technical_panel(native_intake, item.canonical_instrument, item.run_identity,
+                 item.result_sha256, item.direction.value,
+                 None if intake_row is None else intake_row.get("requirement_sha256"), compact=True)
+               + _nse_local_panel(native_intake, item.canonical_instrument, item.run_identity,
+                 item.result_sha256, item.direction.value,
+                 None if intake_row is None else intake_row.get("requirement_sha256"))
+               if item.product_path is NativeProductPath.NSE else '')
+            + ('<p class="v2-downstream">DOWNSTREAM — MCX STEP-31 NOT COMMISSIONED</p>'
+               if item.product_path is NativeProductPath.MCX else '')
+            + '<div class="swing-review-readiness"><div class="swing-readiness-states">'
+            + readiness_markup + '</div><span class="native-opportunity-actions">' + review_action +
+            f'<a class="button" href="/swing/analysis-details/{escape(item.run_identity)}/'
+            f'{quote(item.canonical_instrument, safe="")}">View Analysis Details →</a>'
+            + trade_window_action + '</span></div>'
+            '<details class="swing-opportunity-details"><summary>WHY BLOCKED / ANALYSIS DETAILS</summary>'
+            '<div class="swing-primary-facts">' + primary_facts + '</div>'
+            '<div class="swing-timeframe-grid">' + timeframe_facts + '</div>'
+            + '<div class="swing-result-row"><span>Result · <strong>'
+            + escape(item.status.value.replace("_", " ")) + '</strong></span><span>'
+            + escape(opportunity) + '</span></div>'
+            '<div class="swing-result-row"><span>' + status_label + ' · <strong>' + state_value
+            + '</strong></span><span>' + missing + progression_summary
+            + active_watch_summary + kr370_summary + '</span></div>'
+            + ('<p class="v2-downstream">DOWNSTREAM — MCX STEP-31 NOT COMMISSIONED</p>'
+               if item.product_path is NativeProductPath.MCX and v2 is None else '')
+            + ('<details class="v2-card-detail"><summary>K1–K5 and confirmation details</summary>'
+               + _v2_promotion_detail(v2) + '</details>' if v2 is not None else '')
+            + ('<details class="swing-supporting-details"><summary>Supporting details</summary>'
+            + _swing_continuity_summary(continuity)
+            + '<div><span>Run · <code>' + escape(item.run_identity) + '</code></span>'
+            '<span>Assessment · <code>' + escape(item.result_sha256) + '</code></span>'
+            '<span>Provider source · <code>' + escape(item.provider_source_identity) + '</code></span>'
+            '<span>Methodology · <code>' + escape(item.policy_identity) + ' · '
+            + escape(item.policy_version) + '</code></span>'
+            '<span>Discovery evidence · <code>'
+            + escape(" · ".join(item.reason_codes).replace("_", " "))
+            + '</code></span></div></details>' if v2 is None and not promotions_v2 else '')
+            + '</details></article>'
+        )
+
+    from kronos.browser.swing_research_views import render_compact_local, review_link
+    market = "NSE" if item.product_path is NativeProductPath.NSE else "MCX"
+    review_action = ('<a class="button" href="' + escape(review_link(intake_row, market=market), quote=True)
+        + '">VIEW ' + market + ' REVIEW</a>')
+    # Navigation is observational, not a Review/admission action. The dedicated
+    # page independently verifies its complete source before showing evidence.
     return (
         '<article class="opportunity native-opportunity"><div class="opp-head">'
-        f'<div class="opp-identity"><h3>{escape(item.canonical_instrument)}</h3>'
-        f'<span class="setup-family">'
-        f'{"NSE" if item.product_path is NativeProductPath.NSE else "MCX"} · '
-        f'{escape(item.canonical_instrument)}</span></div>'
-        f'<span class="direction direction-{escape(direction.lower())}">{escape(direction)}</span>'
-        '</div>' + sponsor_summary
-        + _swing_continuity_warning(continuity)
-        + intake_summary
-        + (_nse_technical_panel(native_intake, item.canonical_instrument, item.run_identity,
-             item.result_sha256, item.direction.value,
-             None if intake_row is None else intake_row.get("requirement_sha256"), compact=True)
-           + _nse_local_panel(native_intake, item.canonical_instrument, item.run_identity,
-             item.result_sha256, item.direction.value,
-             None if intake_row is None else intake_row.get("requirement_sha256"))
-           if item.product_path is NativeProductPath.NSE else '')
+        '<div class="opp-identity"><h3>' + escape(item.canonical_instrument) + '</h3>'
+        '<span class="setup-family">' + market + '</span></div>'
+        '<span class="direction direction-' + escape(direction.lower()) + '">'
+        + escape(direction) + '</span></div>' + sponsor_summary
+        + '<div class="swing-compact-local">' + render_compact_local(native_intake, intake_row)
+        + '<span>Review eligibility · ' + ('ELIGIBLE' if intake_row and intake_row.get("eligible")
+            else 'INELIGIBLE' if intake_row else 'UNAVAILABLE') + '</span></div>'
+        + _swing_continuity_warning(continuity) + intake_summary
         + ('<p class="v2-downstream">DOWNSTREAM — MCX STEP-31 NOT COMMISSIONED</p>'
            if item.product_path is NativeProductPath.MCX else '')
         + '<div class="swing-review-readiness"><div class="swing-readiness-states">'
-        + readiness_markup + '</div><span class="native-opportunity-actions">' + review_action +
-        f'<a class="button" href="/swing/analysis-details/{escape(item.run_identity)}/'
-        f'{quote(item.canonical_instrument, safe="")}">View Analysis Details →</a>'
-        + trade_window_action + '</span></div>'
-        '<details class="swing-opportunity-details"><summary>WHY BLOCKED / ANALYSIS DETAILS</summary>'
-        '<div class="swing-primary-facts">' + primary_facts + '</div>'
-        '<div class="swing-timeframe-grid">' + timeframe_facts + '</div>'
-        + '<div class="swing-result-row"><span>Result · <strong>'
-        + escape(item.status.value.replace("_", " ")) + '</strong></span><span>'
-        + escape(opportunity) + '</span></div>'
-        '<div class="swing-result-row"><span>' + status_label + ' · <strong>' + state_value
-        + '</strong></span><span>' + missing + progression_summary
-        + active_watch_summary + kr370_summary + '</span></div>'
-        + ('<p class="v2-downstream">DOWNSTREAM — MCX STEP-31 NOT COMMISSIONED</p>'
-           if item.product_path is NativeProductPath.MCX and v2 is None else '')
-        + ('<details class="v2-card-detail"><summary>K1–K5 and confirmation details</summary>'
-           + _v2_promotion_detail(v2) + '</details>' if v2 is not None else '')
-        + ('<details class="swing-supporting-details"><summary>Supporting details</summary>'
-        + _swing_continuity_summary(continuity)
-        + '<div><span>Run · <code>' + escape(item.run_identity) + '</code></span>'
-        '<span>Assessment · <code>' + escape(item.result_sha256) + '</code></span>'
-        '<span>Provider source · <code>' + escape(item.provider_source_identity) + '</code></span>'
-        '<span>Methodology · <code>' + escape(item.policy_identity) + ' · '
-        + escape(item.policy_version) + '</code></span>'
-        '<span>Discovery evidence · <code>'
-        + escape(" · ".join(item.reason_codes).replace("_", " "))
-        + '</code></span></div></details>' if v2 is None and not promotions_v2 else '')
-        + '</details></article>'
+        + readiness_markup + '</div><span class="native-opportunity-actions">'
+        + review_action + trade_window_action + '</span></div></article>'
     )
 
 
@@ -4717,14 +4729,20 @@ def render_v1_review(
     bulk_import: dict | None = None,
     *,
     promotions_v2: tuple[V2PromotionRecord, ...] = (),
+    market: str | None = None,
+    mcx_contracts=None,
 ) -> str:
     if type(promotions_v2) is not tuple or any(type(item) is not V2PromotionRecord
                                                for item in promotions_v2):
         raise TypeError("REVIEW_V2_PRESENTATION_INVALID")
+    if market not in {None, "NSE", "MCX"}:
+        raise ValueError("SWING_REVIEW_MARKET_INVALID")
+    if native_intake is None and market is not None:
+        native_intake = dict(rows=(), packages=(), workspace=None, error="REVIEW_BINDING_UNAVAILABLE")
     if native_intake is not None:
         body = (_analysis_run_strip(snapshot)
                 + _receipt_native_review(native_intake, promotions_v2, bulk_import,
-                                         answer_notice=answer_notice))
+                                         answer_notice=answer_notice, market=market, mcx_contracts=mcx_contracts))
     elif (
         native_review is not None
         and native_review.state is NativeReviewRunState.REVIEW_REQUIRED
@@ -4877,7 +4895,7 @@ def render_v1_review(
             '<button class="primary">REFRESH REVIEW</button></form>'
             + body
         )
-    if mcx_context is not None:
+    if mcx_context is not None and market != "NSE":
         body = _mcx_context_strip(mcx_context) + body
     if native_intake is None and visual_v3_live is not None and visual_v3_live.restoration_error is not None:
         body = (
@@ -4892,11 +4910,11 @@ def render_v1_review(
         body = _answer_rejection_banner(answer_notice, None) + body
     body += _chart_upload_script() + _answer_upload_script() + _bulk_import_status_script()
     return _page(
-        title="Review",
+        title=("MCX Review" if market == "MCX" else "Legacy NSE Chart Evidence" if market == "NSE" else "Review"),
         subtitle="Copy a chart image, click its target, and paste with ⌘V.",
         snapshot=snapshot,
         active_nav="Swing",
-        active_tab="Review",
+        active_tab=("MCX Review" if market == "MCX" else "NSE Review" if market == "NSE" else "Review"),
         body='<div class="swing-review-compact">' + body + '</div>' + _review_compact_style(),
     )
 
@@ -5140,9 +5158,16 @@ def _bulk_import_panel(value, *, current=False):
     )
 
 
-def _receipt_native_review(projection, promotions_v2=(), bulk_import=None, *, answer_notice=None):
+def _receipt_native_review(projection, promotions_v2=(), bulk_import=None, *, answer_notice=None, market=None, mcx_contracts=None):
     """Render immutable receipt applicability separately from consumer state."""
     from kronos.swing.v1.review_evidence_binding import canonical
+    scoped_market = market
+    if market is not None:
+        from kronos.browser.swing_research_views import scope_review, scoped_bulk_status
+        projection = scope_review(projection, market)
+        bulk_import = scoped_bulk_status(bulk_import, projection)
+        if answer_notice is not None and answer_notice.get("market") != market:
+            answer_notice = None
 
     def action(endpoint, market, expected, label, extra=None):
         if expected is None:
@@ -5234,9 +5259,22 @@ def _receipt_native_review(projection, promotions_v2=(), bulk_import=None, *, an
         direction = row.get("direction")
         direction_class = ("direction-long" if direction == "LONG" else
             "direction-short" if direction == "SHORT" else "direction-unavailable")
-        body += ('<article class="wo07-card"><div class="wo07-card-head"><h3>'
+        row_identity = row.get("requirement_sha256")
+        row_anchor = ('' if row_identity is None or scoped_market is None else ' id="review-candidate-' + escape(row_identity, quote=True) + '"')
+        body += ('<article class="wo07-card"' + row_anchor + '><div class="wo07-card-head"><h3>'
             + escape(instrument) + '</h3><span class="wo07-direction ' + direction_class + '">'
             + escape(direction or "DIRECTION UNAVAILABLE") + '</span></div>')
+        if market == "MCX" and scoped_market == "MCX":
+            contract = (mcx_contracts or {}).get(instrument)
+            if contract is None:
+                body += ('<p class="wo07-card-warning">Exact retained future / expiry · Unavailable. '
+                         'The family label is not an exact futures contract.</p>')
+            else:
+                body += ('<p class="wo07-card-context">Family · ' + escape(instrument)
+                    + '<br>Exact retained candle contract / Provider symbol · <strong>'
+                    + escape(contract["trading_symbol"]) + '</strong><br>Expiry · '
+                    + escape(contract["expiry"]) + '<br>Request-bound historical lineage; '
+                    'not a fresh Provider mapping, quote or entry-currentness certification.</p>')
         chart_state = "CHART READY" if row["complete"] else "CHART MISSING"
         question_state = "READY" if row.get("question_ready") else "NOT READY"
         answer_state = ({"ACCEPTED": "IMPORTED", "STALE": "STALE"}.get(row["evidence"])
@@ -5354,7 +5392,7 @@ def _receipt_native_review(projection, promotions_v2=(), bulk_import=None, *, an
             + action("native-review-answer", market, answer_expected, "UPLOAD ANSWER") + '</div></article>')
     if open_market is not None:
         body += '</div></section>'
-    for market in ("NSE", "MCX"):
+    for market in ((scoped_market,) if scoped_market is not None else ("NSE", "MCX")):
         if not any(row["market"] == market for row in ordered):
             body += ('<section class="market-panel wo07-market"><div class="wo07-market-head"><h2>' + market
                 + ' REVIEW</h2><p>No current bound candidates.</p></div></section>')
@@ -7296,7 +7334,8 @@ def _page(
             _tab_link(name, href, active_tab)
             for name, href in (
                 ("Opportunities", "/swing/opportunities"),
-                ("Review", "/swing/v1-review"),
+                ("NSE Review", "/swing/nse-review"),
+                ("MCX Review", "/swing/mcx-review"),
                 ("Trade Candidates", "/swing/trade-candidates"),
                 ("Active", "/swing/active"),
                 ("Closed", "/swing/closed"),
@@ -7382,7 +7421,7 @@ def _tab_link(name: str, href: str, active_tab: str) -> str:
     badge = (
         ""
         if name in {
-            "Opportunities", "Review", "Trade Candidates", "Active", "Closed", "MCX V1",
+            "Opportunities", "Review", "NSE Review", "MCX Review", "Trade Candidates", "Active", "Closed", "MCX V1",
         }
         else '<span class="badge">Placeholder</span>'
     )

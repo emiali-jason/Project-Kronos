@@ -29,7 +29,7 @@ ROUTES = frozenset({"/status", "/runtime/status", "/dashboard",
     "/runtime/request-diagnostics", "/notifications/status", "/swing/v1/status",
     "/swing/v1/bulk-import-status", "/control/provider-instrument-master/status",
     "/control/intraday-discovery/status", "/control/intraday-historical-qualification/status",
-    "/swing/opportunities", "/swing/v1-review", "/swing/trade-candidates",
+    "/swing/opportunities", "/swing/v1-review", "/swing/nse-review", "/swing/mcx-review", "/swing/trade-candidates",
     "/intraday", "/intraday/review", "/provider/connect", "/provider/disconnect",
     "/control/shutdown", "/control/maintenance/exit"})
 METHODS = frozenset({"GET", "POST", "HEAD", "OPTIONS"})

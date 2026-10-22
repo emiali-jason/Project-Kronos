@@ -4,6 +4,25 @@ All notable changes to PROJECT KRONOS will be documented in this file.
 
 This project follows a milestone-based development approach.
 
+## Unreleased — Swing coordinated Opportunities and market Review UX, 2026-10-21
+
+- Present compact source-bound Opportunities with separate Native, Review-eligible
+  and Local research completion/availability counters. Preserve latest attempt and
+  last successful analysis; WAIT and missing evidence keep their original meanings.
+- Add dedicated NSE Local Review with local-only search/filter/sort, one expanded
+  security, full original numerical/horizon/scenario/provenance detail and no chart
+  prerequisite. Retain the separate legacy NSE visual-evidence workflow.
+- Add MCX-only Review using existing chart/Question/Answer/receipt contracts and
+  request-bound exact future/expiry evidence when retained. Missing exact lineage
+  remains unavailable; family identity never substitutes for an exact future.
+- Preserve prepared-source/currentness fences, admission-safe Native presentation,
+  existing operational routes, immutable originals and all analytical mathematics.
+  Add only the two GET names to existing bounded request diagnostics.
+- LOCAL-01/02/03/04, WO-12, Native/KR-370/K4/V2/WO-07F, MCX V1, Intraday,
+  Theta, Provider, Market, recording schedule and trading authority are unchanged.
+- Isolated engineering candidate. Exact qualification and owner dispositions are
+  retained in the candidate evidence package; no publication or deployment implied.
+
 ## Unreleased — Swing MCX V3 Question Pack Contract Correction, 2026-10-16
 
 - Make prospective MCX V3 Question PDFs self-contained by
@@ -269,3 +288,17 @@ Frozen
 ## Unreleased — LOCAL-03/04 Release B
 
 Retained-only daily recording and Opportunity Journey reuse WO-12 ownership. LOCAL03-F01 allows strictly decreasing selected publication ancestry across failed/superseded admissions while preserving integrity and root guards. LOCAL-04 adds versioned retained-session directional and scenario-touch measurements, matched Native/Local cohorts, optional 20-session coverage and additive Excel output. Unknown coverage, corporate-action basis and intrabar ordering remain explicit. No fills, positions or model calls are inferred. LOCAL-01 mathematics, Native/K4/V2, WO-07F, Intraday and Theta are unchanged. No engine or domain ownership transfer. Isolated candidate only; successor owner reviews, Release Policy closure and operational authorization remain required. See `docs/engineering/SWING-LOCAL-RESEARCH-OUTCOMES-LOCAL04.md`.
+
+
+## Admission/history qualification closure
+
+Status: Sponsor-authorized isolated candidate, KRONOS-SWING-UX-ADMISSION-CONTRACT-CLOSURE-01.
+The correction changes tests and documentation only. Current opportunity checks
+exclude only the explicitly labelled retained-attempt aside, which must preserve
+truthful run identities, status and successful history without actions. A newly
+successful publication with unchanged adopted four-hour evidence may correctly
+contain no fresh Probables; publication success cannot promote eligibility.
+Existing production source and ownership remain unchanged from the frozen UX
+candidate. EA-Swing and PCP exact-source reviews are PENDING. Qualification
+results and exact source hashes are in the separate frozen closure evidence
+package; no predecessor approval or production authority transfers.
