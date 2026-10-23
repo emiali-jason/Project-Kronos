@@ -82,6 +82,8 @@ class PaperObservationTrackingWorkflow:
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         calendar: MarketCalendarPublisher | None = None,
     ) -> None:
+        from kronos.application.failed_fenced_owners import register_owner
+        register_owner("PAPER_OBSERVATION", self, __file__)
         if (
             type(store) is not LocalPaperObservationTrackStore
             or not callable(clock)

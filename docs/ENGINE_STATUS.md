@@ -220,3 +220,48 @@ Existing production source and ownership remain unchanged from the frozen UX
 candidate. EA-Swing and PCP exact-source reviews are PENDING. Qualification
 results and exact source hashes are in the separate frozen closure evidence
 package; no predecessor approval or production authority transfers.
+
+
+## Bounded Swing recovery engineering — 2026-10-22
+
+Status: isolated source candidate; independent owner approval and deployment pending.
+The existing canonical launcher and read-only successor verifier gain one closed
+October release incident. No analytical engine, numbering, method, persistence or
+product responsibility changes. Browser/application maintenance, counted owners,
+V2 handoff, source gate and startup completion remain their existing owners.
+FAILED_FENCED continuation is not implemented or approved; it remains safely held.
+See [recovery contract](engineering/SWING-RELEASE-RECOVERY-20261022.md).
+
+## R3 FAILED_FENCED implementation checkpoint — 2026-10-22
+
+Status: isolated partial implementation; full native recovery is BLOCKED.
+ADR-0068 records the approved prospective contract, not approval of these new
+source bytes or an operational grant. Closed protocol/storage, prospective owner
+hooks, original executor accounting, control framing and bootstrap components are
+implemented for isolated qualification. The canonical App entry does not yet
+deliver independently approved preparation into the native controller. Original
+controller/loader/READY producer wiring and supported native positive recovery
+remain unqualified. Unknown or incomplete evidence continues to deny recovery.
+See [actual implementation limits](engineering/FAILED-FENCED-R3-IMPLEMENTATION-STATUS.md).
+Analytical engines and historical evidence are unchanged. Exact-source owner,
+artifact, policy, operational and deployed verification gates remain separate.
+
+## R3 native integration continuation — 2026-10-23
+
+Status: isolated implementation and qualification; source/artifact review and
+operational authorization remain separate. The 22 October partial-checkpoint
+entry is retained as historical evidence. Existing R3 authority permits bounded
+source-owned preparation selection and native/child integration; no further
+architecture approval is inferred or manufactured by implementation.
+
+The candidate connects canonical native entry, original executor/controller
+closure, prospective instance/resource enrollment, guarded recovery, private
+bootstrap and actual startup evidence. The separate frozen final engineering
+report determines whether the full supported native roundtrip is qualified;
+component qualification or a typed API does not establish that result.
+
+Accepted compact Opportunities warnings and existing safe Local-admission
+behavior are covered by individual regression/currentness tests. No Native,
+LOCAL-01, KR-370, K4/V2, Pine or trading methodology changes. Production usability
+requires later controlled acceptance. SW_PERF_01 remains deferred; no speedup or
+prospective trading accuracy is claimed.

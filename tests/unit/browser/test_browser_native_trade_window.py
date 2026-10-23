@@ -438,6 +438,11 @@ def test_k5_ready_card_shows_time_based_reminder_without_watching(tmp_path) -> N
     assert "REFRESH ANALYSIS AFTER NEXT COMPLETED 1H" in html
     assert "REMINDER SET · 17 AUG 10:15 IST" in html
     assert "WATCHING" not in html
+    assert '<div class="wo07-card-warning" role="status">' in html
+    assert '<details class="swing-opportunity-details">' not in html
+    assert '<div class="swing-timeframe-grid">' not in html
+    assert 'Next exact condition:' not in html
+    assert 'href="/swing/nse-review">VIEW NSE REVIEW' in html
 
 
 def test_exact_now_without_plan_exposes_only_bounded_construct_action(tmp_path) -> None:

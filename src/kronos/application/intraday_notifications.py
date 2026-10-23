@@ -4,6 +4,8 @@ Durable compact source references are queued only after governed source writes.
 One worker drains the queue; GET reads the centre's restored memory projection.
 No acquisition, subscription, analytical decision or research publication lives here.
 """
+
+from kronos.application.failed_fenced_owners import recorded_cleanup
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, UTC
 from hashlib import sha256
@@ -27,6 +29,8 @@ class IntradayNotifications:
 
     def __init__(self, *, centre, research, wo09, futures, lifecycle, telegram=None,
                  background=True, expected_checkpoint=None, monitoring_projection=None):
+        from kronos.application.failed_fenced_owners import register_owner
+        register_owner('WO13', self, __file__)
         if (expected_checkpoint is not None
                 and not _valid_notification_checkpoint(expected_checkpoint)):
             raise ValueError("WO13_EXPECTED_CHECKPOINT_INVALID")
@@ -36,8 +40,12 @@ class IntradayNotifications:
         self.root = centre._store.root / "intraday-source-references-v1"
         self._lock = RLock()
         self._executor = ThreadPoolExecutor(max_workers=1,thread_name_prefix="kronos-notification") if background else None
+        if self._executor is not None:
+            from kronos.application.failed_fenced_owners import record_resource
+            record_resource(self, self._executor, "WORKER")
         self._scheduled = False
         self._closed = False
+        self._failed_fenced_accounting = None
         self._maintenance_admission: MaintenanceAdmissionCoordinator | None = None
         self.last_failure = None
         self._pending_reference_count = 0
@@ -82,7 +90,7 @@ class IntradayNotifications:
                 return None
         return self._origin(readiness.canonical_subject_identity, readiness.session_identity, readiness.created_at)
 
-    def bind(self, probables):
+    def bind(self, probables, *, defer_start=False):
         checkpoint = self.checkpoint()
         if (self._expected_checkpoint is not None
                 and checkpoint != self._expected_checkpoint):
@@ -92,7 +100,21 @@ class IntradayNotifications:
         for store in (probables,self.wo09,self.futures,self.lifecycle):
             store.notification_listener=self.enqueue
         self.probables=probables
-        if checkpoint["pending_count"]:
+        self._deferred_start = bool(defer_start)
+        if checkpoint["pending_count"] and not defer_start:
+            self._schedule()
+
+    def start_pending(self):
+        """Canonical post-enrollment restoration; never a recovery executor."""
+        with self._lock:
+            if (not getattr(self, "_deferred_start", False)
+                    or self._failed_fenced_accounting is None
+                    or self._maintenance_admission is None
+                    or self._maintenance_admission.snapshot()["state"] != "OPEN"):
+                raise ValueError("WO13_CANONICAL_DEFERRED_START_REQUIRED")
+            self._deferred_start = False
+            pending = self._pending_reference_count
+        if pending:
             self._schedule()
 
     @staticmethod
@@ -170,7 +192,33 @@ class IntradayNotifications:
             if ticket is not None:
                 ticket.release()
 
-    def _enqueue_owned(self, kind, identity):
+    def bind_failed_fenced_accounting(self, accounting):
+        """Bind the prospective owning ledger before any reference operation."""
+        from kronos.application.failed_fenced_owners import NativeOwnerAccounting
+        if type(accounting) is not NativeOwnerAccounting:
+            raise ValueError("WO13_RECOVERY_ACCOUNTING_REQUIRED")
+        with self._lock:
+            if self._failed_fenced_accounting is not None or self._scheduled:
+                raise ValueError("WO13_RECOVERY_ACCOUNTING_BINDING_CONFLICT")
+            self._failed_fenced_accounting = accounting
+
+    def complete_registered_reference(self, obligation):
+        """Finish only a ledger-authorized original reference, never delivery.
+
+        The ledger validates the exact originating operation, listener, source,
+        phase and still-owned uninterrupted invocation.  Existing references
+        cannot satisfy a different obligation merely because the key matches.
+        """
+        accounting = self._failed_fenced_accounting
+        if accounting is None:
+            raise ValueError("WO13_RECOVERY_ACCOUNTING_REQUIRED")
+        with accounting.reference_completion(self, obligation) as reference:
+            kind, identity = reference
+            if kind not in {"READINESS", "CURRENTNESS", "COMPARISON", "UNAVAILABLE", "TRACK"}:
+                raise ValueError("WO13_RECOVERY_REFERENCE_UNSUPPORTED")
+            return self._enqueue_owned(kind, identity, schedule=False, require_new=True)
+
+    def _enqueue_owned(self, kind, identity, *, schedule=True, require_new=False):
         if kind not in self.KINDS or not isinstance(identity,str) or len(identity)>200:
             raise ValueError("WO13_SOURCE_REFERENCE_INVALID")
         with self._lock:
@@ -180,7 +228,10 @@ class IntradayNotifications:
                 self._fsync_directory(self.root.parent)
             key=sha256((kind+":"+identity).encode()).hexdigest()
             path=self.root/(key+".pending")
-            if (self.root/(key+".done")).exists() or path.exists():return
+            if (self.root/(key+".done")).exists() or path.exists():
+                if require_new:
+                    raise ValueError("WO13_RECOVERY_REFERENCE_ALREADY_EXISTS")
+                return
             payload={"kind":kind,"identity":identity,"received_at":datetime.now(UTC).isoformat()}
             fd, staged = tempfile.mkstemp(prefix=f".{key}.", suffix=".staged", dir=self.root)
             with os.fdopen(fd, "w") as f:
@@ -193,7 +244,13 @@ class IntradayNotifications:
             os.unlink(staged)
             self._fsync_directory(self.root)
             self._pending_reference_count += 1
-        self._schedule()
+            # Capture the actual durable original before scheduling can rename
+            # pending to done; a completed drain does not invalidate its bytes.
+            retained = path.read_bytes()
+        if schedule:
+            self._schedule()
+        return {"kind": kind, "identity": identity, "key": key,
+                "state": "PENDING", "bytes": retained}
 
     def _schedule(self):
         if self._executor is not None:
@@ -323,6 +380,7 @@ class IntradayNotifications:
             terminal=details.get("track_identity") in self.terminal_tracks)
         return ' · '.join(lifecycle_monitoring(state))
 
+    @recorded_cleanup('CLOSE_NOTIFICATIONS')
     def close(self, *, wait=True):
         if self._executor is not None:self._executor.shutdown(wait=wait)
         with self._lock:

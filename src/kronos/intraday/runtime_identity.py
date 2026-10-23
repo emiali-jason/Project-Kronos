@@ -188,7 +188,11 @@ class StartupCapture(importlib.abc.MetaPathFinder):
     Existing application imports cannot be retroactively certified.
     """
     def __init__(self, root: Path, *, clock=lambda: datetime.now(timezone.utc),
-                 process_id=None, nonce=None, keep_sources_pinned=False) -> None:
+                  process_id=None, nonce=None, keep_sources_pinned=False,
+                  recovery_budget=None) -> None:
+        self._recovery_budget = recovery_budget
+        if recovery_budget is not None:
+            recovery_budget.check()
         self._keep_sources_pinned = keep_sources_pinned
         self._root = Path(root).resolve()
         self._started = clock()
@@ -206,6 +210,22 @@ class StartupCapture(importlib.abc.MetaPathFinder):
         return name not in _BOOTSTRAP_MODULES and (name.startswith("kronos.") or name.startswith("tools."))
 
     def _git(self, *args):
+        if self._recovery_budget is not None:
+            # Keep native source capture stdlib-only. Importing application
+            # recovery modules before capture would falsely certify preloads.
+            budget = self._recovery_budget
+            budget.check()
+            with subprocess.Popen(["git", *args], cwd=self._root,
+                                  stdout=subprocess.PIPE, stderr=subprocess.DEVNULL) as process:
+                try:
+                    output, _ = process.communicate(timeout=min(10, budget.remaining_seconds()))
+                except subprocess.TimeoutExpired:
+                    process.communicate()  # retain actual helper ownership; no kill/abandon
+                    raise ValueError("INTRADAY_STARTUP_SHARED_BUDGET_EXPIRED") from None
+                budget.check()
+                if process.returncode:
+                    raise subprocess.CalledProcessError(process.returncode, ["git", *args], output)
+                return output
         return subprocess.check_output(["git", *args], cwd=self._root,
             stderr=subprocess.DEVNULL, timeout=10)
 
@@ -233,6 +253,8 @@ class StartupCapture(importlib.abc.MetaPathFinder):
         try:
             for prefix, package in (("src/kronos", "kronos"), ("tools", "tools")):
                 for path in sorted((self._root / prefix).rglob("*.py")):
+                    if self._recovery_budget is not None:
+                        self._recovery_budget.check()
                     if path.is_symlink() or not path.resolve().is_relative_to(self._root):
                         self._valid = False
                         continue

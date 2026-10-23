@@ -7,13 +7,175 @@ from collections.abc import Sequence
 from datetime import UTC, datetime
 import webbrowser
 import os
+import time
+_CANONICAL_ENTRY_ORIGIN_NS = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
 from hashlib import sha256
 
 from pathlib import Path
 from kronos.intraday.runtime_identity import StartupCapture, LauncherConfiguration
 
+# This deny-only parser is intentionally stdlib-only and precedes native source
+# capture. It authenticates inherited immutable bounds, never installation,
+# human authority, actual source, capability, composition or restoration.
+class _InheritedRecoveryBudget:
+    def __init__(self, clock, origin, stop, claim_hash, intent_hash):
+        import time
+        self.clock, self.origin_ns, self.stop_deadline_ns = clock, origin, stop
+        self.claim_hash, self.intent_hash = claim_hash, intent_hash
+        self._last = origin
+        self._failed = False
+        self.check()
+
+    def now_ns(self):
+        import time
+        now = time.clock_gettime_ns(time.CLOCK_MONOTONIC)
+        if now < self._last:
+            self._failed = True
+        self._last = max(now, self._last)
+        if self._failed:
+            raise ValueError("FAILED_FENCED_INHERITED_CLOCK_REJECTED")
+        return now
+
+    def check(self, deadline_ns=None):
+        deadline = self.stop_deadline_ns if deadline_ns is None else min(self.stop_deadline_ns, deadline_ns)
+        if self.now_ns() >= deadline:
+            self._failed = True
+            raise ValueError("FAILED_FENCED_INHERITED_DEADLINE_EXPIRED")
+
+    def remaining_seconds(self, deadline_ns=None):
+        self.check(deadline_ns)
+        deadline = self.stop_deadline_ns if deadline_ns is None else min(self.stop_deadline_ns, deadline_ns)
+        return (deadline - self.now_ns()) / 1e9
+
+
+def _inherited_recovery_budget(environment, *, estate=None, _pipe_descriptor=3):
+    import fcntl
+    import hmac
+    import json
+    import re
+    import stat
+    prefix = "KRONOS_FAILED_FENCED_RECOVERY_"
+    keys = {prefix + suffix for suffix in ("VERSION", "SLOT", "CHILD_NONCE")}
+    present = {key for key in environment if key.startswith(prefix)}
+    if not present:
+        return None
+    if (present != keys or environment[prefix + "VERSION"] != "1.0.0"
+            or any(re.fullmatch(r"[0-9a-f]{64}", environment[prefix + name]) is None for name in ("SLOT", "CHILD_NONCE"))
+            or any(key.startswith(("KRONOS_MAINTENANCE_", "KRONOS_LEGACY_BOOTSTRAP_")) or key == "KRONOS_LAUNCH_MODE" for key in environment)):
+        raise ValueError("FAILED_FENCED_INHERITED_SELECTORS_REJECTED")
+    # Before any helper, ensure the inherited private pipe cannot leak through
+    # a later source/signature/Git exec. It confers no authority until consumed.
+    if not stat.S_ISFIFO(os.fstat(_pipe_descriptor).st_mode):
+        raise ValueError("FAILED_FENCED_INHERITED_PIPE_REQUIRED")
+    fcntl.fcntl(_pipe_descriptor, fcntl.F_SETFD, fcntl.fcntl(_pipe_descriptor, fcntl.F_GETFD) | fcntl.FD_CLOEXEC)
+    if estate is None:
+        # Keep this pre-capture parser stdlib-only. The native account lookup
+        # matches C and tools.runtime_source_gate.fixed_native_estate exactly.
+        import pwd
+        if os.getuid()!=os.geteuid():raise ValueError('RECOVERY_NATIVE_ACCOUNT_CHANGED')
+        home=Path(pwd.getpwuid(os.geteuid()).pw_dir)
+        if not home.is_absolute() or '..' in home.parts:raise ValueError('RECOVERY_NATIVE_ACCOUNT_HOME_INVALID')
+        estate=home/'Library/Application Support/KRONOS/runtime'
+    root = Path(estate) / "recovery-v1"
+    # estate is an internal isolated-facility argument; production has no CLI
+    # or environment override. Full independent prepared identity follows.
+    def read(parts, name, cap):
+        flags = os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC
+        fd = os.open("/", flags | os.O_DIRECTORY)
+        try:
+            for component in root.parts[1:] + tuple(parts):
+                child = os.open(component, flags | os.O_DIRECTORY, dir_fd=fd)
+                os.close(fd)
+                fd = child
+                info = os.fstat(fd)
+                # Canonical ancestors retain their existing modes. The estate
+                # and every recovery descendant must be private owned dirs.
+                if component == "recovery-v1" or component in parts:
+                    if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700:
+                        raise ValueError("FAILED_FENCED_INHERITED_PRIVATE_DIRECTORY")
+            item = os.open(name, flags, dir_fd=fd)
+            try:
+                before = os.fstat(item)
+                if not stat.S_ISREG(before.st_mode) or before.st_uid != os.getuid() or stat.S_IMODE(before.st_mode) != 0o600 or before.st_nlink != 1:
+                    raise ValueError("FAILED_FENCED_INHERITED_PRIVATE_FILE")
+                raw = os.read(item, cap + 1)
+                after = os.fstat(item)
+                if len(raw) > cap or any(getattr(before, key) != getattr(after, key) for key in ("st_dev", "st_ino", "st_mode", "st_uid", "st_nlink", "st_size", "st_mtime_ns", "st_ctime_ns")):
+                    raise ValueError("FAILED_FENCED_INHERITED_FILE_CHANGED")
+                return raw
+            finally:
+                os.close(item)
+        finally:
+            os.close(fd)
+    def pairs(rows):
+        result = {}
+        for key, value in rows:
+            if key in result:
+                raise ValueError("FAILED_FENCED_INHERITED_DUPLICATE_FIELD")
+            result[key] = value
+        return result
+    def number(_):
+        raise ValueError("FAILED_FENCED_INHERITED_NUMBER_REJECTED")
+    def canonical(value):
+        return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode("ascii")
+    def decode(raw):
+        value = json.loads(raw.decode("ascii"), object_pairs_hook=pairs, parse_int=number, parse_float=number, parse_constant=number)
+        if canonical(value) != raw:
+            raise ValueError("FAILED_FENCED_INHERITED_NONCANONICAL")
+        return value
+    slot = environment[prefix + "SLOT"]
+    claim_raw = read(("slots", slot), "claim", 1 << 20)
+    claim = decode(claim_raw)
+    key_id = claim.get("key_id")
+    if type(key_id) is not str or re.fullmatch(r"[0-9a-f]{64}", key_id) is None:
+        raise ValueError("FAILED_FENCED_INHERITED_KEY_REJECTED")
+    control = read(("custody",), key_id + ".control", 255)
+    if (sha256(control).hexdigest() != key_id or re.fullmatch(rb"KRONOS_BROWSER_BACKEND_CONTROL_V1\n[1-9][0-9]*\n[0-9a-f]{64}\n", control) is None):
+        raise ValueError("FAILED_FENCED_INHERITED_CUSTODY_REJECTED")
+    key = bytes.fromhex(control.splitlines()[2].decode("ascii"))
+    def authenticated(value, kind):
+        fields = {"protocol", "version", "kind", "role", "key_id", "clock", "issued_ns", "payload", "mac"}
+        if (type(value) is not dict or set(value) != fields or value["protocol"] != "KRONOS-FAILED-FENCED-RECOVERY-V1" or value["version"] != "1.0.0"
+                or value["kind"] != kind or value["role"] != "LAUNCHER" or value["key_id"] != key_id):
+            raise ValueError("FAILED_FENCED_INHERITED_RECORD_REJECTED")
+        derived = hmac.digest(key, ("KRONOS-FAILED-FENCED-RECOVERY-V1/1.0.0/key/LAUNCHER/" + key_id).encode("ascii"), "sha256")
+        signed = {k: v for k, v in value.items() if k != "mac"}
+        actual = hmac.new(derived, b"KRONOS-FAILED-FENCED-RECOVERY-V1/1.0.0/record\n" + canonical(signed), "sha256").hexdigest()
+        if type(value["mac"]) is not str or not hmac.compare_digest(actual, value["mac"]):
+            raise ValueError("FAILED_FENCED_INHERITED_MAC_REJECTED")
+    authenticated(claim, "CLAIM")
+    payload = claim["payload"]
+    expected = {"slot", "guard", "transaction", "binding", "authorization", "scope_approvals", "control_challenge", "launcher", "launcher_capability", "endpoint", "limits", "successor_source", "successor_capability", "installed_package", "rollback_package", "compatibility"}
+    if type(payload) is not dict or set(payload) != expected or payload["slot"] != slot:
+        raise ValueError("FAILED_FENCED_INHERITED_CLAIM_REJECTED")
+    limits = payload["limits"]
+    if type(limits) is not dict or set(limits) != {"clock", "origin_ns", "stop_deadline_ns"} or limits["clock"] != claim["clock"]:
+        raise ValueError("FAILED_FENCED_INHERITED_LIMITS_REJECTED")
+    clock = claim["clock"]
+    if type(clock) is not dict or set(clock) != {"type", "boot_id", "qualification"} or clock["type"] != "CLOCK_MONOTONIC":
+        raise ValueError("FAILED_FENCED_INHERITED_CLOCK_REJECTED")
+    for value in (limits["origin_ns"], limits["stop_deadline_ns"], claim["issued_ns"]):
+        if type(value) is not str or re.fullmatch(r"0|[1-9][0-9]{0,19}", value) is None or int(value) >= 1 << 64:
+            raise ValueError("FAILED_FENCED_INHERITED_LIMITS_REJECTED")
+    origin, stop = int(limits["origin_ns"]), int(limits["stop_deadline_ns"])
+    if stop != origin + 15_000_000_000 or not origin <= int(claim["issued_ns"]) < stop:
+        raise ValueError("FAILED_FENCED_INHERITED_BUDGET_EXTENSION")
+    intent_raw = read(("slots", slot), "child-intent", 1 << 20)
+    intent = decode(intent_raw)
+    authenticated(intent, "CHILD_INTENT")
+    if (intent["clock"] != clock or intent["payload"]["slot"] != slot
+            or intent["payload"]["child_nonce"] != environment[prefix + "CHILD_NONCE"]
+            or intent["payload"]["claim"] != {"kind": "CLAIM", "hash": sha256(claim_raw).hexdigest()}
+            or intent["payload"]["limits"] != limits):
+        raise ValueError("FAILED_FENCED_INHERITED_INTENT_REJECTED")
+    return _InheritedRecoveryBudget(clock, origin, stop, sha256(claim_raw).hexdigest(), sha256(intent_raw).hexdigest())
+
+
+_RECOVERY_EARLY_BUDGET = _inherited_recovery_budget(os.environ)
+
 # Capture before application imports. Never replace this with a later HEAD lookup.
-with StartupCapture(Path(__file__).resolve().parents[1], keep_sources_pinned=True) as _startup_capture:
+with StartupCapture(Path(__file__).resolve().parents[1], keep_sources_pinned=True,
+                    recovery_budget=_RECOVERY_EARLY_BUDGET) as _startup_capture:
     from kronos.application.provider_instrument_master_operation import (
         ProviderInstrumentMasterOperationalComposition,
     )
@@ -133,19 +295,88 @@ def _parser() -> argparse.ArgumentParser:
     return parser
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def main(argv: Sequence[str] | None = None, *, prepared_runtime=None, recovery_child=None) -> int:
+    # These are source-owned typed injection points for canonical approved
+    # installation/controller preparation. No CLI/env/HTTP deserialization can
+    # select an authority, ledger, callable or alternative estate.
+    from kronos.common.failed_fenced_startup import (
+        PreparedChildStartup, PreparedRuntimeFactory, ProspectiveRuntimeStartup, RecoveryStartupError,
+    )
+    if _RECOVERY_EARLY_BUDGET is not None and recovery_child is None:
+        from kronos.common.failed_fenced_startup import load_child_preparation, prepare_child_startup
+        authority, canonical_factory = load_child_preparation(
+            _STARTUP_EVIDENCE, os.environ, _RECOVERY_EARLY_BUDGET)
+        recovery_child = prepare_child_startup(authority, _STARTUP_EVIDENCE, os.environ)
+        if prepared_runtime is not None:
+            raise RecoveryStartupError("RECOVERY_CHILD_RUNTIME_FACTORY_SUBSTITUTION")
+        prepared_runtime = canonical_factory
+    if _RECOVERY_EARLY_BUDGET is not None and type(recovery_child) is not PreparedChildStartup:
+        raise RecoveryStartupError("RECOVERY_CANONICAL_CHILD_PREPARATION_REQUIRED")
+    if recovery_child is not None and (type(recovery_child) is not PreparedChildStartup or _RECOVERY_EARLY_BUDGET is None):
+        raise RecoveryStartupError("RECOVERY_CHILD_CONTEXT_REJECTED")
+    if prepared_runtime is None:
+        # This source is the capable composition. Neither a redirected HOME nor
+        # an absent namespace classifies it as historical LEGACY_UNENROLLED.
+        # The fixed native-account estate and affirmative static approvals are
+        # independently checked before any product construction. Ordinary V1/V2
+        # composition below remains unchanged after this admission boundary.
+        from kronos.common.failed_fenced_startup import load_capture_installation
+        try:
+            prepared_runtime = load_capture_installation(_STARTUP_EVIDENCE,
+                origin_ns=_CANONICAL_ENTRY_ORIGIN_NS)
+        except (OSError, ValueError) as exc:
+            raise RecoveryStartupError("RECOVERY_GUARD_PREPARATION_REQUIRED") from exc
+    if type(prepared_runtime) is PreparedRuntimeFactory:
+        return _main(argv, prepared_runtime=prepared_runtime, recovery_child=recovery_child)
+    if type(prepared_runtime) is not ProspectiveRuntimeStartup or recovery_child is not None:
+        raise RecoveryStartupError("RECOVERY_PROSPECTIVE_RUNTIME_REQUIRED")
+    with prepared_runtime.activate(_STARTUP_EVIDENCE):
+        return _main(argv, prepared_runtime=prepared_runtime, recovery_child=recovery_child)
+
+
+def _main(argv: Sequence[str] | None = None, *, prepared_runtime=None, recovery_child=None) -> int:
     args = _parser().parse_args(argv)
     from tools.runtime_source_gate import qualify_startup
-    qualify_startup(Path(__file__).resolve().parents[1], _STARTUP_EVIDENCE)
+    if _RECOVERY_EARLY_BUDGET is None:
+        qualify_startup(Path(__file__).resolve().parents[1], _STARTUP_EVIDENCE)
+    else:
+        qualify_startup(Path(__file__).resolve().parents[1], _STARTUP_EVIDENCE,
+                        budget=_RECOVERY_EARLY_BUDGET)
     process_identity = sha256(_STARTUP_EVIDENCE.evidence_identity.encode()).hexdigest()
-    maintenance = consume_startup_context(DEFAULT_BACKEND_CONTROL_PATH.parent, os.environ,
-        revision=_STARTUP_EVIDENCE.source_revision, source_state=_STARTUP_EVIDENCE.source_state,
-        repository=Path(__file__).resolve().parents[1],
-        runtime_identity=process_identity, now=datetime.now(UTC))
-    maintenance_identity = (maintenance.generation if isinstance(
-        maintenance, DrainStartupContext) else maintenance)
-    expected_notification_checkpoint = (maintenance.notification_checkpoint()
-        if isinstance(maintenance, DrainStartupContext) else None)
+    child_session = None
+    if recovery_child is not None:
+        child_session, startup_context = recovery_child.enter(os.environ, _STARTUP_EVIDENCE,
+                                                              _RECOVERY_EARLY_BUDGET)
+        # R3 never produces or consumes an ordinary V1/V2 maintenance handoff.
+        maintenance = None
+        # Existing connection-governance audit identity is a SHA-256 value;
+        # R3 transaction remains its exact governed Id in immutable records.
+        maintenance_identity = sha256(startup_context["payload"]["transaction"].encode("ascii")).hexdigest()
+        checkpoint = recovery_child.checkpoint
+        expected_notification_checkpoint = {"state": checkpoint["state"],
+            "pending_count": int(checkpoint["pending"]), "sha256": checkpoint["digest"]}
+        child_session.ready_budget.check()
+    else:
+        maintenance = consume_startup_context(DEFAULT_BACKEND_CONTROL_PATH.parent, os.environ,
+            revision=_STARTUP_EVIDENCE.source_revision, source_state=_STARTUP_EVIDENCE.source_state,
+            repository=Path(__file__).resolve().parents[1],
+            runtime_identity=process_identity, now=datetime.now(UTC))
+        maintenance_identity = (maintenance.generation if isinstance(
+            maintenance, DrainStartupContext) else maintenance)
+        expected_notification_checkpoint = (maintenance.notification_checkpoint()
+            if isinstance(maintenance, DrainStartupContext) else None)
+    from kronos.common.failed_fenced_startup import PreparedRuntimeFactory
+    if type(prepared_runtime) is PreparedRuntimeFactory:
+        prepared_runtime = prepared_runtime.construct(_STARTUP_EVIDENCE, child_session)
+        with prepared_runtime.activate(_STARTUP_EVIDENCE):
+            return _compose_application(args, process_identity, maintenance_identity,
+                                        expected_notification_checkpoint, prepared_runtime, child_session)
+    return _compose_application(args, process_identity, maintenance_identity,
+                                expected_notification_checkpoint, prepared_runtime, child_session)
+
+
+def _compose_application(args, process_identity, maintenance_identity,
+                         expected_notification_checkpoint, prepared_runtime, child_session):
     governance = ConnectionGovernance(ConnectionProcess(
         _STARTUP_EVIDENCE.process_id, _STARTUP_EVIDENCE.startup_boundary_at.isoformat(),
         process_identity, _STARTUP_EVIDENCE.source_revision, _STARTUP_EVIDENCE.source_state),
@@ -196,6 +427,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         startup_evidence=intraday_runtime.startup_evidence,
         launcher_configuration=LauncherConfiguration(args.port, not args.no_browser),
     )
+    if prepared_runtime is not None:
+        # Retain the actual native constructor result, not JSON copied from a
+        # source proof or status response. Source validation uses this witness.
+        prepared_runtime.ledger.bind_runtime_manifest(intraday_probables_v2_control._runtime_manifest)
     intraday_review_v2_control = IntradayReviewV2OperationalControl(
         intraday_runtime.review_v2_application,
         intraday_runtime.review_v2_operation_store,
@@ -343,7 +578,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         relative_context_evidence_store=relative_context_store,
         analysis_process_owner=SwingAnalysisProcessOwner(),
     )
-    restart_control = BrowserBackendRestartControl.create()
+    restart_control = (BrowserBackendRestartControl.create() if prepared_runtime is None
+                       else prepared_runtime.restart_control)
     server = None
     try:
         server = create_browser_server(
@@ -399,7 +635,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         server.intraday_notifications.bind_maintenance_admission(
             server.maintenance_admission
         )
-        server.intraday_notifications.bind(intraday_runtime.probables_v2_store)
+        if prepared_runtime is None:
+            server.intraday_notifications.bind(intraday_runtime.probables_v2_store)
+        else:
+            server.intraday_notifications.bind(intraday_runtime.probables_v2_store,
+                defer_start=True)
         intraday_runtime.journal_application.bind()
         from kronos.application.intraday_books import IntradayBooks
         server.intraday_books = IntradayBooks(
@@ -415,6 +655,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         intraday_runtime.wo17_monitoring.set_monitoring_capability_supplier(
             application.authenticated_read_only_capability
         )
+        if prepared_runtime is not None:
+            if child_session is not None:
+                server._failed_fenced_child_session = child_session
+            from kronos.application.failed_fenced_owners import enroll_canonical_sources
+            enroll_canonical_sources(prepared_runtime.composition,
+                wo09=intraday_runtime.wo09_store, futures=intraday_runtime.futures_application.store,
+                lifecycle=intraday_runtime.lifecycle_application.store,
+                notifications=server.intraday_notifications, journal=server.intraday_journal,
+                books=server.intraday_books, caller=server.intraday_lifecycle)
+            prepared_runtime.complete_construction(server)
+            server.intraday_notifications.start_pending()
+        if child_session is not None:
+            child_session.ready_budget.check()
         from kronos.browser.runtime_state import complete_startup
         complete_startup(
             server, intraday_runtime.discovery_v2_operation.live_shadow,
@@ -422,6 +675,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             wo11=intraday_runtime.lifecycle_application,
             wo17=intraday_wo17_control.status_document(),
         )
+        if child_session is not None:
+            child_session.ready_budget.check()
+        if prepared_runtime is not None:
+            startup_ticket = getattr(prepared_runtime.ledger, "_canonical_startup_ticket", None)
+            if startup_ticket is not None:
+                startup_ticket.release()
+        if child_session is not None:
+            from kronos.common.failed_fenced_startup import SuccessorReadyEvidence
+            # The actual child publishes S evidence only. The canonical native
+            # parent independently validates it and alone issues L READY_RECEIPT.
+            ready = SuccessorReadyEvidence(child_session, prepared_runtime, server)
+            server._failed_fenced_ready_payload = ready.publish()
+            server._failed_fenced_ready_evidence = ready
         url = f"http://127.0.0.1:{server.server_port}/swing/opportunities"
         if not args.no_browser:
             webbrowser.open_new_tab(url)
@@ -438,10 +704,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             else:
                 restart_control.remove()
         finally:
-            wo08_shadow = getattr(intraday_runtime, "wo08_shadow", None)
-            if wo08_shadow is not None:
-                wo08_shadow.close()
-            shared_provider_runtime.end_kronos_session()
+            # The reviewed R3 tail has already completed every cleanup and
+            # released its final publisher before ACK. No domain finalizer,
+            # Provider audit, WO08 callback or ordinary handoff may run again.
+            write_free = server is not None and getattr(server, "_failed_fenced_write_free", False)
+            if not write_free:
+                wo08_shadow = getattr(intraday_runtime, "wo08_shadow", None)
+                if wo08_shadow is not None:
+                    wo08_shadow.close()
+                shared_provider_runtime.end_kronos_session()
     return 0
 
 

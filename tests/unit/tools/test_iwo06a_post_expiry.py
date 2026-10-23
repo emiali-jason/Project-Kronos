@@ -8,6 +8,11 @@ import json
 import pytest
 
 from tools import kronos_browser
+
+# These tests exercise the unchanged ordinary composition body with isolated
+# fake owners/native leaves. Public capable-entry preparation and HOME/
+# namespace denials are qualified in test_failed_fenced_launcher.py and
+# the actual prepared C roundtrip fixture; no static approval is implied.
 from kronos.application.intraday_runtime import create_intraday_runtime
 from kronos.browser.intraday_probables_v2_control import IntradayProbablesV2OperationalControl
 from kronos.browser.server import KronosBrowserServer
@@ -176,10 +181,10 @@ def test_real_canonical_post_expiry_composition(tmp_path,monkeypatch,request,fau
     try:
         if fault=='notification':
             with pytest.raises(ValueError,match='WO13_NOTIFICATION_CHECKPOINT_MISMATCH'):
-                kronos_browser.main(['--port','0','--no-browser'])
+                kronos_browser._main(['--port','0','--no-browser'])
             assert not observed
             assert servers[0].connection_governance.startup_state!='READY'
-        else:assert kronos_browser.main(['--port','0','--no-browser'])==0
+        else:assert kronos_browser._main(['--port','0','--no-browser'])==0
     finally:
         for server in servers:
             if fault=='transport':server.swing_monitoring_hub._session=None

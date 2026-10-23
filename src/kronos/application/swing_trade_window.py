@@ -8,6 +8,10 @@ broker actions.
 
 from __future__ import annotations
 
+from kronos.application.failed_fenced_owners import (record_binding, binding_activated, binding_cleared, recorded_binding_clear)
+
+from kronos.application.failed_fenced_owners import recorded_cleanup
+
 from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime
 from decimal import Decimal
@@ -623,6 +627,8 @@ class SwingTradeWindowWorkflow:
         paper_observation_store: LocalPaperObservationTrackStore | None = None,
         observation_research_ledger_v2: ObservationResearchLedgerV2Service | None = None,
     ) -> None:
+        from kronos.application.failed_fenced_owners import register_owner
+        register_owner('TRADE_WINDOW', self, __file__)
         if (
             type(handoff_store) is not LocalKr370Step31HandoffStore
             or type(trade_plan_store) is not LocalTradePlanStore
@@ -836,12 +842,15 @@ class SwingTradeWindowWorkflow:
             self, plan, risk, context, instrument, clock
         )
         registration = hub.open(capability, consumer)
+        from kronos.application.failed_fenced_owners import record_registration_alias
+        record_registration_alias(self, registration)
         registration.subscribe((instrument,))
         registration.connect()
         self._monitoring_consumers[plan.trade_plan_id] = consumer
         self._monitoring_registrations[plan.trade_plan_id] = registration
         return binding
 
+    @recorded_cleanup('CLOSE_TRADE_WINDOW')
     def close_monitoring(self) -> None:
         registrations = tuple(self._monitoring_registrations.values())
         self._monitoring_registrations.clear()
@@ -1895,14 +1904,19 @@ class SwingTradeWindowWorkflow:
         self._emit_research("OBSERVATION_DECISION", retained)
         return retained
 
-    def register_research_capture(self, capture) -> None:
+    def register_research_capture(self, capture, *, capture_owner=None) -> None:
         if not callable(capture) or self._research_capture is not None:
             raise ValueError("SWING_RESEARCH_CAPTURE_INVALID")
+        binding = record_binding("RESEARCH_CAPTURE_BINDING", self, capture,
+            self.clear_research_capture, lambda: self._research_capture, __file__, capture_owner)
         self._research_capture = capture
+        binding_activated(binding)
 
+    @recorded_binding_clear("RESEARCH_CAPTURE_BINDING")
     def clear_research_capture(self, capture) -> None:
         if self._research_capture is capture:
             self._research_capture = None
+            binding_cleared(self, "RESEARCH_CAPTURE_BINDING", capture)
 
     def retained_research_events(self):
         """Read exact terminal decisions and Track starts for explicit replay."""

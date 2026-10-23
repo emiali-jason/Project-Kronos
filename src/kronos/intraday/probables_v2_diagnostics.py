@@ -12,7 +12,6 @@ import re
 from typing import Mapping
 
 from kronos.intraday.discovery import NativeDiscoveryMachineFactBundle, NativeDiscoveryRun
-from kronos.intraday.discovery_runtime import DiscoveryRuntimeExecution
 from kronos.intraday.probables_v2 import (
     PROBABLES_V2_METHODOLOGY_IDENTITY,
     PROBABLES_V2_CORRECTION_METHODOLOGY_CHECKSUM as PROBABLES_V2_METHODOLOGY_CHECKSUM,
@@ -190,6 +189,7 @@ def create_probables_v2_replay_envelope(
     execution: DiscoveryRuntimeExecution, reconciliation: ReconciliationPublication,
     created_at: datetime,
 ) -> ProbablesV2ReplayEnvelope:
+    from kronos.intraday.discovery_runtime import DiscoveryRuntimeExecution
     if type(execution) is not DiscoveryRuntimeExecution:
         raise ValueError("INTRADAY_PROBABLES_V2_REPLAY_ENVELOPE_INPUT_INVALID")
     values = {
@@ -228,6 +228,7 @@ def create_probables_v2_replay_envelope(
 
 
 def reconstruct_v2_execution(envelope: ProbablesV2ReplayEnvelope) -> DiscoveryRuntimeExecution:
+    from kronos.intraday.discovery_runtime import DiscoveryRuntimeExecution
     if type(envelope) is not ProbablesV2ReplayEnvelope:
         raise ValueError("INTRADAY_PROBABLES_V2_REPLAY_ENVELOPE_INVALID")
     return DiscoveryRuntimeExecution(

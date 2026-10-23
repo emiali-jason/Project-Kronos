@@ -13,57 +13,21 @@ from threading import RLock
 
 from kronos.application.intraday_journal import IntradaySourceAdapter, _instant
 from kronos.intraday.wo15_portfolio import is_exposure
+from kronos.intraday.books_factual_contract import FactualRow, factual_row
 
 MAX_RECORDS = 10000
 
 
-@dataclass(frozen=True)
-class FactualRow:
-    identity: str
-    payload: str
-
-    @property
-    def data(self):
-        return json.loads(self.payload)
 
 
-def factual_row(**data):
-    if data["truth_class"] not in {"PAPER_POSITION", "PAPER_OBSERVATION", "NONE", "DO_NOTHING"}:
-        raise ValueError("INTRADAY_BOOK_TRUTH_UNAVAILABLE")
-    if not data["opportunity_id"] or not data["opportunity_identity"]:
-        raise ValueError("INTRADAY_BOOK_ORIGIN_UNAVAILABLE")
-    if data["track_identity"] and data["model_lots"] != 1:
-        raise ValueError("INTRADAY_BOOK_ONE_LOT_REQUIRED")
-    # Exact source adapter; this is a display identity, never an opportunity ID.
-    key = [data[k] for k in ("opportunity_identity", "decision_identity", "track_identity", "truth_class")]
-    identity = "INTRADAY-FACTUAL-ROW-" + sha256(json.dumps(key).encode()).hexdigest()
-    data["future"] = {k: (data.get("future") or {}).get(k) for k in (
-        "tradingsymbol", "trading_symbol", "exchange", "segment", "expiry", "lot_size")}
-    if data.get("metrics") is not None:
-        data["metrics"] = {key: data["metrics"].get(key) for key in (
-            "points", "model_r", "mfe", "mae", "gross_model_result", "complete", "samples",
-            "coverage_label", "coverage_start", "coverage_end")}
-    data.setdefault("observation", None)
-    def portable(value):
-        if isinstance(value, str) and (len(value) > 512 or any(marker in value for marker in (
-                "/Users/", "/private/", "/tmp/", "file://", "Bearer ", "access_token", "api_key", "Cookie:"))):
-            raise ValueError("INTRADAY_BOOK_NONPORTABLE_SOURCE")
-        if isinstance(value, dict):
-            for key, item in value.items():
-                portable(key); portable(item)
-        elif isinstance(value, (list, tuple)):
-            if len(value) > 1000:
-                raise ValueError("INTRADAY_BOOK_SOURCE_SIZE_UNAVAILABLE")
-            for item in value:
-                portable(item)
-    portable(data)
-    return FactualRow(identity, json.dumps(data, sort_keys=True, separators=(",", ":")))
 
 
 class IntradayBooks(IntradaySourceAdapter):
     revision_factory = staticmethod(factual_row)
 
     def __init__(self, *, research, futures, lifecycle):
+        from kronos.application.failed_fenced_owners import register_owner
+        register_owner('BOOKS', self, __file__)
         super().__init__(research=research, futures=futures, lifecycle=lifecycle, store=self)
         self._rows = {}
         self._lock = RLock()
@@ -78,6 +42,7 @@ class IntradayBooks(IntradaySourceAdapter):
         if len(self._rows) >= MAX_RECORDS and row.identity not in self._rows:
             raise ValueError("INTRADAY_BOOK_CAPACITY_UNAVAILABLE")
         self._rows[row.identity] = row
+        return row
 
     def _monitoring(self, track_identity, stored, terminal):
         # Retain lifecycle truth only. Dynamic owner state is read separately.
@@ -90,21 +55,34 @@ class IntradayBooks(IntradaySourceAdapter):
             | {"gap_count": len(data.get("gaps", ())), "source_lifecycle_identity": None}}
 
     def _track(self, current):
-        super()._track(current)
+        produced = super()._track(current)
         # Replace only the compact source pointer, not source facts or history.
         for key, row in tuple(self._rows.items()):
             if row.data["track_identity"] == current.data["track_identity"]:
                 d = row.data
                 d["observation"]["source_lifecycle_identity"] = current.identity
                 self._rows[key] = FactualRow(key, json.dumps(d, sort_keys=True, separators=(",", ":")))
+        return None if produced is None else self._rows[produced.identity]
 
     def consume_source(self, kind, identity):
         with self._lock:
             try:
-                super().consume_source(kind, identity)
+                return super().consume_source(kind, identity)
             except Exception:
                 self._failure = "INTRADAY_BOOK_SOURCE_UNAVAILABLE"
                 raise
+
+    def _original_output(self, row):
+        # Called while consume_source holds this owner's lock.  This captures
+        # the original exact FactualRow, without snapshot/hydration or writes.
+        if type(row) is not FactualRow or self._rows.get(row.identity) != row:
+            raise ValueError("INTRADAY_BOOK_CALLBACK_OUTPUT_CHANGED")
+        data = row.data
+        expected = factual_row(**data)
+        if expected != row:
+            raise ValueError("INTRADAY_BOOK_CALLBACK_OUTPUT_INVALID")
+        return {"adapter": "BOOKS_FACTUAL_ROW_V1", "identity": row.identity,
+                "bytes": row.payload.encode("utf-8"), "pointer": None}
 
     def _hydrate(self):
         if self._hydrated:

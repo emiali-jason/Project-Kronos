@@ -283,3 +283,7 @@ acceptance are required before claiming runtime commissioning.
 ### WO12 considered-opportunity journey
 
 [ADR-0065](adr/ADR-0065-WO12-OPPORTUNITY-JOURNEY-REPORTING.md) and the [Opportunity Journey V1 interface](interfaces/KRONOS-INTRADAY-WO12-OPPORTUNITY-JOURNEY-V1.md) add a reporting-only seventh worksheet. Sponsor Choice A uses retained governed WO11 events only, discloses missing coverage and preserves historical six-sheet reconstruction. SAME_INTERVAL is deferred outside V1.
+
+## Prospective FAILED_FENCED recovery R3 — ADR-0068
+
+[ADR-0068](adr/ADR-0068-FAILED-FENCED-RECOVERY-V1.md) records the exact approved R3 contract and isolated implementation authority, including complete finite owner scope, counted completed-publication protocol, one-shot child authority and guarded admission. Actual source qualification/review, artifacts and production remain separately gated. Historical ADR-0050/0059/0061 decisions are preserved.

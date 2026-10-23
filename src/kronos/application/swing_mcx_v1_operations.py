@@ -6,6 +6,10 @@ published Browser default continues to reject every MCX Step-31 mutation.
 
 from __future__ import annotations
 
+from kronos.application.failed_fenced_owners import recorded_cleanup
+
+from kronos.application.failed_fenced_owners import (record_binding, binding_activated, binding_cleared, recorded_binding_clear)
+
 from concurrent.futures import Future, ThreadPoolExecutor
 from collections import OrderedDict
 from datetime import datetime, timedelta
@@ -178,6 +182,8 @@ class SwingMcxV1OperationalControl:
         broker_evidence: LocalMcxBrokerFillEvidenceStore,
         capability: object | Callable[[], object],
     ) -> None:
+        from kronos.application.failed_fenced_owners import register_owner
+        register_owner('MCX', self, __file__)
         if ((workflow is not None and type(workflow) is not SwingMcxIntegratedWorkflow)
                 or (review_owner is not None and type(review_owner) is not NativeReviewIntakeWorkflow)
                 or (workflow is not None and review_owner is None)
@@ -215,17 +221,25 @@ class SwingMcxV1OperationalControl:
         self.research_capture_failure = None
         self._maintenance_admission: MaintenanceAdmissionCoordinator | None = None
         self._advisory_worker = _BoundedMcxAdvisoryWorker()
+        from kronos.application.failed_fenced_owners import record_resource
+        record_resource(self, self._advisory_worker, "OWNER")
+        record_resource(self, self._advisory_worker._executor, "WORKER")
         self.bound = McxContractBoundLifecycle(lifecycle, historical)
         native_review.bind_mcx_v1_tick_owner(self.on_paper_tick)
 
-    def register_research_capture(self, capture) -> None:
+    def register_research_capture(self, capture, *, capture_owner=None) -> None:
         if not callable(capture) or self._research_capture is not None:
             raise ValueError("SWING_RESEARCH_CAPTURE_INVALID")
+        binding = record_binding("RESEARCH_CAPTURE_BINDING", self, capture,
+            self.clear_research_capture, lambda: self._research_capture, __file__, capture_owner)
         self._research_capture = capture
+        binding_activated(binding)
 
+    @recorded_binding_clear("RESEARCH_CAPTURE_BINDING")
     def clear_research_capture(self, capture) -> None:
         if self._research_capture is capture:
             self._research_capture = None
+            binding_cleared(self, "RESEARCH_CAPTURE_BINDING", capture)
 
     def _emit_research(self, kind, value) -> None:
         if self._research_capture is None:
@@ -268,6 +282,7 @@ class SwingMcxV1OperationalControl:
     def worker_status(self) -> dict[str, object]:
         return self._advisory_worker.status()
 
+    @recorded_cleanup('CLOSE_MCX')
     def close(self) -> None:
         self._advisory_worker.close()
 

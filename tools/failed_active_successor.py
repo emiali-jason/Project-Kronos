@@ -232,13 +232,15 @@ def verify_incident_authorization(authority, *, now_us, revision):
         <= now_us, "RESTORATION_TIME")
 
 
-def verify_incident_documents(documents, *, pid, revision, generation, successor):
+def verify_incident_documents(documents, *, pid, revision, generation, successor,
+                              _capability=None, _start_us=None,
+                              _failure="SWING_RESTORATION_NOT_ESTABLISHED"):
     from kronos.browser.runtime_state import _swing_restoration_failure
     from kronos.intraday.live_shadow_transition import capability_identity
     runtime, status, intraday = documents
     maintenance = dict(protocol="KRONOS_MAINTENANCE_HANDOFF_V1", state="INACTIVE" if successor else "FAILED_ACTIVE",
         active=not successor, generation=generation, startup="READY" if successor else "BLOCKED",
-        failure=None if successor else "SWING_RESTORATION_NOT_ESTABLISHED")
+        failure=None if successor else _failure)
     _incident_require(runtime["process"] == dict(pid=pid, revision=revision, source_state="CLEAN_COMMIT")
         and runtime["schema"] == "KRONOS-RUNTIME-STATE/1.0.0"
         and runtime["maintenance"] == status["maintenance"] == maintenance
@@ -264,10 +266,16 @@ def verify_incident_documents(documents, *, pid, revision, generation, successor
             dict(cohort_a=1, cohort_b=18, eod_available=0).items()), "WO06H_HISTORY")
     proof = shadow["runtime_proof"]
     _incident_require(type(proof["pid"]) is int and proof["pid"] == pid and proof["revision"] == revision
-        and proof["source_state"] == "CLEAN_COMMIT" and capability_identity(proof) == INCIDENT_CAPABILITY,
+        and proof["source_state"] == "CLEAN_COMMIT"
+        and capability_identity(proof) == (INCIDENT_CAPABILITY if _capability is None else _capability),
         "WO06H_CAPABILITY")
     if not successor:
-        _incident_require(proof["startup"] == "2026-10-14T16:52:20.386116+00:00", "START_IDENTITY")
+        if _start_us is None:
+            _incident_require(proof["startup"] == "2026-10-14T16:52:20.386116+00:00", "START_IDENTITY")
+        else:
+            # Startup capture follows kernel birth; exact kernel identity is
+            # independently checked by the launcher, not inferred from this timestamp.
+            _incident_require(_start_us <= _release_time_us(proof["startup"]), "START_IDENTITY")
     else:
         outcomes = runtime["startup_restoration_outcomes"]
         _incident_require(type(outcomes) is list and all(type(row) is list and len(row) == 2
@@ -324,8 +332,205 @@ def incident_main(argv):
 INCIDENT_CAPABILITY = 'WO06H-CAPABILITY-f61cfe6c7395d0ee8554d82946a5a7fa88444c09151f53bc171253a3d35aa31b'
 
 
+# Closed 2026-10-22 Swing release incident. This is validation only; the sealed
+# launcher still owns source admission, private control, reservation and drain.
+RELEASE_SCHEMA = "KRONOS-SWING-RELEASE-RECOVERY-AUTHORIZATION/1.0.0"
+RELEASE_INCIDENT = "KRONOS-SWING-FAILED-ACTIVE-AND-FENCED-RECOVERY-ENGINEERING-20261022"
+RELEASE_PREDECESSORS = frozenset((
+    "355922f92f7b826191ae86bd7bb0473349f3c1cc",
+    "1579f1cbad2f98370b62f5511a7d339c131ab15a"))
+RELEASE_FAILURES = frozenset((
+    "ACCEPTANCE_RESTORATION_NOT_ESTABLISHED", "SWING_RESTORATION_NOT_ESTABLISHED",
+    "RUNTIME_RESTORATION_PROOF_UNAVAILABLE", "WO11_RESTORATION_FAILED",
+    "WO17_RESTORATION_FAILED", "STARTUP_COMPLETION_RECORD_UNAVAILABLE"))
+RELEASE_AUTH_FIELDS = frozenset((
+    "schema state recovery_class incident_id attempt_identity sponsor_authorization_reference "
+    "sponsor_authorization_path sponsor_authorization_sha256 predecessor_revision predecessor_pid "
+    "predecessor_start_us predecessor_maintenance_identity private_control_sha256 "
+    "installed_package_identity rollback_bundle rollback_package_identity successor_revision "
+    "expected_successor_capability expected_startup_failure diagnosis_path diagnosis_sha256 "
+    "artifact_review_path artifact_review_sha256 valid_from_us valid_until_us").split())
+RELEASE_REVIEW_BINDINGS = frozenset((
+    "incident_id predecessor_revision predecessor_pid predecessor_start_us "
+    "predecessor_maintenance_identity private_control_sha256 successor_revision installed_package_identity "
+    "rollback_package_identity expected_successor_capability expected_startup_failure "
+    "diagnosis_sha256 sponsor_authorization_reference sponsor_authorization_sha256").split())
+
+
+def _release_time_us(value):
+    parsed = datetime.fromisoformat(value)
+    if parsed.utcoffset() is None:
+        raise ValueError("RELEASE_TIMEZONE")
+    delta = parsed - datetime(1970, 1, 1, tzinfo=timezone.utc)
+    return (delta.days * 86400 + delta.seconds) * 1000000 + delta.microseconds
+
+
+def verify_release_authorization(authority, *, now_us, revision):
+    """Recheck the exact reviewed incident; never enroll or repair authority."""
+    def require(condition, reason):
+        if not condition:
+            raise ValueError("SWING_RELEASE_" + reason)
+    require(type(authority) is dict and set(authority) == RELEASE_AUTH_FIELDS, "AUTH_FIELDS")
+    require(authority["schema"] == RELEASE_SCHEMA and authority["state"] == "SPONSOR_APPROVED"
+        and authority["recovery_class"] == "FAILED_ACTIVE_RECOVERY_REPLACEMENT"
+        and authority["incident_id"] == RELEASE_INCIDENT
+        and authority["predecessor_revision"] in RELEASE_PREDECESSORS
+        and type(revision) is str and re.fullmatch("[a-f0-9]{40}", revision)
+        and authority["successor_revision"] == revision
+        and revision != authority["predecessor_revision"], "SCOPE")
+    require(type(authority["predecessor_pid"]) is int and 1 < authority["predecessor_pid"] <= 2147483647
+        and type(authority["predecessor_start_us"]) is int and authority["predecessor_start_us"] > 0
+        and authority["expected_startup_failure"] in RELEASE_FAILURES
+        and type(authority["expected_successor_capability"]) is str
+        and re.fullmatch("WO06H-CAPABILITY-[a-f0-9]{64}", authority["expected_successor_capability"]), "PROCESS")
+    require(all(type(authority[k]) is str and re.fullmatch("[a-f0-9]{64}", authority[k]) for k in
+        ("attempt_identity", "predecessor_maintenance_identity", "private_control_sha256",
+         "installed_package_identity", "rollback_package_identity", "diagnosis_sha256",
+         "sponsor_authorization_sha256", "artifact_review_sha256"))
+        and type(authority["sponsor_authorization_reference"]) is str
+        and bool(authority["sponsor_authorization_reference"].strip()), "IDENTITY")
+    start, end = authority["valid_from_us"], authority["valid_until_us"]
+    require(type(start) is int and type(end) is int and type(now_us) is int
+        and start >= 1791771633006722
+        and authority["predecessor_start_us"] < start <= now_us < end
+        and 0 < end-start <= 1800000000, "VALIDITY")
+    for name in ("sponsor_authorization", "diagnosis", "artifact_review"):
+        require(_incident_digest(authority[name+"_path"])[0] == authority[name+"_sha256"], "ARTIFACT_CHANGED")
+    raw = read_private(authority["artifact_review_path"], private=True)
+    require(hashlib.sha256(raw).hexdigest() == authority["artifact_review_sha256"], "REVIEW_CHANGED")
+    review = _json(raw)
+    require(type(review) is dict and set(review) == RELEASE_REVIEW_BINDINGS | {"schema", "state", "approved_at"}
+        and review["schema"] == "KRONOS-SWING-RECOVERY-ARTIFACT-REVIEW/1.0.0"
+        and review["state"] == "APPROVED"
+        and all(type(review[k]) is type(authority[k]) and review[k] == authority[k]
+                for k in RELEASE_REVIEW_BINDINGS)
+        and authority["predecessor_start_us"] <= _release_time_us(review["approved_at"]) <= start,
+        "ARTIFACT_REVIEW_BINDING")
+
+
+def _release_runtime_identity(intraday, *, pid, revision):
+    """Bind receipt identity to the child's actual retained startup manifest."""
+    from kronos.intraday.runtime_identity import (
+        LoadedCapability, RuntimeManifest, StartupEvidence,
+    )
+    projection = intraday["runtime_identity"]
+    if type(projection) is not dict or projection["availability"] != "RETAINED":
+        raise ValueError("SWING_RELEASE_RUNTIME_IDENTITY")
+    raw_startup = projection["startup"]
+    if (type(raw_startup) is not dict
+            or raw_startup.get("load_verification") != "PINNED_STARTUP_IMPORTS"
+            or type(raw_startup.get("source_snapshot_digest")) is not str
+            or re.fullmatch("[a-f0-9]{64}", raw_startup["source_snapshot_digest"]) is None
+            or type(raw_startup["startup_boundary_at"]) is not str
+            or type(raw_startup["loaded_modules"]) is not list
+            or any(type(row) is not list or len(row) != 2
+                   or any(type(value) is not str for value in row)
+                   for row in raw_startup["loaded_modules"])
+            or type(projection["capabilities"]) is not list):
+        raise ValueError("SWING_RELEASE_STARTUP_EVIDENCE")
+    startup = StartupEvidence(**dict(raw_startup,
+        startup_boundary_at=datetime.fromisoformat(raw_startup["startup_boundary_at"]),
+        loaded_modules=tuple(tuple(row) for row in raw_startup["loaded_modules"])))
+    manifest = RuntimeManifest(
+        startup=startup,
+        configuration_identity=projection["configuration_identity"],
+        capabilities=tuple(LoadedCapability(**row) for row in projection["capabilities"]),
+        manifest_identity=projection["manifest_identity"],
+        product=projection["product"], contract_version=projection["contract_version"])
+    expected_proof = dict(manifest=manifest.manifest_identity, pid=startup.process_id,
+        revision=startup.source_revision, source_state=startup.source_state,
+        startup=startup.startup_boundary_at.isoformat(), configuration=manifest.configuration_identity,
+        capabilities=[asdict(capability) for capability in manifest.capabilities])
+    if (startup.process_id != pid or startup.source_revision != revision
+            or startup.source_state != "CLEAN_COMMIT" or startup.branch != "develop"
+            or startup.checkout_mode != "BRANCH"
+            or projection["loaded_commit_revision"] != revision
+            or projection["startup_checkout_mode"] != startup.checkout_mode
+            or projection["source_proof_scope"] != "LAUNCHER_STARTUP_IMPORTS"
+            or intraday["live_shadow"]["runtime_proof"] != expected_proof):
+        raise ValueError("SWING_RELEASE_RUNTIME_PROOF_BINDING")
+    # Canonical tools/kronos_browser.py uses this same derivation for the
+    # consumed V2 record and ConnectionProcess startup receipt identity.
+    return hashlib.sha256(startup.evidence_identity.encode()).hexdigest()
+
+
+def verify_release_documents(documents, authority, *, pid, generation, successor, now_us):
+    """The existing startup owners, never a sampled idle state, establish health."""
+    if type(documents) is not list or len(documents) != 3:
+        raise ValueError("SWING_RELEASE_DOCUMENTS")
+    revision = authority["successor_revision"] if successor else authority["predecessor_revision"]
+    if (type(pid) is not int or pid < 2 or not re.fullmatch("[a-f0-9]{64}", generation)
+            or not successor and (pid != authority["predecessor_pid"]
+                or generation != authority["predecessor_maintenance_identity"])):
+        raise ValueError("SWING_RELEASE_PROCESS_BINDING")
+    verify_incident_documents(documents, pid=pid, revision=revision, generation=generation,
+        successor=successor, _capability=authority["expected_successor_capability"],
+        _start_us=authority["predecessor_start_us"], _failure=authority["expected_startup_failure"])
+    startup_us = _release_time_us(documents[2]["live_shadow"]["runtime_proof"]["startup"])
+    if startup_us > now_us or successor and startup_us < authority["valid_from_us"]:
+        raise ValueError("SWING_RELEASE_START_TIME")
+    # These are additional read-only checks. C independently requires OPEN and
+    # exact counted-owner scope before any one-use reservation/shutdown.
+    drain = documents[0]["maintenance_drain"]
+    if (drain["state"] != "OPEN" or drain["generation"] is not None
+            or drain["failure"] is not None or documents[0]["maintenance_claim"] != "DRAINABLE"):
+        raise ValueError("SWING_RELEASE_FENCED")
+    return _release_runtime_identity(documents[2], pid=pid, revision=revision)
+
+
+def release_main(argv):
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--release-phase", required=True, choices=("preflight", "retired", "successor"))
+    for name in ("authorization", "authorization-sha256", "revision", "generation", "maintenance-root", "evidence-root"):
+        parser.add_argument("--"+name, required=True)
+    parser.add_argument("--pid", type=int, required=True)
+    args = parser.parse_args(argv)
+    try:
+        now = datetime.now(timezone.utc)
+        now_us = _release_time_us(now.isoformat())
+        raw = read_private(args.authorization, private=True)
+        if hashlib.sha256(raw).hexdigest() != args.authorization_sha256:
+            raise ValueError("SWING_RELEASE_AUTH_CHANGED")
+        authority = _json(raw)
+        verify_release_authorization(authority, now_us=now_us, revision=args.revision)
+        raw = sys.stdin.buffer.read(196609)
+        if len(raw) > 196608:
+            raise ValueError("SWING_RELEASE_DOCUMENT_SIZE")
+        if args.release_phase != "retired":
+            documents = _json(raw)
+            process_identity = verify_release_documents(documents, authority, pid=args.pid, generation=args.generation,
+                successor=args.release_phase == "successor", now_us=now_us)
+        elif args.pid != authority["predecessor_pid"] or args.generation != authority["predecessor_maintenance_identity"]:
+            raise ValueError("SWING_RELEASE_RETIRED_BINDING")
+        if args.release_phase == "successor":
+            claim = _json(read_private(Path(args.maintenance_root)/(args.generation+".consumed.json"), private=True))
+            if (set(claim) != {"schema", "generation", "parent_pid", "process_id", "runtime_identity", "accepted_at"}
+                    or claim["schema"] != "KRONOS_MAINTENANCE_CONSUMPTION_V2" or claim["generation"] != args.generation
+                    or type(claim["parent_pid"]) is not int or claim["parent_pid"] != authority["predecessor_pid"]
+                    or type(claim["process_id"]) is not int or claim["process_id"] != args.pid
+                    or claim["runtime_identity"] != process_identity):
+                raise ValueError("SWING_RELEASE_CONSUMPTION")
+            receipt = _json(read_private(Path(args.evidence_root)/"shared/provider-connection-v1/maintenance"/
+                (claim["runtime_identity"]+"-startup.json"), private=True))
+            if (set(receipt) != {"schema", "runtime_identity", "maintenance_identity", "at", "trigger"}
+                    or receipt["schema"] != "RUNTIME_STARTUP_MAINTENANCE_EXIT_V1"
+                    or receipt["runtime_identity"] != claim["runtime_identity"]
+                    or receipt["maintenance_identity"] != args.generation
+                    or receipt["trigger"] != "VERIFIED_CANONICAL_STARTUP"
+                    or not (_release_time_us(documents[2]["live_shadow"]["runtime_proof"]["startup"])
+                        <= _release_time_us(claim["accepted_at"]) <= _release_time_us(receipt["at"]) <= now_us)):
+                raise ValueError("SWING_RELEASE_STARTUP_RECEIPT")
+    except Exception:
+        print("KRONOS_SWING_RELEASE_RECOVERY_V1 INVALID")
+        return 2
+    print("KRONOS_SWING_RELEASE_RECOVERY_V1 VALID")
+    return 0
+
+
 def main(argv=None):
     argv = sys.argv[1:] if argv is None else argv
+    if "--release-phase" in argv:
+        return release_main(argv)
     if "--incident-phase" in argv:
         return incident_main(argv)
     parser = argparse.ArgumentParser()

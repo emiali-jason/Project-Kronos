@@ -1,6 +1,8 @@
 """WO-12 capture at retained Swing owner events; no admission authority."""
 from __future__ import annotations
 
+from kronos.application.failed_fenced_owners import recorded_callback
+
 from dataclasses import asdict
 from datetime import date, datetime
 from hashlib import sha256
@@ -68,10 +70,13 @@ class SwingResearchEventCapture:
     def __init__(self, research: SwingProspectiveResearchApplication, *,
                  require_commissioning: bool = False,
                  inbox: SwingResearchInbox | None = None) -> None:
+        from kronos.application.failed_fenced_owners import register_owner
+        register_owner("RESEARCH", self, __file__)
         self.research = research
         self.require_commissioning = require_commissioning
         self.inbox = inbox
 
+    @recorded_callback
     def retain_admission_event(self, contribution: PreparedContinuity, *,
                                ticks: tuple[ProviderMarketTick, ...] = ()) -> None:
         """Record timely price facts without entering the long research lock."""
@@ -87,6 +92,7 @@ class SwingResearchEventCapture:
                           {"continuity_sha256": contribution.integrity_sha256,
                            "prices": facts})
 
+    @recorded_callback
     def retain_v2_event(self, contribution: PreparedContinuity,
                         promotion: V2PromotionRecord, *,
                         ticks: tuple[ProviderMarketTick, ...] = ()) -> None:
@@ -109,6 +115,7 @@ class SwingResearchEventCapture:
                            "assessment": source["native_assessment_sha256"],
                            "price": serialise_price_fact(_price_at(_binding(rows[0]), at, ticks))})
 
+    @recorded_callback
     def retain_owner_event(self, kind: str, value) -> None:
         if self.inbox is None:
             return
@@ -137,6 +144,7 @@ class SwingResearchEventCapture:
             return None
         return datetime.fromisoformat(marker.data["commissioned_at"])
 
+    @recorded_callback
     def capture_committed(self, contribution: PreparedContinuity, *,
                           ticks: tuple[ProviderMarketTick, ...] = (),
                           price_facts: dict | None = None) -> int:
@@ -191,6 +199,7 @@ class SwingResearchEventCapture:
             count += 1
         return count
 
+    @recorded_callback
     def capture_v2(self, contribution: PreparedContinuity, promotion: V2PromotionRecord, *,
                    ticks: tuple[ProviderMarketTick, ...] = (),
                    price_fact: dict | None = None) -> bool:
@@ -243,6 +252,7 @@ class SwingResearchEventCapture:
             raise ValueError("SWING_WO12_OWNER_ORIGIN_UNAVAILABLE")
         return origins[0]
 
+    @recorded_callback
     def capture_native_sponsor(self, contribution: PreparedContinuity, result) -> None:
         """A retained Sponsor decision and optional position are distinct facts."""
         factual = result.decision
@@ -270,6 +280,7 @@ class SwingResearchEventCapture:
                 entry_price=None if position.actual_entry is None else str(position.actual_entry),
                 sponsor_attested=live and position.actual_entry is not None))
 
+    @recorded_callback
     def capture_observation_decision(self, contribution: PreparedContinuity, result) -> None:
         """Only terminal activation facts enter the one immutable decision row."""
         factual, activation = result.decision, result.activation
@@ -286,9 +297,11 @@ class SwingResearchEventCapture:
             source_identity=factual.decision_identity,
             decided_at=factual.decision_timestamp))
 
+    @recorded_callback
     def capture_paper_observation(self, contribution: PreparedContinuity, projection) -> None:
         self.capture_paper_observation_track(contribution, projection.track)
 
+    @recorded_callback
     def capture_paper_observation_track(self, contribution: PreparedContinuity, track) -> None:
         source = self._origin_for(contribution, track.native_run_identity,
                                   track.canonical_instrument)
@@ -303,6 +316,7 @@ class SwingResearchEventCapture:
             source_event_identity=track.integrity_sha256,
             source_version=track.contract_version, observed_at=track.created_at))
 
+    @recorded_callback
     def capture_native_closure(self, closure) -> None:
         prior = [item for item in self.research.store.records("LIFECYCLE_TRACK")
                  if item.data["track_identity"] == closure.position_id]
@@ -327,6 +341,7 @@ class SwingResearchEventCapture:
             gross_pnl=None if closure.gross_pnl is None else str(closure.gross_pnl),
             sponsor_attested=live))
 
+    @recorded_callback
     def capture_active_position(self, position) -> None:
         """Link a new governed lifecycle event without sampling every tick."""
         prior = [item for item in self.research.store.records("LIFECYCLE_TRACK")
@@ -353,6 +368,7 @@ class SwingResearchEventCapture:
             entry_price=None if position.actual_entry is None else str(position.actual_entry),
             sponsor_attested=live and position.actual_entry is not None))
 
+    @recorded_callback
     def capture_lifecycle_event(self, event) -> None:
         prior = [item for item in self.research.store.records("LIFECYCLE_TRACK")
                  if item.data["track_identity"] == event.position_id]

@@ -233,3 +233,49 @@ Existing production source and ownership remain unchanged from the frozen UX
 candidate. EA-Swing and PCP exact-source reviews are PENDING. Qualification
 results and exact source hashes are in the separate frozen closure evidence
 package; no predecessor approval or production authority transfers.
+
+
+## Bounded Swing recovery engineering — 2026-10-22
+
+Status: isolated source candidate; independent owner approval and deployment pending.
+The existing canonical launcher and read-only successor verifier gain one closed
+October release incident. No analytical engine, numbering, method, persistence or
+product responsibility changes. Browser/application maintenance, counted owners,
+V2 handoff, source gate and startup completion remain their existing owners.
+FAILED_FENCED continuation is not implemented or approved; it remains safely held.
+See [recovery contract](../engineering/SWING-RELEASE-RECOVERY-20261022.md).
+<!-- R3 append-only ownership clarification; prior ownership decisions retained. -->
+
+## R3 recovery engineering checkpoint — 2026-10-22
+
+Status: approved prospective architecture under ADR-0068; implementation source
+review pending and full native recovery blocked. Shared runtime retains source,
+admission, original controller and lifecycle authority. Native product owners
+retain their own effect, callback, cleanup and immutable evidence semantics.
+The new recovery code cannot reconstruct Journal/Books history, run analytical
+work, acquire Provider data or create trading authority. Preparation, launcher,
+PCP, Intraday and Swing exact-source reviews are not inferred from contract
+approval. See [implementation limits](../engineering/FAILED-FENCED-R3-IMPLEMENTATION-STATUS.md).
+
+## R3 native integration ownership continuation — 2026-10-23
+
+Status: isolated implementation under the approved ADR-0068/R3 contract; actual
+source-owner and artifact approvals are pending independent review. Earlier
+checkpoint entries remain historical. No product ownership is transferred.
+
+The canonical launcher retains controller, service-lock, guard, single-child and
+private grant authority. Source-pinned helpers validate bounded factual evidence
+without acquiring signing keys or composition authority. Original execution and
+its evidence publisher remain separately counted until actual completion.
+Browser startup and shutdown preserve their existing owner boundaries.
+
+The package owner retains strict manifest/signature/executable verification.
+Recovery uses the existing canonical installer's retained exchanged-original
+layout and independently approved exact artifact identity; no arbitrary path or
+latest-file selection grants authority. Source-owned availability failures do not
+manufacture recovery eligibility. Product cleanup remains finite and once-only;
+unknown/started/failed cleanup, active WO17 and unsupported callbacks deny.
+
+The final frozen engineering package records actual qualification and limitations.
+Swing, PCP, affected Intraday and Chief Architect reviews of changed source do
+not transfer from contract approval. All later release gates remain separate.

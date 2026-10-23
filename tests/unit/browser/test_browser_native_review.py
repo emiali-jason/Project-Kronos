@@ -13,14 +13,21 @@ def test_wo07_workspace_actions_are_bound_and_intake_only():
     facts, run, probable = _evidence_run()
     row = dict(instrument=probable.canonical_instrument, market='NSE', eligible=True,
         run_identity=run.run_identity, assessment_sha256=probable.result_sha256,
+        requirement_sha256='b'*64,
         expected={'candidate': {}}, selected={}, complete=False, question_ready=False,
         error=None, evidence='MISSING', replaced=(), continuity=None)
     projection = dict(rows=(row,), packages=(), error=None, workspace=dict(
         run_identity=run.run_identity, manifest='a'*64, analysis_time=facts.observed_at,
         state='CURRENT', population=1, eligible=1, excluded=0, nse=1, mcx=0))
     page = render_opportunities(_ready(), run, native_intake=projection)
-    assert 'REVIEW ELIGIBLE' in page and 'Open Native Review' in page
-    assert 'wo07-card-grid' in page and 'View Analysis Details' in page
+    # Accepted SW-UX-02 §4C/D: Opportunities is compact navigation; the
+    # independently fenced Review surface owns full detail and intake actions.
+    focus = '/swing/nse-review?run=' + run.run_identity + '&amp;candidate=' + 'b'*64 + '#nse-research-' + 'b'*64
+    assert 'Review eligibility · ELIGIBLE' in page and 'VIEW NSE REVIEW' in page
+    assert 'href="' + focus + '"' in page and 'BINDING CURRENT' in page
+    assert 'swing-compact-dashboard' in page and 'swing-pending-facts' in page
+    assert 'CHART MISSING' in page and 'QUESTION PACK NOT READY' in page and 'ANSWER MISSING' in page
+    assert 'View Analysis Details' not in page and 'data-upload-url' not in page
     advanced = {**projection, 'workspace': {**projection['workspace'], 'run_identity': 'SWING-RUN-' + 'F' * 32}}
     page = render_opportunities(_ready(), run, native_intake=advanced)
     assert 'REVIEW_BINDING_STALE' in page
@@ -32,7 +39,14 @@ def test_wo07_workspace_actions_are_bound_and_intake_only():
         row['error'] = 'REVIEW_BINDING_STALE' if eligible else 'NATIVE_REVIEW_ASSESSMENT_INELIGIBLE'
         page = render_opportunities(_ready(), run, native_intake=projection)
         assert 'href="/swing/v1-review">Open Native Review' not in page
-        assert 'Review workspace unavailable' in page and 'View Analysis Details' in page
+        assert 'BINDING UNAVAILABLE' in page and 'VIEW NSE REVIEW' in page
+        if eligible:
+            # Navigation may retain an exact candidate locator; it does not
+            # establish a valid intake envelope or enable an intake action.
+            assert 'href="' + focus + '"' in page
+        else:
+            assert 'href="/swing/nse-review"' in page and 'candidate=' not in page
+        assert 'View Analysis Details' not in page and 'data-upload-url' not in page
         review = _receipt_native_review(projection)
         assert 'No current bound candidates.' in review  # empty MCX section
         assert 'DIRECTION UNAVAILABLE' in review
@@ -41,10 +55,11 @@ def test_wo07_workspace_actions_are_bound_and_intake_only():
             assert control not in review
     projection.update(rows=(), workspace=None, error='REVIEW_BINDING_STALE')
     page = render_opportunities(_ready(), run, native_intake=projection)
-    assert 'REVIEW BINDING UNAVAILABLE' in page
+    assert 'Currentness</span><strong>BINDING UNAVAILABLE' in page
+    assert 'Review eligibility · UNAVAILABLE' in page
     assert 'selected analysis changed' in page
     assert 'href="/swing/v1-review">Open Native Review' not in page
-    assert '@media(max-width:760px){.wo07-card-grid{grid-template-columns:minmax(0,1fr)}' in page
+    assert '@media(max-width:600px){.swing-compact-dashboard .native-opportunity{grid-template-columns:minmax(0,1fr)}' in page
 
 from kronos.application.swing_native_review import (
     NativeReviewAnalysisOutcome,
@@ -553,22 +568,31 @@ def test_opportunities_uses_native_population_and_keeps_layer1_separate(
         assert status == 200
         assert "Current successful KRONOS Native Discovery opportunities" in body
         assert probable.canonical_instrument in body
-        assert probable.opportunity_identity.value.replace("_", " ") in body
+        assert 'Discovery</span><strong>PROBABLE' in body
+        assert 'Currentness</span><strong>BINDING UNAVAILABLE' in body
         assert "FORMING / WATCH" in body
         assert "NO CURRENT OPPORTUNITY" in body
         assert "UNAVAILABLE" in body
-        assert "Open Native Review" in body
-        assert "/swing/v1-review" in body
+        assert 'href="/swing/nse-review">VIEW NSE REVIEW' in body
         assert 'class="opportunity native-opportunity"' in body
         assert 'class="native-opportunity-actions"' in body
         assert ".native-opportunity .opp-identity h3{font-size:18px" in body
         assert ".native-opportunity-actions .button" in body
         assert "min-height:27px" in body
         assert "white-space:nowrap" in body
-        assert "1W SUPPORTIVE" in body
-        assert "1D BULLISH SWING REGIME" in body
-        assert "4H STRUCTURAL HOLD" in body
-        assert "1H NEUTRAL" in body
+        assert 'swing-compact-dashboard' in body
+        assert '<div class="swing-timeframe-grid">' not in body
+        assert '<details class="swing-opportunity-details">' not in body
+        # Preserve the original factual/detail assertions on the retained full
+        # evidence renderer; do not reintroduce its long panels on Opportunities.
+        from kronos.browser.views import _native_opportunity_card
+        detail = _native_opportunity_card(probable, native.snapshot())
+        assert probable.opportunity_identity.value.replace("_", " ") in detail
+        assert "1W SUPPORTIVE" in detail
+        assert "1D BULLISH SWING REGIME" in detail
+        assert "4H STRUCTURAL HOLD" in detail
+        assert "1H NEUTRAL" in detail
+        assert "View Analysis Details" in detail and '/swing/analysis-details/' in detail
         assert "BDL" not in body
         assert "ALKEM" not in body
         assert "Current immutable Swing V1 Layer-1 Probables" not in body
@@ -618,9 +642,10 @@ def test_analysis_details_route_binds_exact_current_run_and_instrument(
             f"{quote(probable.canonical_instrument, safe='')}"
         )
         assert status == 200
-        assert f'href="{route}"' in opportunities
-        assert "View Analysis Details" in opportunities
-        assert "Requirements to progress" in opportunities
+        assert 'href="/swing/nse-review">VIEW NSE REVIEW' in opportunities
+        assert f'href="{route}"' not in opportunities
+        assert 'swing-pending-facts' in opportunities and 'QUESTION PACK UNAVAILABLE' in opportunities
+        assert 'Currentness</span><strong>BINDING UNAVAILABLE' in opportunities
 
         status, _, body = _request(server, "GET", route)
         assert status == 200
@@ -882,13 +907,23 @@ def test_analysis_details_projects_visual_layer2_readiness_without_new_authority
         status, _, opportunities = _request(server, "GET", "/swing/opportunities")
         assert status == 200
         assert "CHART LEVELS NOT CONFIRMED" in opportunities
-        assert "CPR · 1H PDH/PDL · Confluence Zone" in opportunities
+        assert 'href="/swing/nse-review">VIEW NSE REVIEW' in opportunities
+        assert '<details class="swing-opportunity-details">' not in opportunities
+        # Full visual findings remain in the existing exact-bound legacy
+        # evidence renderer and Analysis Details route, not the compact card.
+        from kronos.browser.views import _native_opportunity_card
+        legacy_card = _native_opportunity_card(probable, before)
+        assert "CPR · 1H PDH/PDL · Confluence Zone" in legacy_card
 
         status, _, review_body = _request(server, "GET", "/swing/v1-review")
         assert status == 200
         assert "CHART LEVELS NOT CONFIRMED" in review_body
         assert "CPR · 1H PDH/PDL · Confluence Zone" in review_body
         assert "CONTEXT_INCOMPLETE" in review_body
+        legacy_review = render_v1_review(application.snapshot(), server.v1_review.snapshot(), before)
+        assert "CHART LEVELS NOT CONFIRMED" in legacy_review
+        assert "CPR · 1H PDH/PDL · Confluence Zone" in legacy_review
+        assert "CONTEXT_INCOMPLETE" in legacy_review
 
         route = (
             f"/swing/analysis-details/{run.run_identity}/"
@@ -1472,12 +1507,19 @@ def test_current_completed_review_requires_exact_promotion_presentation_binding(
         detail_route = f"/swing/analysis-details/{run.run_identity}/{probable.canonical_instrument}"
         if expected_status == 200:
             assert probable.canonical_instrument in body
-            assert f'href="{detail_route}"' in body
+            # Compact UX preserves the current classification and exact Review
+            # focus. Historical detailed routes are still independently tested.
+            row = next(row for row in native_intake.snapshot()['rows'] if row['instrument'] == probable.canonical_instrument)
+            focus = ('/swing/nse-review?run=' + run.run_identity + '&amp;candidate='
+                     + row['requirement_sha256'] + '#nse-research-' + row['requirement_sha256'])
+            assert 'href="' + focus + '"' in body and 'VIEW NSE REVIEW' in body
+            assert f'href="{detail_route}"' not in body
+            assert '<details class="swing-opportunity-details">' not in body
             if binding == "historical_v1":
                 assert "KR-370 ·" in body and "KR-370 V2" not in body
                 assert "v2-card-detail" not in body and "Open Trade Window" not in body
             else:
-                assert "KR-370 V2" in body and "v2-card-detail" in body
+                assert "KR-370 V2" in body and "v2-card-detail" not in body
             for _ in range(2):
                 detail_status, _, detail_body = _request(server, "GET", detail_route)
                 assert detail_status == 200

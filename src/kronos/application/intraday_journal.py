@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from dataclasses import asdict
+import json
+from threading import RLock
+from kronos.application.failed_fenced_owners import recorded_callback
 
 from kronos.intraday.wo11_lifecycle import TERMINAL
-from kronos.intraday.wo14_journal_contract import JournalSnapshot, revision
+from kronos.intraday.wo14_journal_contract import JournalSnapshot, revision, JOURNAL_SOURCE_KINDS
 
 
 def _instant(value: object) -> datetime:
@@ -26,13 +30,19 @@ class IntradaySourceAdapter:
 
     revision_factory = staticmethod(revision)
 
-    SOURCE_KINDS = frozenset({"SELECTION", "ACTION", "TRACK"})
+    SOURCE_KINDS = JOURNAL_SOURCE_KINDS
 
     def __init__(self, *, research, futures, lifecycle, store) -> None:
+        if type(self).__name__ in {"IntradaySourceAdapter", "IntradayJournalApplication"}:
+            from kronos.application.failed_fenced_owners import register_owner
+            register_owner("JOURNAL", self, __file__)
         self.research, self.futures, self.lifecycle_application = research, futures, lifecycle
         self.lifecycle = getattr(lifecycle, "store", lifecycle)
         self.store = store
         self.last_failure: str | None = None
+        # Serialize the original callback and capture its own native outputs.
+        # This is not a history scanner and recovery never invokes this callback.
+        self._source_callback_lock = RLock()
 
     def bind(self) -> None:
         # Separate product observer. Notification delivery and Journal projection
@@ -107,20 +117,41 @@ class IntradaySourceAdapter:
         except (ValueError, TypeError, KeyError, OSError):
             return "UNAVAILABLE"
 
-    def consume_source(self, kind: str, identity: str) -> None:
+    @recorded_callback
+    def consume_source(self, kind: str, identity: str):
+        """Return only outputs of this actual original callback invocation.
+
+        The prospective recovery ledger retains these bytes before releasing the
+        original producer ticket.  Empty output is not evidence of noninvocation.
+        No callback is executed by historical fulfillment validation.
+        """
         if kind not in self.SOURCE_KINDS:
-            return
-        try:
-            if kind == "SELECTION":
-                self._selection(self.futures.load(identity))
-            elif kind == "ACTION":
-                self._action(self.lifecycle.load(identity))
-            else:
-                self._track(self.lifecycle.load(identity))
-            self.last_failure = None
-        except (ValueError, TypeError, KeyError, OSError):
-            self.last_failure = "WO14_JOURNAL_SOURCE_OR_LINEAGE_UNAVAILABLE"
-            raise
+            return ()
+        with self._source_callback_lock:
+            try:
+                if kind == "SELECTION":
+                    output = self._selection(self.futures.load(identity))
+                elif kind == "ACTION":
+                    output = self._action(self.lifecycle.load(identity))
+                else:
+                    output = self._track(self.lifecycle.load(identity))
+                self.last_failure = None
+                return () if output is None else (self._original_output(output),)
+            except (ValueError, TypeError, KeyError, OSError):
+                self.last_failure = "WO14_JOURNAL_SOURCE_OR_LINEAGE_UNAVAILABLE"
+                raise
+
+    def _original_output(self, item):
+        # Native immutable revision plus the pointer produced by this invocation.
+        # Read exact publication bytes now, never a later snapshot/hydration.
+        item.__post_init__()
+        root = self.store.root
+        revision_bytes = (root / "revisions" / (item.revision_identity + ".json")).read_bytes()
+        pointer_bytes = (root / "current" / (item.journal_identity + ".json")).read_bytes()
+        if self.store.load_revision(item.revision_identity) != item or self.store.current(item.journal_identity) != item:
+            raise ValueError("WO14_JOURNAL_CALLBACK_OUTPUT_CHANGED")
+        return {"adapter": "JOURNAL_REVISION_V1", "identity": item.revision_identity,
+                "bytes": revision_bytes, "pointer": pointer_bytes}
 
     def _selection(self, selection) -> None:
         data = selection.data
@@ -131,7 +162,7 @@ class IntradaySourceAdapter:
         origin = self._plan_origin(plan, comparison["opportunity_identity"])
         expression = self.futures.load(comparison["expression_identity"]).data
         snapshot = self.futures.load(comparison["snapshot_identity"]).data
-        self.store.publish(self._revision(
+        return self.store.publish(self._revision(
             origin=origin, subject=comparison["subject"], direction=comparison["direction"],
             session=plan["session_identity"], decision="NONE",
             decision_identity=selection.identity, decision_at=data["selected_at"], truth_class="NONE",
@@ -153,7 +184,7 @@ class IntradaySourceAdapter:
         origin = self._plan_origin(plan, comparison["opportunity_identity"])
         expression = handoff.data["expression"]
         snapshot = handoff.data["snapshot"]
-        self.store.publish(self._revision(
+        return self.store.publish(self._revision(
             origin=origin, subject=comparison["subject"], direction=comparison["direction"],
             session=plan["session_identity"], decision="DO_NOTHING",
             decision_identity=action.identity, decision_at=data["action_at"], truth_class="DO_NOTHING",
@@ -184,7 +215,7 @@ class IntradaySourceAdapter:
         exit_value = None if data["exit"] is None else {
             key: data["exit"].get(key) for key in ("price", "at", "trigger_fact", "price_fact", "identity")
         }
-        self.store.publish(self._revision(
+        return self.store.publish(self._revision(
             origin=origin, subject=intake["subject"], direction=intake["direction"],
             session=intake["session_identity"],
             decision="PAPER_POSITION" if data["truth_class"] == "PAPER_POSITION" else "PAPER_OBSERVATION",

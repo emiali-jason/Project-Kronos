@@ -8,6 +8,8 @@ evaluates K5, watches prices, or creates a trading state.
 
 from __future__ import annotations
 
+from kronos.application.failed_fenced_owners import recorded_cleanup
+
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -16,6 +18,8 @@ import json
 import os
 from pathlib import Path
 from threading import RLock, Timer
+from kronos.application.failed_fenced_owners import recorded_callback
+
 from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
 from typing import Callable
 from zoneinfo import ZoneInfo
@@ -171,6 +175,8 @@ class SwingK5RefreshReminderWorkflow:
         scheduler: Callable[[float, Callable[[], None]], object] | None = None,
         maintenance_admission: MaintenanceAdmissionCoordinator | None = None,
     ) -> None:
+        from kronos.application.failed_fenced_owners import register_owner
+        register_owner('REMINDERS', self, __file__)
         self._store = store or K5RefreshReminderStore()
         self._calendar = calendar or MarketCalendarPublisher()
         self._listener = notification_listener
@@ -321,6 +327,7 @@ class SwingK5RefreshReminderWorkflow:
             self._transition(record, RefreshReminderState.SUPERSEDED, now)
         return self.snapshot()
 
+    @recorded_cleanup('CLOSE_REMINDERS')
     def close(self) -> None:
         with self._lock:
             timers = tuple(self._timers.values())
@@ -335,12 +342,17 @@ class SwingK5RefreshReminderWorkflow:
             0.0,
             (record.next_eligible_completed_1h_boundary - self._clock()).total_seconds(),
         )
-        timer = self._scheduler(
-            delay, lambda: self._fire(record.reminder_identity)
-        )
+        callback = lambda: self._fire(record.reminder_identity)
+        if getattr(self, "_ff_composition", None) is not None:
+            if self._scheduler is not _timer_scheduler:
+                raise ValueError("FAILED_FENCED_TIMER_IMPLEMENTATION_UNSUPPORTED")
+            timer = _timer_scheduler(delay, callback, owner=self)
+        else:
+            timer = self._scheduler(delay, callback)
         with self._lock:
             self._timers[record.reminder_identity] = timer
 
+    @recorded_callback
     def _fire(self, reminder_identity: str) -> None:
         admission = self._maintenance_admission
         ticket = None if admission is None else admission.admit("REMINDER")
@@ -527,9 +539,14 @@ def _json_default(value: object) -> object:
     raise TypeError
 
 
-def _timer_scheduler(delay: float, operation: Callable[[], None]) -> Timer:
+def _timer_scheduler(delay: float, operation: Callable[[], None], *, owner=None) -> Timer:
     timer = Timer(delay, operation)
     timer.daemon = True
+    if owner is not None:
+        from kronos.application.failed_fenced_owners import record_resource, retire_owned_timer
+        record_resource(owner, operation, "CALLBACK")
+        record_resource(owner, timer, "TIMER", cleanup_action="CANCEL_TIMER",
+                        cleanup=lambda: retire_owned_timer(owner, timer))
     timer.start()
     return timer
 

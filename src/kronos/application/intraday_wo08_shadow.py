@@ -3,6 +3,8 @@
 No Provider object, callback or lease enters a handoff. Capture is prospective,
 post-Probables, research-only; no automatic replay, outcome acquisition or TTL.
 """
+
+from kronos.application.failed_fenced_owners import recorded_cleanup
 from collections import deque
 from dataclasses import dataclass
 from hashlib import sha256
@@ -161,6 +163,8 @@ class CaptureResult:
 
 class Wo08ShadowCollector:
     def __init__(self, store):
+        from kronos.application.failed_fenced_owners import register_owner
+        register_owner('WO08', self, __file__)
         self._initialize(store)
 
     def _initialize(self, store):
@@ -229,6 +233,8 @@ class Wo08ShadowCollector:
                     # The one lazy worker is created only under lawful admission.
                     if self._worker is None:
                         worker = Thread(target=self._run, name='WO08_SHADOW', daemon=True)
+                        from kronos.application.failed_fenced_owners import record_resource
+                        record_resource(self, worker, "WORKER")
                         worker.start()
                         self._worker = worker
                     self._queue.append((handoff, size, ticket))
@@ -283,6 +289,7 @@ class Wo08ShadowCollector:
                 with self._condition:
                     self._condition.notify_all()
 
+    @recorded_cleanup('CLOSE_COLLECTOR')
     def close(self, timeout=10):
         with self._condition:
             self._closed = True

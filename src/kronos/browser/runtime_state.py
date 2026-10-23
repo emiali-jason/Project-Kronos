@@ -5,6 +5,8 @@ import re
 import json
 from hashlib import sha256
 
+from kronos.common.runtime_restoration import _swing_restoration_failure
+
 SCHEMA = "KRONOS-RUNTIME-STATE/1.0.0"
 POLICY = {"identity": "KRONOS-RUNTIME-01", "version": "1.0.0",
     "source": "CLEAN_PUBLISHED_DEVELOP_PINNED_CANONICAL_PARENT",
@@ -62,20 +64,6 @@ def complete_startup(server, shadow, *, swing_outcomes=None, wo11=None, wo17=Non
     except (ValueError, OSError):
         governance.complete_startup("STARTUP_COMPLETION_RECORD_UNAVAILABLE")
 
-
-def _swing_restoration_failure(outcomes):
-    required = {"LEGACY_MTF", "LEGACY_NATIVE", "NATIVE_REVIEW", "V3_RECORDS",
-                "V3_RESTORE", "TRADE_WINDOW"}
-    if (type(outcomes) is not tuple or len(outcomes) != len(required)
-            or any(type(row) is not tuple or len(row) != 2 for row in outcomes)):
-        return True
-    result = dict(outcomes)
-    return (set(result) != required
-            or any(value not in ({"SUCCESS", "NOT_APPLICABLE", "APPLICABILITY_NOT_ESTABLISHED"}
-                                 if key == "NATIVE_REVIEW" else {"SUCCESS", "NOT_APPLICABLE"})
-                   for key, value in result.items())
-            or result["V3_RECORDS"] != "SUCCESS"
-            or result["TRADE_WINDOW"] != "SUCCESS")
 
 
 def _startup_outcomes_document(server):

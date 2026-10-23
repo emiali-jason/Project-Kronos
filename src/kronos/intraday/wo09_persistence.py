@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import tempfile
 from threading import Lock, get_ident, local
+from typing import TYPE_CHECKING
 
 from kronos.intraday.visual_reconciliation_v2 import VisualReconciliationOutcome
 from kronos.intraday.wo09_readiness import (
@@ -26,7 +27,8 @@ from kronos.intraday.wo09_experimental import (
     first_five_from, claim_for, claim_identity, observe_first_five,
     evaluate_experimental_readiness, origin_from,
 )
-from kronos.application.intraday_wo09_notifications import Wo09NotificationSource, Wo09NotificationState
+if TYPE_CHECKING:
+    from kronos.application.intraday_wo09_notifications import Wo09NotificationSource
 from kronos.common.validated_reuse import ValidatedBytesReuse
 
 
@@ -165,6 +167,8 @@ class _Wo09Mutation:
 
 class Wo09Store:
     def __init__(self, root: Path = DEFAULT_ROOT) -> None:
+        from kronos.application.failed_fenced_owners import register_owner
+        register_owner('WO09', self, __file__)
         self.root = Path(root)
         self.readiness = root / "readiness"
         self.requirements = root / "requirements"
@@ -239,6 +243,12 @@ class Wo09Store:
     def notify_publication(self, notices):
         """Dispatch captured committed references after all owner guards release."""
         for kind, identity, callbacks in notices:
+            accounting = getattr(self, "_failed_fenced_accounting", None)
+            if accounting is not None:
+                accounting.dispatch(kind, identity, tuple(
+                    (attribute.replace("listener", "failure"), listener, failure)
+                    for attribute, listener, failure in callbacks))
+                continue
             for attribute, listener, failure in callbacks:
                 if listener is not None:
                     try:
@@ -269,6 +279,10 @@ class Wo09Store:
             requirement.__post_init__()
             if requirement.readiness_identity != record.readiness_identity:
                 raise Wo09PersistenceError("WO09_REQUIREMENT_SET_INVALID")
+        from kronos.application.failed_fenced_owners import prepare_effect, committed_effect
+        prior = self.load_pointer(record.canonical_subject_identity)
+        recovery = (prepare_effect(self, "READINESS", record.readiness_identity,
+            record, previous=prior) if prior is None or prior.readiness_identity != record.readiness_identity else None)
         self._retain(self.readiness / f"{record.readiness_identity}.json", artifact_bytes(record))
         for requirement in requirements:
             self._retain(self.requirements / f"{requirement.requirement_identity}.json", artifact_bytes(requirement))
@@ -282,6 +296,7 @@ class Wo09Store:
         pointer = create_pointer(record, currentness=CurrentnessState.CURRENT,
             superseded=None if prior is None else prior.readiness_identity, updated_at=record.created_at)
         self._atomic(self.current / f"{_safe(record.canonical_subject_identity)}.json", artifact_bytes(pointer))
+        committed_effect(self, recovery, record)
         return pointer, ("READINESS", record.readiness_identity)
 
     def retain_handoff(self, handoff: NextWoHandoff, *, expected: Wo09PublicationExpectation) -> None:
@@ -373,6 +388,7 @@ class Wo09Store:
         return tuple(sorted(latest.values(), key=lambda item: item.watch_identity))
 
     def retain_notification(self, source: Wo09NotificationSource) -> None:
+        from kronos.application.intraday_wo09_notifications import Wo09NotificationSource
         if type(source) is not Wo09NotificationSource:
             raise Wo09PersistenceError("WO09_NOTIFICATION_PERSISTENCE_INPUT_INVALID")
         self._retain(self.notifications / f"{source.source_identity}-{source.source_integrity}.json", artifact_bytes(source))
@@ -407,7 +423,10 @@ class Wo09Store:
         pointer = create_pointer(record, currentness=state,
                                  superseded=prior.superseded_readiness_identity,
                                  updated_at=updated_at)
+        from kronos.application.failed_fenced_owners import prepare_effect, committed_effect
+        recovery = prepare_effect(self, "CURRENTNESS", subject, pointer, previous=prior)
         self._atomic(self.current / f"{_safe(subject)}.json", artifact_bytes(pointer))
+        committed_effect(self, recovery, pointer)
         return pointer
 
     def load_readiness(self, identity: str) -> ReadinessRecord:
@@ -560,6 +579,7 @@ def _watch(value: dict[str, object]) -> Wo09Watch:
 
 
 def _notification(value: dict[str, object]) -> Wo09NotificationSource:
+    from kronos.application.intraday_wo09_notifications import Wo09NotificationSource, Wo09NotificationState
     data = dict(value)
     data.update(readiness_state=ReadinessState(data["readiness_state"]),
                 state=Wo09NotificationState(data["state"]),

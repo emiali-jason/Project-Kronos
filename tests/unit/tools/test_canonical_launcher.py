@@ -269,9 +269,31 @@ int main(int argc, char **argv) {
     return binary
 
 
-def compile_isolated_cold_start_probe(tmp_path, port):
+def isolated_start_monitor_source(source, fake):
+    """Supply a synthetic pinned entry only to these start-monitor unit probes.
+
+    These probes test one fork, environment cleanup, handoff consumption and
+    readiness. They never qualified source preparation. The actual C-main
+    roundtrip separately exercises real preparation and missing/changed denial.
+    No production source, argv mechanism or authority predicate is altered.
+    """
+    script = ('import runpy,sys;sys.path[:0]=' + repr([str(ROOT / 'src'), str(ROOT)])
+              + ';runpy.run_path(' + repr(str(fake)) + ",run_name='__main__')")
+    original = ('    FFR3PreparedNative native_startup;\n'
+                '    char *pinned_script = ffr3_ordinary_pin_script(repository,python,&native_startup);')
+    assert source.count(original) == 1
+    fixture = ('    FFR3PreparedNative native_startup;memset(&native_startup,0,sizeof(native_startup));\n'
+               '    native_startup.root=native_startup.preparation=native_startup.preparation_records=-1;\n'
+               '    native_startup.blobs=native_startup.records=native_startup.lock=-1;\n'
+               '    (void)ffr3_ordinary_pin_script;\n'
+               '    char *pinned_script = strdup(' + json.dumps(script) + ');')
+    return source.replace(original, fixture)
+
+
+def compile_isolated_cold_start_probe(tmp_path, port, fake):
     source = SOURCE.read_text().replace('htons(8947)', f'htons({port})').replace(
         'int main(void) {', 'int unused_application_main(void) {')
+    source = isolated_start_monitor_source(source, fake)
     source += r'''
 int main(int argc, char **argv) {
     if (argc != 5 || !cold_start_has_no_control_or_live_handoff(argv[4])) return 90;
@@ -284,9 +306,10 @@ int main(int argc, char **argv) {
     return binary
 
 
-def compile_isolated_successor_probe(tmp_path, port):
+def compile_isolated_successor_probe(tmp_path, port, fake):
     source = SOURCE.read_text().replace('htons(8947)', f'htons({port})').replace(
         'int main(void) {', 'int unused_application_main(void) {')
+    source = isolated_start_monitor_source(source, fake)
     source += r'''
 int main(int argc, char **argv) {
     if (argc != 8) return 90;
@@ -917,8 +940,11 @@ def test_revision_replacement_requires_exact_clean_published_target():
     assert 'unsetenv("KRONOS_LAUNCH_MODE")' in child
     assert 'unsetenv("KRONOS_REPLACEMENT_REVISION")' in child
     assert child.index('unsetenv("KRONOS_REPLACEMENT_REVISION")') < child.index(
-        'execl(python, python, "-B", browser_entry, "--no-browser"'
+        'execl(python, python, "-I", "-B", "-c", pinned_script'
     )
+    assert child.index('ffr3_ordinary_pin_script(repository,python,&native_startup)') < child.index('pid_t child = fork()')
+    assert 'if (pinned_script == NULL) return BACKEND_START_INTERNAL_FAILURE;' in child
+    assert 'execl(python, python, "-B", browser_entry' not in child
 
 
 @pytest.mark.parametrize(
@@ -1043,7 +1069,7 @@ while True:
             break
 listener.close()
 ''' % (str(marker), port))
-    binary = compile_isolated_cold_start_probe(tmp_path, port)
+    binary = compile_isolated_cold_start_probe(tmp_path, port, fake)
     started = subprocess.run([str(binary), str(repository), sys.executable,
         str(fake), str(control)], capture_output=True, timeout=8)
     try:
@@ -1163,7 +1189,7 @@ while True:
 listener.close()
 ''' % (port, str(control.parent), str(ROOT), str(tmp_path / 'successor-error.txt'),
        generation, str(marker), port))
-        successor = compile_isolated_successor_probe(tmp_path, port)
+        successor = compile_isolated_successor_probe(tmp_path, port, fake)
         started = subprocess.run([str(successor), str(ROOT), sys.executable,
             str(fake), f'{ROOT / "src"}:{ROOT}', str(predecessor.pid),
             generation, revision],

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from kronos.application.failed_fenced_owners import recorded_cleanup, recorded_callback
+
 from kronos.common.maintenance import expected_transport_close
 
 from collections import defaultdict
@@ -60,6 +62,8 @@ class SharedSwingMonitoringHub:
     """Multiplex one authenticated read-only Provider session without authority."""
 
     def __init__(self) -> None:
+        from kronos.application.failed_fenced_owners import register_owner
+        register_owner('MONITORING_HUB', self, __file__)
         self._lock = RLock()
         self._capability = None
         self._session = None
@@ -126,6 +130,8 @@ class SharedSwingMonitoringHub:
             ):
                 self._count_release("capacity_refusals")
                 raise ValueError("SHARED_MONITORING_CAPACITY_UNAVAILABLE")
+            from kronos.application.failed_fenced_owners import record_resource
+            record_resource(self, registration, "REGISTRATION", cleanup_action="DETACH_REGISTRATION", cleanup=registration.disconnect)
             self._registrations[id(registration)] = registration
         return registration
 
@@ -291,6 +297,7 @@ class SharedSwingMonitoringHub:
         with self._lock:
             return dict(self._release_counts)
 
+    @recorded_cleanup('CLOSE_HUB')
     def close(self) -> None:
         with self._lock:
             registrations = tuple(self._registrations.values())
@@ -596,6 +603,7 @@ class SharedSwingMonitoringHub:
             except Exception:
                 registration._advisory_failure = "ADVISORY_CALLBACK_FAILED"
 
+    @recorded_callback
     def on_market_tick(self, tick: ProviderMarketTick, *, _generation=None) -> None:
         accepted, ticket = self._callback_ticket()
         if not accepted:
@@ -650,6 +658,7 @@ class SharedSwingMonitoringHub:
                 # Advisory persistence cannot interrupt entered-position owners.
                 registration._advisory_failure = "ADVISORY_CALLBACK_FAILED"
 
+    @recorded_callback
     def on_order_update(self, update: ProviderOrderUpdateEvidence, *, _generation=None) -> None:
         accepted, ticket = self._callback_ticket()
         if not accepted:
@@ -676,6 +685,7 @@ class SharedSwingMonitoringHub:
         for consumer in consumers:
             consumer.on_order_update(update)
 
+    @recorded_callback
     def on_connection_state(self, state: MonitoringConnectionState, *, _generation=None) -> None:
         accepted, ticket = self._callback_ticket()
         if not accepted:
@@ -737,6 +747,9 @@ class _SharedRegistration:
         self._observed_session = None
         self._advisory_failure = None
         self._detached_result = (0, 0)
+        self._ff_disconnect_complete = False
+        self._ff_disconnect_failed = False
+        self._ff_disconnect_return = None
 
     @property
     def active(self) -> bool:
@@ -829,7 +842,8 @@ class _SharedRegistration:
         self._hub._connect(self)
 
     def disconnect(self) -> None:
-        return self._hub._disconnect(self)
+        from kronos.application.failed_fenced_owners import native_registration_disconnect
+        return native_registration_disconnect(self, lambda: self._hub._disconnect(self))
 
 
 class _SessionCallbacks:

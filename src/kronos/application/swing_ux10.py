@@ -6,6 +6,8 @@ lifecycle, and Provider-connection events; it creates no trading decision.
 
 from __future__ import annotations
 
+from kronos.application.failed_fenced_owners import recorded_cleanup
+
 from kronos.common.maintenance import defer_expected_disconnect
 
 from dataclasses import asdict, dataclass
@@ -16,6 +18,8 @@ import json
 import os
 from pathlib import Path
 from threading import RLock, Thread, Timer
+from kronos.application.failed_fenced_owners import recorded_callback
+
 from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
 from typing import Callable
 
@@ -249,6 +253,8 @@ class SwingUx10NotificationService:
         retry_scheduler: Callable[[float, Callable[[], None]], object] | None = None,
         maintenance_admission: MaintenanceAdmissionCoordinator | None = None,
     ) -> None:
+        from kronos.application.failed_fenced_owners import register_owner
+        register_owner('UX10', self, __file__)
         self._store = store or Ux10NotificationStore()
         self._telegram = telegram
         self._clock = clock
@@ -265,6 +271,7 @@ class SwingUx10NotificationService:
         self._connection_checkpoint = self._connection_state
         self._reconcile_connection_baselines()
 
+    @recorded_cleanup('CLOSE_UX10')
     def close(self) -> None:
         with self._lock:
             self._closed = True
@@ -916,9 +923,13 @@ class SwingUx10NotificationService:
         if callable(cancel):
             cancel()
         try:
-            handle = self._retry_scheduler(
-                delay, lambda: self._retry_due(dedup)
-            )
+            callback = lambda: self._retry_due(dedup)
+            if getattr(self, "_ff_composition", None) is not None:
+                if self._retry_scheduler is not _timer_scheduler:
+                    raise ValueError("FAILED_FENCED_TIMER_IMPLEMENTATION_UNSUPPORTED")
+                handle = _timer_scheduler(delay, callback, owner=self)
+            else:
+                handle = self._retry_scheduler(delay, callback)
         except BaseException:
             with self._lock:
                 self._retry_handles.pop(dedup, None)
@@ -932,6 +943,7 @@ class SwingUx10NotificationService:
         if callable(cancel):
             cancel()
 
+    @recorded_callback
     def _retry_due(self, dedup: str) -> None:
         with self._lock:
             self._retry_handles.pop(dedup, None)
@@ -1030,9 +1042,14 @@ def _thread_runner(operation: Callable[[], None], name: str) -> Thread:
     return thread
 
 
-def _timer_scheduler(delay: float, operation: Callable[[], None]) -> Timer:
+def _timer_scheduler(delay: float, operation: Callable[[], None], *, owner=None) -> Timer:
     timer = Timer(delay, operation)
     timer.daemon = True
+    if owner is not None:
+        from kronos.application.failed_fenced_owners import record_resource, retire_owned_timer
+        record_resource(owner, operation, "CALLBACK")
+        record_resource(owner, timer, "TIMER", cleanup_action="CANCEL_TIMER",
+                        cleanup=lambda: retire_owned_timer(owner, timer))
     timer.start()
     return timer
 

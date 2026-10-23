@@ -583,38 +583,48 @@ def test_native_opportunities_use_intraday_aligned_bounded_market_layout() -> No
     assert rendered.index(probable.canonical_instrument) < rendered.index(mcx_instrument)
     assert rendered.count("Current publication order") == 4
     assert '<h3>LONG</h3>' in rendered and '<h3>SHORT</h3>' in rendered
+    # SW-UX-02 keeps the dashboard compact; exact technical/provenance
+    # assertions continue against the preserved full evidence renderer.
+    from kronos.browser.views import _native_opportunity_card
+    full = ''.join(_native_opportunity_card(item, None, native_intake=intake)
+        for item in run.assessments if item.status is NativeDiscoveryStatus.PROBABLE)
     for label, value in (
         ("Methodology", probable.policy_version),
         ("Phase", probable.context_kind.value.replace("_", " ")),
         ("Currentness", "BINDING CURRENT"),
     ):
-        assert f'<span>{label}</span><strong>{value}</strong>' in rendered
+        assert f'<span>{label}</span><strong>{value}</strong>' in full
+    assert '<span>Currentness</span><strong>BINDING CURRENT</strong>' in rendered
     for label, value in (
         ("1W", "SUPPORTIVE"),
         ("1D", "BULLISH SWING REGIME"),
         ("4H", "STRUCTURAL HOLD"),
         ("1H", "NEUTRAL"),
     ):
-        assert f'aria-label="{label} {value}"' in rendered
-        assert f'<span>{label}</span><strong>{value}</strong>' in rendered
-    assert rendered.count("Supporting details") == 2
+        assert f'aria-label="{label} {value}"' in full
+        assert f'<span>{label}</span><strong>{value}</strong>' in full
+    assert full.count("Supporting details") == 2
     assert run.run_identity in rendered
-    assert probable.result_sha256 in rendered
-    assert "NATIVE TEST PROBABLE" in rendered
+    assert probable.result_sha256 in full
+    assert "NATIVE TEST PROBABLE" in full
     for exact_state in (
         "CHART READY", "QUESTION PACK READY", "ANSWER IMPORTED",
         "CHART MISSING", "QUESTION PACK NOT READY", "ANSWER REJECTED",
     ):
         assert exact_state in rendered
-    assert 'href="/swing/v1-review">Open Native Review' in rendered
-    assert f'aria-label="Open current Native Review for {probable.canonical_instrument}"' in rendered
-    assert "/swing/analysis-details/" in rendered
+    assert 'href="/swing/v1-review">Open Native Review' in full
+    assert f'aria-label="Open current Native Review for {probable.canonical_instrument}"' in full
+    assert "/swing/analysis-details/" in full
+    assert '>VIEW NSE REVIEW</a>' in rendered and '>VIEW MCX REVIEW</a>' in rendered
+    assert "/swing/analysis-details/" not in rendered
+    assert '<div class="swing-timeframe-grid">' not in rendered
     assert ".swing-opportunities-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))" in rendered
     assert "@media(max-width:1100px){.swing-opportunities-grid{grid-template-columns:1fr}}" in rendered
     assert ".native-opportunity .direction{padding:2px 7px;font-size:11px;white-space:nowrap" in rendered
     assert ".swing-primary-facts,.swing-timeframe-grid{grid-template-columns:repeat(2,minmax(0,1fr))}" in rendered
-    assert '<details class="swing-supporting-details"><summary>Supporting details</summary>' in rendered
-    assert '<details class="swing-supporting-details" open>' not in rendered
+    assert '<details class="swing-supporting-details"><summary>Supporting details</summary>' in full
+    assert '<details class="swing-supporting-details" open>' not in full
+    assert '<details class="swing-supporting-details">' not in rendered
 
 
 def test_mcx_v2_opportunity_shows_reference_and_downstream_boundary() -> None:
@@ -643,10 +653,14 @@ def test_mcx_v2_opportunity_shows_reference_and_downstream_boundary() -> None:
     rendered = render_opportunities(
         replace(_ready(), swing_analysis_run_identity=run.run_identity),
         run, promotions_v2=(promotion,))
+    from kronos.browser.views import _native_opportunity_card
+    full = _native_opportunity_card(gold, None, promotions_v2=(promotion,))
     assert "GOLDM" in rendered and "KR-370 V2" in rendered
-    assert "REGISTERED GLOBAL REFERENCE" in rendered
-    assert "M1 mapping / coverage" in rendered and "M2 structural agreement" in rendered
-    assert "M3 divergence" in rendered
+    assert "REGISTERED GLOBAL REFERENCE" in full
+    assert "M1 mapping / coverage" in full and "M2 structural agreement" in full
+    assert "M3 divergence" in full
+    assert "REGISTERED GLOBAL REFERENCE" not in rendered
+    assert '>VIEW MCX REVIEW</a>' in rendered
     assert "DOWNSTREAM — MCX STEP-31 NOT COMMISSIONED" in rendered
     assert "NIFTY CONFIRMATION" not in rendered
     assert promotion.value["integrity_sha256"] not in rendered
@@ -658,7 +672,9 @@ def test_mcx_v2_opportunity_shows_reference_and_downstream_boundary() -> None:
     with_intake = render_opportunities(
         replace(_ready(), swing_analysis_run_identity=run.run_identity),
         run, native_intake=unavailable_intake, promotions_v2=(promotion,))
-    assert 'data-v2-state="BUY_NOW"' in with_intake
+    full_with_intake = _native_opportunity_card(gold, None,
+        native_intake=unavailable_intake, promotions_v2=(promotion,))
+    assert 'data-v2-state="BUY_NOW"' in full_with_intake
     assert '<span class="kr370-state kr370-state-now">BUY NOW</span>' in with_intake
     assert 'REVIEW ELIGIBLE · REVIEW BINDING UNAVAILABLE</strong>' not in with_intake
 
@@ -733,7 +749,9 @@ def test_native_opportunity_readiness_is_exact_and_unavailable_fails_closed() ->
         })
         assert answer in page
         assert "CHART READY" in page and "QUESTION PACK READY" in page
-        assert "Open current Native Review for " + probable.canonical_instrument in page
+        assert '>VIEW NSE REVIEW</a>' in page
+        assert 'href="/swing/nse-review"' in page
+        assert "Open current Native Review for " not in page
 
     unavailable = render_opportunities(snapshot, run, native_intake={
         "rows": (), "packages": (), "error": "REVIEW_BINDING_STALE", "workspace": None,
@@ -742,7 +760,11 @@ def test_native_opportunity_readiness_is_exact_and_unavailable_fails_closed() ->
     assert "QUESTION PACK UNAVAILABLE" in unavailable
     assert "ANSWER UNAVAILABLE" in unavailable
     assert 'href="/swing/v1-review">Open Native Review' not in unavailable
-    assert "Review workspace unavailable" in unavailable
+    assert "BINDING UNAVAILABLE" in unavailable
+    assert "selected analysis changed" in unavailable
+    assert '>VIEW NSE REVIEW</a>' in unavailable
+    for action in ('data-upload-url=', 'Create Question Pack', 'Upload Answer', 'Open Trade Window'):
+        assert action not in unavailable
 
 
 def test_v0_eligible_plans_are_absent_from_active_sponsor_page() -> None:

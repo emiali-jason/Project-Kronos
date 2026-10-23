@@ -6,6 +6,8 @@ remains disabled unless an owning composition explicitly activates it.
 
 from __future__ import annotations
 
+from kronos.application.failed_fenced_owners import recorded_cleanup
+
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import StrEnum
@@ -600,6 +602,8 @@ class BoundedHousekeeping:
         unlink: Callable[[Path], None] = os.unlink,
         rmdir: Callable[[Path], None] = os.rmdir,
     ) -> None:
+        from kronos.application.failed_fenced_owners import register_owner
+        register_owner('HOUSEKEEPING', self, __file__)
         self.scopes = tuple(scopes)
         if not self.scopes:
             raise ValueError("HOUSEKEEPING_SCOPE_REQUIRED")
@@ -777,6 +781,7 @@ class BoundedHousekeeping:
                 self._clock() + self.interval_seconds,
             )
 
+    @recorded_cleanup('STOP_HOUSEKEEPING')
     def shutdown(
         self, *, timeout_seconds: float = DEFAULT_SHUTDOWN_WAIT_SECONDS
     ) -> dict[str, object]:

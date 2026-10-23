@@ -181,3 +181,7 @@ release remain pending; historical ADR-0050/0059 authority is preserved.
 ## WO08 analytical successor / Intraday WO07F retirement
 
 [ADR0062](ADR-0062-WO08-PRODUCTION-SUCCESSOR-AND-WO07F-RETIREMENT.md) records direct Sponsor successor authority, exact machine/unavailable criteria, existing WO09 consistency and separate WO12 validation. Historical visual evidence and Swing Chart Analyst remain preserved; final review/deployment are separate gates.
+
+## Prospective FAILED_FENCED recovery R3 — ADR-0068
+
+[ADR-0068](ADR-0068-FAILED-FENCED-RECOVERY-V1.md) records the exact approved R3 contract and isolated implementation authority, including complete finite owner scope, counted completed-publication protocol, one-shot child authority and guarded admission. Actual source qualification/review, artifacts and production remain separately gated. Historical ADR-0050/0059/0061 decisions are preserved.

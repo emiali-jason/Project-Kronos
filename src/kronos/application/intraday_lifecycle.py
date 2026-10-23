@@ -1,4 +1,6 @@
 """Prospective lifecycle owner. Construction and GET projections are inert."""
+
+from kronos.application.failed_fenced_owners import recorded_cleanup
 from collections import deque
 from threading import RLock, Thread
 from datetime import timedelta
@@ -23,6 +25,8 @@ class IntradayLifecycleApplication:
     def __init__(self, *, futures, store, clock, session_source, timing_source,
                  operational_guard, contract_source=None, eligibility=None,
                  background_runner: Callable[[Callable[[], None], str], object] = _start_thread):
+        from kronos.application.failed_fenced_owners import register_owner
+        register_owner('WO11', self, __file__)
         if not callable(background_runner):
             raise ValueError("WO11_BACKGROUND_RUNNER_INVALID")
         self.futures, self.store, self.clock = futures, store, clock
@@ -59,6 +63,8 @@ class IntradayLifecycleApplication:
         self._completed_work = 0
         self._maintenance_admission: MaintenanceAdmissionCoordinator | None = None
         self._maintenance_ticket = None
+        self._failed_fenced_accounting = None
+        self._ff_worker_threads = []
         try:
             for current in self.store.restore():
                 self._prepare_current(current)
@@ -168,7 +174,16 @@ class IntradayLifecycleApplication:
                 dispatch = lambda: self._drain_work(generation, ticket)
         if dispatch is not None:
             try:
-                self._background_runner(dispatch, "kronos-intraday-wo11")
+                accounting = self._failed_fenced_accounting
+                if accounting is not None and self._background_runner is _start_thread:
+                    worker = Thread(target=dispatch, name="kronos-intraday-wo11", daemon=True)
+                    accounting.register_caller_thread(self, ticket, worker)
+                    self._ff_worker_threads.append(worker)
+                    worker.start()
+                else:
+                    if accounting is not None:
+                        accounting.ledger.mark_ineligible("PROVENANCE")
+                    self._background_runner(dispatch, "kronos-intraday-wo11")
             except Exception:
                 with self._work_lock:
                     self._work_queue.clear()
@@ -192,6 +207,11 @@ class IntradayLifecycleApplication:
         return self._drain_work_owned(generation, ticket)
 
     def _drain_work_owned(self, generation, ticket):
+        accounting = self._failed_fenced_accounting
+        if accounting is not None and (ticket is None or ticket.identity not in accounting._callers):
+            accounting = None  # Opaque runner is already permanently ineligible.
+        if accounting is not None:
+            accounting.enter_caller(self, ticket)
         try:
             while True:
                 with self._work_lock:
@@ -261,10 +281,18 @@ class IntradayLifecycleApplication:
                     self._work_active = False
                     self._work_state = "TERMINATED"
             if ticket is not None:
-                ticket.release()
-                with self._work_lock:
-                    if self._maintenance_ticket is ticket:
-                        self._maintenance_ticket = None
+                try:
+                    if accounting is not None:
+                        accounting.finish_caller(self, ticket)
+                finally:
+                    with self._work_lock:
+                        if self._maintenance_ticket is ticket:
+                            self._maintenance_ticket = None
+                    if accounting is not None:
+                        accounting.caller_returning(self, ticket)
+                    # The original caller's final ownership release follows all
+                    # native business, reference durability and bookkeeping.
+                    ticket.release()
 
     def _retain_queue_gap(self):
         with self._lock:
@@ -361,6 +389,8 @@ class IntradayLifecycleApplication:
             return
         consumer = _Consumer(self, current.data["track_identity"])
         registration = self._hub.open(capability, consumer)
+        from kronos.application.failed_fenced_owners import record_registration_alias
+        record_registration_alias(self, registration)
         registration.subscribe((instrument_record(current.data["intake"]["future"]),))
         self._registrations[consumer.track_identity] = (registration, capability)
         self._attached_track_identities = frozenset(self._registrations)
@@ -716,6 +746,7 @@ class IntradayLifecycleApplication:
             return "UNAVAILABLE"
         return "IDLE" if getattr(capability, "active", False) else "INTERRUPTED"
 
+    @recorded_cleanup('STOP_WO11')
     def shutdown(self):
         with self._work_lock:
             self._work_cancel_requested = True

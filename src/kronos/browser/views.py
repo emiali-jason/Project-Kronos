@@ -1323,6 +1323,13 @@ def _native_opportunity_card(
     market = "NSE" if item.product_path is NativeProductPath.NSE else "MCX"
     review_action = ('<a class="button" href="' + escape(review_link(intake_row, market=market), quote=True)
         + '">VIEW ' + market + ' REVIEW</a>')
+    # These two existing summaries are bounded warning/missingness facts, not
+    # the full criterion explanation that the compact layout moves to Review.
+    refresh_warning = ("" if v2 is not None or kr370_state is None else
+        kr370_summary if (kr370_state.not_evaluable_reason is not None
+            or _kr370_state_label(kr370_state) == "NO SETUP") else
+        _kr370_refresh_summary(kr370_state, None if refresh_reminders is None else
+            refresh_reminders.for_instrument(item.run_identity, item.canonical_instrument)))
     # Navigation is observational, not a Review/admission action. The dedicated
     # page independently verifies its complete source before showing evidence.
     return (
@@ -1335,6 +1342,8 @@ def _native_opportunity_card(
         + '<span>Review eligibility · ' + ('ELIGIBLE' if intake_row and intake_row.get("eligible")
             else 'INELIGIBLE' if intake_row else 'UNAVAILABLE') + '</span></div>'
         + _swing_continuity_warning(continuity) + intake_summary
+        + ('<div class="wo07-card-warning" role="status">' + refresh_warning + '</div>'
+           if refresh_warning else '')
         + ('<p class="v2-downstream">DOWNSTREAM — MCX STEP-31 NOT COMMISSIONED</p>'
            if item.product_path is NativeProductPath.MCX else '')
         + '<div class="swing-review-readiness"><div class="swing-readiness-states">'
@@ -1412,6 +1421,21 @@ def _kr370_opportunity_summary(value, reminder=None) -> str:  # type: ignore[no-
         else '<small class="kr370-card-line">Next exact condition: <strong>'
         + escape(value.next_promotion_condition) + '</strong></small>'
     )
+    return (
+        count + '<small class="kr370-card-line">' + escape(waiting) + '</small>'
+        + condition + _kr370_refresh_summary(value, reminder)
+    )
+
+
+def _kr370_refresh_summary(value, reminder=None) -> str:  # type: ignore[no-untyped-def]
+    """Preserve the existing bounded warning without full criterion details.
+
+    SW-UX-02 keeps relevant warnings on compact Opportunities. This reuses the
+    existing K5/no-alert and reminder facts; it neither schedules nor watches.
+    """
+    if (value.not_evaluable_reason is not None or _kr370_state_label(value) == "NO SETUP"
+            or value.all_criteria_satisfied):
+        return ""
     alert = (
         '<small class="kr370-card-line"><strong>'
         'REFRESH ANALYSIS AFTER NEXT COMPLETED 1H</strong></small>'
@@ -1434,10 +1458,7 @@ def _kr370_opportunity_summary(value, reminder=None) -> str:  # type: ignore[no-
                 "%d %b %H:%M IST"
             ).upper() + '</strong></small>'
         )
-    return (
-        count + '<small class="kr370-card-line">' + escape(waiting) + '</small>'
-        + condition + alert + reminder_state
-    )
+    return alert + reminder_state
 
 
 def _v2_label(value: str) -> str:

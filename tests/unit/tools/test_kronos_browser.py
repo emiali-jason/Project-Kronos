@@ -9,6 +9,11 @@ from kronos.common.maintenance import DrainStartupContext
 from kronos.application.intraday_notifications import IntradayNotifications
 from kronos.browser.runtime_state import complete_startup
 from tools import kronos_browser
+
+# These tests exercise the unchanged ordinary composition body with isolated
+# fake owners/native leaves. Public capable-entry preparation and HOME/
+# namespace denials are qualified in test_failed_fenced_launcher.py and
+# the actual prepared C roundtrip fixture; no static approval is implied.
 from kronos.provider.contracts.provider_authentication import ReadOnlyProviderOperation
 from kronos.provider.runtime import (
     SharedAuthenticatedProviderRuntime, ProviderRuntimeAccessError,
@@ -130,7 +135,7 @@ def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch, tm
         "open_new_tab",
         lambda url: events.append(url) or True,
     )
-    assert kronos_browser.main(["--port", "9123"]) == 0
+    assert kronos_browser._main(["--port", "9123"]) == 0
     assert events.index("checkpoint-bound") < events.index("notification-bind") < events.index("ready")
     assert "http://127.0.0.1:9123/swing/opportunities" in events
     assert "close" in events
@@ -327,7 +332,7 @@ def test_developer_no_browser_mode_does_not_open_browser(monkeypatch) -> None:
         "open_new_tab",
         lambda _url: (_ for _ in ()).throw(AssertionError),
     )
-    assert kronos_browser.main(["--no-browser"]) == 0
+    assert kronos_browser._main(["--no-browser"]) == 0
 
 
 def test_canonical_main_installs_real_mcx_owner_before_ready_without_acquisition(
@@ -377,7 +382,7 @@ def test_canonical_main_installs_real_mcx_owner_before_ready_without_acquisition
     monkeypatch.setattr(kronos_browser, 'create_browser_server', composed)
     monkeypatch.setattr('kronos.browser.runtime_state.complete_startup', ready)
     monkeypatch.setattr(KronosBrowserServer, 'serve_forever', serve)
-    assert kronos_browser.main(['--port', '0', '--no-browser']) == 0
+    assert kronos_browser._main(['--port', '0', '--no-browser']) == 0
     assert events == ['owners-installed', 'ready', 'serve']
 
 
@@ -478,14 +483,14 @@ def test_canonical_startup_restores_pre_mcx_continuity_without_rewriting_it(
     args = ["--port", "0"] + ([] if failure_stage == "workspace" else ["--no-browser"])
     try:
         if checkpoint_matches and failure_stage is None:
-            assert kronos_browser.main(args) == 0
+            assert kronos_browser._main(args) == 0
             assert served == servers and len(served) == 1
         else:
             error = ValueError if failure_stage is None else RuntimeError
             message = ("WO13_NOTIFICATION_CHECKPOINT_MISMATCH" if failure_stage is None
                        else "isolated " + failure_stage + " startup failure")
             with pytest.raises(error, match=message):
-                kronos_browser.main(args)
+                kronos_browser._main(args)
             assert not served
             # Failure after server construction must clean canonical owners;
             # the test's defensive finally must not hide a leaked listener.

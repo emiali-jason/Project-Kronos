@@ -1,6 +1,8 @@
 """Explicit Swing WO-12 Sponsor update over governed calendar and Provider facts."""
 from __future__ import annotations
 
+from kronos.application.failed_fenced_owners import recorded_cleanup
+
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime, time, timedelta
 from hashlib import sha256
@@ -35,6 +37,8 @@ class SwingResearchControl:
                  native_review=None, trade_window=None, mcx_control=None,
                  equity_basis: NseEquityBasisStore | None = None,
                  release_verifier=None) -> None:
+        from kronos.application.failed_fenced_owners import register_owner
+        register_owner('RESEARCH', self, __file__)
         self.application = application
         self.intake = intake
         self.research = research
@@ -52,6 +56,8 @@ class SwingResearchControl:
         self._authority_lock = Lock()
         self._worker = ThreadPoolExecutor(max_workers=1,
                                           thread_name_prefix="kronos-swing-research")
+        from kronos.application.failed_fenced_owners import record_resource
+        record_resource(self, self._worker, "WORKER")
         self._active_operation: str | None = None
         self._worker_closed = False
 
@@ -133,6 +139,7 @@ class SwingResearchControl:
                 self._active_operation = None
             ticket.release()
 
+    @recorded_cleanup('CLOSE_RESEARCH')
     def close(self) -> None:
         with self._worker_lock:
             self._worker_closed = True
@@ -436,6 +443,7 @@ class SwingResearchControl:
                     'queued_items': 0, 'cleanup_state': 'COMPLETE' if self._active_operation is None else 'OWNED',
                     'closed': self._worker_closed}
 
+    @recorded_cleanup('QUIESCE_DAILY')
     def quiesce_daily(self):
         with self._worker_lock:
             self._daily_stopping = True

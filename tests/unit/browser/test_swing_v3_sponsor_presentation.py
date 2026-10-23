@@ -26,6 +26,7 @@ from kronos.browser.swing_v3_presentation import (
     present_visual_v3_review,
 )
 from kronos.browser.views import (
+    _native_opportunity_card,
     _swing_continuity_warning,
     _v2_card_summary,
     _v2_promotion_detail,
@@ -238,6 +239,7 @@ def _sponsor_promotion(
 
 def _opportunity_with_promotion(
     promotion: Kr370SponsorPromotionPresentation,
+    *, compact: bool = True,
 ) -> str:
     completed, _, run = _completed()
     presentation = replace(
@@ -245,6 +247,10 @@ def _opportunity_with_promotion(
         sponsor_status=promotion.classification,
         kr370=promotion,
     )
+    if not compact:
+        probable = next(item for item in run.assessments
+            if item.canonical_instrument == completed.requirement.canonical_instrument)
+        return _native_opportunity_card(probable, None, visual_v3=(presentation,))
     return render_opportunities(_ready(), run, visual_v3=(presentation,))
 
 
@@ -471,8 +477,16 @@ def test_current_v2_opportunity_and_detail_are_sponsor_safe(tmp_path: Path) -> N
         probable, completed.requirement, (), None, None, (), None)
     detailed = render_native_analysis_details(
         _ready(), details, visual_v3=presented, promotion_v2=completed.promotion_v2)
+    full_card = _native_opportunity_card(probable, None, visual_v3=(presented,),
+        promotions_v2=(completed.promotion_v2,))
     for html in (opportunities, detailed):
         assert "KR-370 V2" in html and "BUY NOW" in html
+        assert completed.promotion_v2.value["integrity_sha256"] not in html
+    # SW-UX-02 keeps the current classification and focused navigation compact;
+    # full confirmation/criterion explanations remain on the evidence surfaces.
+    assert 'href="/swing/nse-review">VIEW NSE REVIEW' in opportunities
+    assert 'NIFTY CONFIRMATION' not in opportunities and 'v2-card-detail' not in opportunities
+    for html in (full_card, detailed):
         assert "NIFTY CONFIRMATION" in html and "1D ·" in html and "4H ·" in html
         assert "K1" in html and "K5" in html
         assert completed.promotion_v2.value["integrity_sha256"] not in html
@@ -726,8 +740,13 @@ def test_opportunity_card_stays_compact_and_uses_v3_status() -> None:
         (present_visual_v3_review(completed),),
     )
     assert "Chart / reference status" in rendered
-    assert "Requirements to progress" in rendered
-    assert "watchable" in rendered
+    assert "Pending requirements" in rendered
+    assert 'href="/swing/nse-review">VIEW NSE REVIEW' in rendered
+    assert "Requirements to progress" not in rendered and "watchable" not in rendered
+    full = _native_opportunity_card(next(item for item in run.assessments
+        if item.canonical_instrument == completed.requirement.canonical_instrument),
+        None, progression=progression, visual_v3=(present_visual_v3_review(completed),))
+    assert "Requirements to progress" in full and "watchable" in full
     probable_card = rendered.split('<article class="opportunity native-opportunity">', 1)[1]
     probable_card = probable_card.split("</article>", 1)[0]
     assert "Reference High" not in probable_card
@@ -786,56 +805,75 @@ def test_not_evaluable_is_neutral_and_distinct_from_evaluated_no_setup() -> None
 
 
 def test_potential_card_uses_plain_criterion_names_without_k_score() -> None:
-    rendered = _opportunity_with_promotion(_sponsor_promotion(
+    promotion = _sponsor_promotion(
         "POTENTIAL BUY SETUP — 3 CRITERIA REMAINING",
         missing=(
             "K1 1H DIRECTIONAL PROGRESSION",
             "K3 IMMEDIATE PATH CLEARANCE",
             "K5 NON EXTENSION",
         ),
-    ))
+    )
+    rendered = _opportunity_with_promotion(promotion)
+    full = _opportunity_with_promotion(promotion, compact=False)
 
-    assert "3 CRITERIA REMAINING" in rendered
-    assert "Missing: 1H Progression · Path Clearance · Extension" in rendered
-    assert "K score" not in rendered
-    assert "3/5" not in rendered
-    assert "K1 1H" not in rendered
-    assert "K3 IMMEDIATE" not in rendered
-    assert "K5 NON" not in rendered
+    assert 'POTENTIAL BUY SETUP</span>' in rendered
+    assert "3 CRITERIA REMAINING" not in rendered
+    assert "Missing: 1H Progression · Path Clearance · Extension" not in rendered
+    assert "3 CRITERIA REMAINING" in full
+    assert "Missing: 1H Progression · Path Clearance · Extension" in full
+    for html in (rendered, full):
+        assert "K score" not in html
+        assert "3/5" not in html
+        assert "K1 1H" not in html
+        assert "K3 IMMEDIATE" not in html
+        assert "K5 NON" not in html
 
 
 def test_ready_card_preserves_exact_condition_or_no_alert_without_fake_watch() -> None:
     condition = "Completed 1H close above ₹1,482.5"
-    watchable = _opportunity_with_promotion(_sponsor_promotion(
+    watchable_promotion = _sponsor_promotion(
         "BUY READY — 1 CRITERION REMAINING",
         missing=("K2 1H CPR ACCEPTANCE",),
         condition=condition,
         watchability="Watch Available",
-    ))
-    unavailable = _opportunity_with_promotion(_sponsor_promotion(
+    )
+    unavailable_promotion = _sponsor_promotion(
         "SELL READY — 1 CRITERION REMAINING",
         direction="SHORT",
         missing=("K5 NON EXTENSION",),
         watchability="No Automated Alert Available",
-    ))
+    )
+    watchable = _opportunity_with_promotion(watchable_promotion)
+    unavailable = _opportunity_with_promotion(unavailable_promotion)
+    full_watchable = _opportunity_with_promotion(watchable_promotion, compact=False)
+    full_unavailable = _opportunity_with_promotion(unavailable_promotion, compact=False)
 
-    assert "1 CRITERION REMAINING" in watchable
-    assert "Waiting for: 1H CPR Clearance" in watchable
-    assert condition in watchable
+    assert "BUY READY</span>" in watchable
+    assert "1 CRITERION REMAINING" not in watchable and condition not in watchable
+    assert "1 CRITERION REMAINING" in full_watchable
+    assert "Waiting for: 1H CPR Clearance" in full_watchable
+    assert condition in full_watchable
     assert "NO AUTOMATED ALERT AVAILABLE" not in watchable
-    assert "Waiting for: Extension" in unavailable
+    assert "Waiting for: Extension" not in unavailable
+    assert "Waiting for: Extension" in full_unavailable
     assert "REFRESH ANALYSIS AFTER NEXT COMPLETED 1H" in unavailable
+    assert "REFRESH ANALYSIS AFTER NEXT COMPLETED 1H" in full_unavailable
     assert "NO AUTOMATED ALERT AVAILABLE" not in unavailable
 
 
 @pytest.mark.parametrize("classification", ("BUY NOW", "SELL NOW"))
 def test_now_card_suppresses_zero_diagnostics_and_score(classification: str) -> None:
-    rendered = _opportunity_with_promotion(_sponsor_promotion(classification))
+    promotion = _sponsor_promotion(classification)
+    rendered = _opportunity_with_promotion(promotion)
+    full = _opportunity_with_promotion(promotion, compact=False)
 
-    assert "ALL PROMOTION CRITERIA SATISFIED" in rendered
-    assert "5/5" not in rendered
-    assert "0 OUTSTANDING" not in rendered
-    assert "0 WATCHABLE" not in rendered
+    assert classification + "</span>" in rendered
+    assert "ALL PROMOTION CRITERIA SATISFIED" not in rendered
+    assert "ALL PROMOTION CRITERIA SATISFIED" in full
+    for html in (rendered, full):
+        assert "5/5" not in html
+        assert "0 OUTSTANDING" not in html
+        assert "0 WATCHABLE" not in html
 
 
 def test_no_setup_uses_bounded_plain_reason_while_details_retain_enum() -> None:

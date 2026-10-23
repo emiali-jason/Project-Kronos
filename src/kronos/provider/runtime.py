@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from kronos.application.failed_fenced_owners import recorded_cleanup
+
 from contextlib import contextmanager, nullcontext
 
 from collections.abc import Callable
@@ -110,32 +112,7 @@ _MAX_PROVIDER_RUNTIME_LEASE_BYTES = 64 * 1024
 class SharedAuthenticatedProviderRuntime:
     """Own exactly one authenticated context and all product lease lifecycle."""
 
-    __slots__ = (
-        "__governance",
-        "__availability",
-        "__capability",
-        "__clock",
-        "__construction_generation",
-        "__construction_in_progress",
-        "__authentication_worker",
-        "__pending_attempt",
-        "__cleanup_in_progress",
-        "__connection_deadline",
-        "__unresolved_provider",
-        "__context_identity",
-        "__failure",
-        "__identity_factory",
-        "__leases",
-        "__lease_bytes",
-        "__lease_refusals",
-        "__lifecycle",
-        "__lock",
-        "__principal_binding",
-        "__provider",
-        "__provider_factory",
-        "__provider_identity",
-        "__valid_through",
-    )
+    __slots__ = ('__governance', '__availability', '__capability', '__clock', '__construction_generation', '__construction_in_progress', '__authentication_worker', '__pending_attempt', '__cleanup_in_progress', '__connection_deadline', '__unresolved_provider', '__context_identity', '__failure', '__identity_factory', '__leases', '__lease_bytes', '__lease_refusals', '__lifecycle', '__lock', '__principal_binding', '__provider', '__provider_factory', '__provider_identity', '__valid_through', '_ff_composition', '_ff_callback_lock', '_ff_active_callbacks', '_ff_callback_failed')
 
     def __init__(
         self,
@@ -148,6 +125,8 @@ class SharedAuthenticatedProviderRuntime:
             lambda: f"PROVIDER-LEASE-{uuid4().hex.upper()}"
         ),
     ) -> None:
+        from kronos.application.failed_fenced_owners import register_owner
+        register_owner('PROVIDER', self, __file__)
         if (
             not callable(provider_factory)
             or not callable(clock)
@@ -607,6 +586,7 @@ class SharedAuthenticatedProviderRuntime:
             with self.__lock:
                 self.__cleanup_in_progress -= 1
 
+    @recorded_cleanup('END_SESSION')
     def end_kronos_session(self) -> None:
         """End the shared context once and retain unresolved cleanup ownership."""
 
@@ -841,14 +821,7 @@ class SharedAuthenticatedProviderRuntime:
 class ReadOnlyProviderLease:
     """Revocable, non-serializable, structurally read-only product capability."""
 
-    __slots__ = (
-        "__consumer_identity",
-        "__lease_identity",
-        "__operations",
-        "__parent",
-        "__released",
-        "__revoked",
-    )
+    __slots__ = ('__consumer_identity', '__lease_identity', '__operations', '__parent', '__released', '__revoked', '_ff_composition', '_ff_callback_lock', '_ff_active_callbacks', '_ff_callback_failed')
 
     def __init__(
         self,
@@ -858,12 +831,18 @@ class ReadOnlyProviderLease:
         consumer_identity: str,
         operations: frozenset[ReadOnlyProviderOperation],
     ) -> None:
+        from kronos.application.failed_fenced_owners import register_owner
+        register_owner('PROVIDER_LEASE', self, __file__)
         self.__parent = parent
         self.__lease_identity = lease_identity
         self.__consumer_identity = consumer_identity
         self.__operations = operations
         self.__released = False
         self.__revoked = False
+        composition = getattr(self, "_ff_composition", None)
+        if composition is not None:
+            composition.link_nested(composition.resource_identity(parent),
+                                    composition.resource_identity(self))
 
     @property
     def provider_identity(self) -> str:
@@ -989,6 +968,7 @@ class ReadOnlyProviderLease:
         except ProviderRuntimeAccessError:
             raise MonitoringError(MonitoringFailure.CAPABILITY_UNAVAILABLE) from None
 
+    @recorded_cleanup('REVOKE_LEASE')
     def _revoke(self) -> None:
         self.__revoked = True
 
@@ -1029,7 +1009,7 @@ class ReadOnlyProviderLease:
 class ProviderRuntimeCompatibilityFacade:
     """Preserve a product's legacy runtime interface over one shared context."""
 
-    __slots__ = ("__consumer_identity", "__lease", "__operations", "__runtime")
+    __slots__ = ('__consumer_identity', '__lease', '__operations', '__runtime', '_ff_composition', '_ff_callback_lock', '_ff_active_callbacks', '_ff_callback_failed')
 
     def __init__(
         self,
@@ -1038,6 +1018,8 @@ class ProviderRuntimeCompatibilityFacade:
         consumer_identity: str,
         operations: frozenset[ReadOnlyProviderOperation],
     ) -> None:
+        from kronos.application.failed_fenced_owners import register_owner
+        register_owner('PROVIDER_FACADE', self, __file__)
         self.__runtime = runtime
         self.__consumer_identity = consumer_identity
         self.__operations = operations
@@ -1062,6 +1044,7 @@ class ProviderRuntimeCompatibilityFacade:
         self.__lease = lease
         return lease
 
+    @recorded_cleanup('RELEASE_PRODUCT_LEASE')
     def release_product_lease(self) -> None:
         lease = self.__lease
         self.__lease = None
