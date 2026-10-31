@@ -39,6 +39,11 @@ SCHEMA = 'KRONOS_INITIAL_PAIR_PLACEMENT_ORDER_V1'
 PAIR_SCHEMA = 'KRONOS_RELEASE_PAIR_V1'
 JOURNAL_NAME = 'release-placement-v1'
 FINAL_STAGE = 'final-unactivated'
+# Sponsor 83564: these observations authorize only legacy checkpoint identity.
+LEGACY_IDENTITY = ('ef962c39773be0e94a2e8b8b921b94993a66d071',
+    'fc02b6ef538b8b8a2720d34cbbdc9cb18a5706597f46ac4a635f6bd0b53d73b7',
+    'ed7a77729ff22aea43134b5dfc9dc2cb32e05204c4e66cd9188d8cf78b434a69')
+LEGACY_PAIR_SCHEMA = 'KRONOS_OBSERVED_LEGACY_PAIR_V1'
 
 
 class PlacementError(ValueError):
@@ -389,8 +394,106 @@ class Placement:
     def _git(self, repository, *args):
         return self.helper(['/usr/bin/git','--no-optional-locks','-C',str(repository),*args], repository,'PLACEMENT_GIT',MAX_DOCUMENT).decode().strip()
 
-    def _pair(self, reference, repository, bundle, *, selected):
+
+    def _legacy_pair(self, reference, value, repository, bundle, *, selected, checkpoint_order):
+        """83564 exact observed old pair, never a new-release or startup policy.
+
+        The immutable 83563 tracked inventory pins observed bytes AND modes.
+        Its app seal is an independently observed identity; no historical build
+        correspondence is asserted. Whole pair/private order references still
+        bind Git metadata, dependencies and each retained checkpoint.
+        """
+        closed(value,('schema','identity','repository','bundle','roster','revision','tree','artifact','interpreter','legacy_inventory'))
+        permitted=(hasattr(self,'order') and self.order['stage']=='PREPARATORY'
+            and reference==self.order['current' if self.order['operation']=='PLACE' else 'selected'])
+        retained=(checkpoint_order is not None and checkpoint_order['stage']=='PREPARATORY'
+            and reference==checkpoint_order['current'])
+        if selected or not (permitted or retained):deny('LEGACY_ROLE')
+        if (value['identity']!=reference['identity'] or value['repository']!=self.policy['repository_path']
+                or value['bundle']!=self.policy['bundle_path'] or value['revision']!=LEGACY_IDENTITY[0]
+                or value['legacy_inventory']['sha256']!=LEGACY_IDENTITY[1]):deny('LEGACY_IDENTITY')
+        raw=read_reference(value['legacy_inventory'],self.check)
+        observed=json.loads(raw)
+        if observed['revision']!=LEGACY_IDENTITY[0] or observed['entry_count']!=len(observed['entries']):deny('LEGACY_INVENTORY')
+        recorded={}
+        for row in observed['entries']:
+            name=row['path'];relative=Path(name)
+            if (relative.is_absolute() or '..' in relative.parts or name in recorded
+                    or row['git_mode'] not in {'100644','100755'}
+                    or row['mode'] not in {'0600','0644','0755'}):deny('LEGACY_INVENTORY')
+            recorded[name]=row
+        if not recorded or len(recorded)>MAX_FILES:deny('LEGACY_INVENTORY')
+        repository=path(repository);bundle=path(bundle)
+        expected=document(read_reference(value['roster'],self.check))
+        if self._roster(repository)!=expected:deny('BACKEND_ROSTER')
+        if not (repository/'.git').is_dir() or (repository/'.git').is_symlink():deny('GIT_DIRECTORY')
+        # Reuse the existing exact destination/configuration/SSH safety reader
+        # under its existing serialized foreground binding. The ONLY legacy
+        # policy difference is the observed develop branch/upstream, not origin,
+        # command safety, helper ownership or the absolute ValidationBudget.
+        from tools import runtime_source_gate as source_gate
+        token=source_gate._SOURCE_BUDGET.set(self.budget)
+        if not _SDK_LOCK.acquire(timeout=max(0,(self.original_deadline-admission.monotonic_ns())/1e9)):
+            source_gate._SOURCE_BUDGET.reset(token);deny('SOURCE_VALIDATOR_BUSY')
+        old_branch,old_ref=source_gate.SOURCE_BRANCH,source_gate.SOURCE_REF
+        try:
+            source_gate.SOURCE_BRANCH='develop';source_gate.SOURCE_REF='refs/heads/develop'
+            source_gate._destination_state(repository)
+        finally:
+            source_gate.SOURCE_BRANCH=old_branch;source_gate.SOURCE_REF=old_ref
+            _SDK_LOCK.release();source_gate._SOURCE_BUDGET.reset(token)
+        if (self._git(repository,'rev-parse','HEAD')!=value['revision']
+                or self._git(repository,'rev-parse','HEAD^{tree}')!=value['tree']
+                or self._git(repository,'status','--porcelain=v1','--untracked-files=all')):deny('GIT_STATE')
+        if self._git(repository,'branch','--show-current')!='develop':deny('LEGACY_BRANCH')
+        if self._git(repository,'rev-parse','--show-object-format')!='sha1':deny('GIT_FORMAT')
+        git_entries={}
+        for item in self._git(repository,'ls-tree','-rz','--full-tree','HEAD').split('\0'):
+            if not item:continue
+            meta,name=item.split('\t');mode,kind,blob=meta.split();row=recorded.get(name)
+            if (kind!='blob' or name in git_entries or row is None
+                    or mode!=row['git_mode'] or blob!=row['git_blob']
+                    or not re.fullmatch('[0-9a-f]{40}',blob)):deny('LEGACY_GIT_ROSTER')
+            git_entries[name]=(int(row['mode'],8),blob)
+        if set(git_entries)!=set(recorded):deny('LEGACY_GIT_ROSTER')
+        actual=self._roster(repository,git_entries=git_entries,object_format='sha1')
+        if actual!=expected:deny('BACKEND_GIT_ROSTER')
+        files={row['path']:row for row in actual if row['type']=='file'}
+        for name,row in recorded.items():
+            if files[name]['sha256']!=row['sha256'] or files[name]['bytes']!=row['bytes']:deny('LEGACY_SOURCE_BYTES')
+        artifact=document(read_reference(value['artifact'],self.check),final_lf=True)
+        closed(artifact,('schema','bundle_identity','bundle_manifest','source_build_correspondence'))
+        if (artifact['schema']!='KRONOS_OBSERVED_LEGACY_APP_V1'
+                or artifact['source_build_correspondence']!='UNAVAILABLE'
+                or artifact['bundle_identity']!=LEGACY_IDENTITY[2]):deny('LEGACY_ARTIFACT')
+        self._verify_bundle(bundle,LEGACY_IDENTITY[2])
+        if package.manifest(bundle)!=artifact['bundle_manifest']:deny('LEGACY_ARTIFACT')
+        # Same executable/dependency/alias checks as the strict release path.
+        interpreter=value['interpreter']
+        closed(interpreter,('path','bytes','sha256','version','implementation','base_prefix'))
+        for row in expected:
+            if row['type']!='symlink':continue
+            target=(repository/row['path']).resolve(strict=True)
+            if not target.is_relative_to(repository):
+                if (not re.fullmatch(r'\.venv/bin/python(?:[0-9]+(?:\.[0-9]+)*)?',row['path'])
+                        or str(target)!=interpreter['path']):deny('EXTERNAL_DEPENDENCY_ALIAS')
+        executable=repository/'.venv/bin/python';resolved=executable.resolve(strict=True)
+        if str(resolved)!=interpreter['path']:deny('INTERPRETER_PATH')
+        data,_=_read_regular(resolved,limit=256*1024**2,check=self.check)
+        if len(data)!=interpreter['bytes'] or sha256(data).hexdigest()!=interpreter['sha256']:deny('INTERPRETER_BYTES')
+        probe=self.helper([str(executable),'-I','-S','-B','-c',
+            'import sys,json;print(json.dumps(dict(version=sys.version,implementation=sys.implementation.name,base_prefix=sys.base_prefix),sort_keys=True))'],repository,'PLACEMENT_INTERPRETER')
+        if json.loads(probe)!={k:interpreter[k] for k in ('version','implementation','base_prefix')}:deny('INTERPRETER_OBSERVATION')
+        if self._roster(repository)!=expected:deny('BACKEND_CHANGED')
+        self.events.append(dict(event='EXACT_OBSERVED_LEGACY_PAIR',revision=LEGACY_IDENTITY[0],
+            tracked_inventory_sha256=LEGACY_IDENTITY[1],bundle_identity=LEGACY_IDENTITY[2],
+            source_build_correspondence='UNAVAILABLE',startup_authority=False))
+        self.check();return value
+
+    def _pair(self, reference, repository, bundle, *, selected, checkpoint_order=None):
         value=document(read_reference(reference,self.check))
+        if type(value) is dict and value.get('schema')==LEGACY_PAIR_SCHEMA:
+            return self._legacy_pair(reference,value,repository,bundle,selected=selected,checkpoint_order=checkpoint_order)
         closed(value,('schema','identity','repository','bundle','roster','revision','tree','artifact','interpreter'))
         if (value['schema']!=PAIR_SCHEMA or value['identity']!=reference['identity']
                 or value['repository']!=self.policy['repository_path'] or value['bundle']!=self.policy['bundle_path']): deny('PAIR')
@@ -614,7 +717,7 @@ class Placement:
 
     def _verify_retained_checkpoint(self,directory,original,result):
         # These helpers run only after the NEW exclusive intent is durable.
-        value=self._pair(original['current'],directory/'placement.checkpoint.backend',directory/'placement.checkpoint.app',selected=False)
+        value=self._pair(original['current'],directory/'placement.checkpoint.backend',directory/'placement.checkpoint.app',selected=False,checkpoint_order=original)
         if self._roster(directory/'placement.staged.backend')!=document(read_reference(value['roster'],self.check)):deny('PLACEMENT_CHECKPOINT')
         artifact=document(read_reference(value['artifact'],self.check),final_lf=True)
         self._verify_bundle(directory/'placement.app-installer.rollback',artifact['bundle_identity'])

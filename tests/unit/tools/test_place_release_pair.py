@@ -717,3 +717,107 @@ def test_each_placement_stage_is_once_only(case,monkeypatch):
         with pytest.raises(p.PlacementError,match='PRIOR_OR_REPLAY'):other.execute(private(c['order_path'],c['order']))
     finally:assert other.close()['state']=='CLOSED'
     assert _placement_history(history)==before
+
+
+# 83564: only explicit, source-bound observed legacy identities qualify.
+LEGACY_APPROVED=('ef962c39773be0e94a2e8b8b921b94993a66d071',
+ 'fc02b6ef538b8b8a2720d34cbbdc9cb18a5706597f46ac4a635f6bd0b53d73b7',
+ 'ed7a77729ff22aea43134b5dfc9dc2cb32e05204c4e66cd9188d8cf78b434a69')
+
+
+def _legacy_control(c,monkeypatch):
+    """Synthetic fixed identity seam; actual Git bytes/modes/seal/custody paths.
+
+    This is not a historical package attestation. Old source and app are observed
+    separately, as in the approved legacy boundary. No product child is allowed.
+    """
+    if hasattr(p,'LEGACY_IDENTITY'):assert p.LEGACY_IDENTITY==LEGACY_APPROVED
+    repo=c['repo']
+    for name in ('release_admission.py','failed_successor_restore.py'):(repo/'src/kronos/common'/name).unlink()
+    (repo/'src/kronos/common/legacy_bootstrap.py').write_text('# SYNTHETIC PRE-INTERFACE LIBRARY; NO ORDINARY POLICY\n')
+    (repo/'tools/macos/kronos_launcher.c').write_text('#include <stdio.h>\nint main(void){puts("HISTORICAL SOURCE; NOT USED AS BUILD ATTESTATION");return 0;}\n')
+    command('/usr/bin/git','-C',repo,'checkout','-b','develop')
+    command('/usr/bin/git','-C',repo,'config','branch.develop.remote','origin')
+    command('/usr/bin/git','-C',repo,'config','branch.develop.merge','refs/heads/develop')
+    command('/usr/bin/git','-C',repo,'add','-A');command('/usr/bin/git','-C',repo,'commit','-m','SYNTHETIC legacy observed shape')
+    (repo/'src/kronos/common/legacy_bootstrap.py').chmod(0o600)
+    revision=command('/usr/bin/git','-C',repo,'rev-parse','HEAD');tree=command('/usr/bin/git','-C',repo,'rev-parse','HEAD^{tree}')
+    raw=subprocess.run(['/usr/bin/git','-C',str(repo),'ls-tree','-rz','--full-tree','HEAD'],check=True,capture_output=True).stdout
+    entries=[]
+    for item in raw.split(b'\0'):
+        if not item:continue
+        meta,name=item.split(b'\t');mode,kind,blob=meta.split();name=name.decode();data=(repo/name).read_bytes()
+        entries.append(dict(path=name,mode=f'{(repo/name).stat().st_mode&0o777:04o}',git_mode=mode.decode(),git_blob=blob.decode(),sha256=sha256(data).hexdigest(),bytes=len(data)))
+    inventory=dict(repository=str(repo),revision=revision,entries=entries,entry_count=len(entries))
+    inventory_path=c['order_path'].with_name('SYNTHETIC-observed-legacy-inventory.json');inventory_raw=(json.dumps(inventory,indent=2)+'\n').encode();inventory_path.write_bytes(inventory_raw);inventory_path.chmod(0o600)
+    inventory_ref=dict(identity='synthetic-observed-legacy-inventory',path=str(inventory_path),bytes=len(inventory_raw),sha256=sha256(inventory_raw).hexdigest())
+    artifact=dict(schema='KRONOS_OBSERVED_LEGACY_APP_V1',bundle_identity=package.identity(c['bundle']),bundle_manifest=package.manifest(c['bundle']),source_build_correspondence='UNAVAILABLE')
+    monkeypatch.setattr(p,'LEGACY_IDENTITY',(revision,inventory_ref['sha256'],artifact['bundle_identity']),raising=False)
+    value=json.loads(Path(c['old']['path']).read_bytes());value.update(schema='KRONOS_OBSERVED_LEGACY_PAIR_V1',revision=revision,tree=tree,legacy_inventory=inventory_ref)
+    value['artifact']=private(Path(value['artifact']['path']),artifact,final_lf=True)
+    value['roster']=private(Path(value['roster']['path']),c['owner']._roster(repo))
+    c['old']=private(Path(c['old']['path']),value);c['order']['current']=c['old']
+    (c['evidence']/'legacy-fixture-seams.json').write_text(json.dumps(dict(production_approved_anchors=LEGACY_APPROVED,synthetic_disposable_anchors=p.LEGACY_IDENTITY,source_build_correspondence='UNAVAILABLE',real_comparisons=True,actual_signature_checks=True,actual_Git=True,actual_custody=True,product_startup=False),indent=2)+'\n')
+    assert command('/usr/bin/git','-C',repo,'status','--porcelain')==''
+    return value
+
+
+def test_legacy_observed_current_and_exact_preparatory_rollback(case,monkeypatch):
+    _legacy_control(case,monkeypatch)
+    test_actual_placement_and_separately_ordered_rollback(case)
+
+
+@pytest.mark.parametrize('fault',('revision','inventory','branch','content','coherent-content','mode','coherent-mode','bundle','provenance','interpreter','implicit','as-selected'))
+def test_legacy_foreign_or_changed_identity_denies(case,monkeypatch,fault):
+    c=case;value=_legacy_control(c,monkeypatch)
+    if fault=='revision':value['revision']='a'*40
+    elif fault=='inventory':value['legacy_inventory']=dict(value['legacy_inventory'],sha256='b'*64)
+    elif fault=='branch':command('/usr/bin/git','-C',c['repo'],'checkout','-b','foreign-branch')
+    elif fault=='content':(c['repo']/'src/kronos/common/legacy_bootstrap.py').write_text('# CHANGED; NO CONTENT ACCEPTANCE STUB\n')
+    elif fault=='coherent-content':
+        target=c['repo']/'src/kronos/common/legacy_bootstrap.py';target.write_text('# COHERENT WORKING ROSTER BUT NOT THE PINNED GIT BLOB\n')
+        command('/usr/bin/git','-C',c['repo'],'update-index','--assume-unchanged','src/kronos/common/legacy_bootstrap.py')
+        assert command('/usr/bin/git','-C',c['repo'],'status','--porcelain')==''
+        (c['evidence']/'disposable-index-flag.txt').write_text('assume-unchanged only in disposable legacy repository; original selected Git tree and pinned source inventory unchanged\n')
+        value['roster']=private(Path(value['roster']['path']),c['owner']._roster(c['repo']))
+    elif fault in ('mode','coherent-mode'):
+        (c['repo']/'src/kronos/common/legacy_bootstrap.py').chmod(0o644)
+        if fault=='coherent-mode':value['roster']=private(Path(value['roster']['path']),c['owner']._roster(c['repo']))
+    elif fault=='bundle':
+        artifact=json.loads(Path(value['artifact']['path']).read_bytes());artifact['bundle_identity']='d'*64;value['artifact']=private(Path(value['artifact']['path']),artifact,final_lf=True)
+    elif fault=='provenance':
+        artifact=json.loads(Path(value['artifact']['path']).read_bytes());artifact['source_build_correspondence']='APPROVED';value['artifact']=private(Path(value['artifact']['path']),artifact,final_lf=True)
+    elif fault=='interpreter':value['interpreter']['sha256']='f'*64
+    elif fault=='implicit':value.pop('legacy_inventory');value['schema']=p.PAIR_SCHEMA
+    c['old']=private(Path(c['old']['path']),value);c['order']['current']=c['old']
+    if fault=='as-selected':c['order']['selected']=c['old']
+    before=c['owner']._roster(c['repo']);bundle=package.identity(c['bundle'])
+    with pytest.raises((ValueError,OSError)):invoke(c)
+    assert c['owner']._roster(c['repo'])==before and package.identity(c['bundle'])==bundle
+    assert not (c['anchor'].parent/p.JOURNAL_NAME/'placement.backend-swapped.json').exists()
+
+
+def test_legacy_then_two_stage_preserves_original_history(case,monkeypatch):
+    _legacy_control(case,monkeypatch)
+    test_two_stage_same_anchor_preserves_preparation(case,monkeypatch)
+
+
+@pytest.mark.parametrize('boundary',('after-backend-swap','prepared-prefix-write','prepared-exact-expiry'))
+def test_legacy_partial_expired_attempt_stays_spent(case,monkeypatch,boundary):
+    _legacy_control(case,monkeypatch)
+    test_actual_partial_effects_preserve_intent_and_deny_replay(case,monkeypatch,boundary)
+
+
+def test_legacy_concurrent_exclusion(case,monkeypatch):
+    _legacy_control(case,monkeypatch)
+    test_actual_concurrent_exclusion(case)
+
+
+def test_legacy_unfinished_write_retains_actual_custody(case,monkeypatch):
+    _legacy_control(case,monkeypatch)
+    test_entered_durable_work_cannot_be_closed_as_complete(case,monkeypatch)
+
+
+def test_legacy_unresolved_helper_keeps_actual_exclusion(case,monkeypatch):
+    _legacy_control(case,monkeypatch)
+    test_actual_unresolved_helper_retains_exclusion_and_spent_intent(case,monkeypatch,'PREPARATORY')
