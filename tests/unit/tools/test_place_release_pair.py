@@ -17,6 +17,165 @@ from tools.macos import place_release_pair as p
 from tools.macos import package_launcher as package
 from kronos.common import release_admission as a
 
+
+def test_process_inventory_actual_unreaped_terminal_child(tmp_path,monkeypatch,record_property):
+    """Actual kernel terminal state; only the owned PID namespace is scoped."""
+    import ctypes
+    import time
+    assert_actual_preparatory_source()
+    child=subprocess.Popen([sys.executable,'-B','-c','import os;os._exit(0)'])
+    owner=p.Placement(a.ValidationBudget(a.monotonic_ns()+120_000_000_000))
+    deadline=owner.original_deadline
+    application={'owned_child_pid':child.pid,'actual_kernel_terminal_before_inventory':False,
+                 'scope_seam':'proc_listpids roster restricted to actual owned child; argv and kernel reads unchanged'}
+    try:
+        # SDK extern_proc prefix is used only to wait for the test's owned
+        # producer. Production acceptance must independently validate its ABI.
+        kernel=ctypes.CDLL(None,use_errno=True)
+        until=time.monotonic()+5
+        while True:
+            mib=(ctypes.c_int*4)(1,14,1,child.pid);buf=ctypes.create_string_buffer(16384);size=ctypes.c_size_t(len(buf))
+            result=kernel.sysctl(mib,4,buf,ctypes.byref(size),None,0)
+            if result==0 and size.value==648 and int.from_bytes(buf.raw[40:44],'little')==child.pid and buf.raw[36]==5:
+                application['actual_kernel_terminal_before_inventory']=True;break
+            assert time.monotonic()<until,'Owned child did not become kernel SZOMB within fixture bound'
+            time.sleep(.005)
+        monkeypatch.setattr(p,'_process_ids',lambda:(child.pid,))
+        observed=owner._inventory()
+        application.update(inventory=observed,original_budget_identity_preserved=owner.original_deadline==deadline)
+        assert observed==[]
+        assert owner.original_deadline==deadline
+    except BaseException as error:
+        application.update(error_type=type(error).__name__,error=str(error));raise
+    finally:
+        record_property('application_before_fixture_teardown',json.dumps(application,sort_keys=True))
+        # Only the actual parent reaps its child, after application evidence.
+        exit_code=child.wait(timeout=5)
+        cleanup=owner.close()
+        record_property('separate_fixture_teardown',json.dumps(dict(actual_child_exit=exit_code,owner_resource=cleanup),sort_keys=True))
+        assert exit_code==0
+        assert cleanup['state']=='CLOSED'
+
+
+@pytest.mark.parametrize('fault',('unsupported-abi','short','missing','syscall-error','pid','uid','birth-zero',
+    'birth-usec','changed-birth','state-change','disappearance','deadline-first','deadline-second','deadline-final','deadline-after-terminal','live-unreadable'))
+def test_process_inventory_terminal_proof_denials(monkeypatch,record_property,fault):
+    """Real owned children and reader; disclosed negative syscall/clock seams."""
+    import ctypes
+    import time
+    child=subprocess.Popen([sys.executable,'-B','-c','import time;time.sleep(1)' if fault=='live-unreadable' else 'import os;os._exit(0)'])
+    owner=p.Placement(a.ValidationBudget(a.monotonic_ns()+120_000_000_000));original=owner.original_deadline
+    real_library=ctypes.CDLL;real_clock=a.monotonic_ns;expired=[False];calls=[0]
+    application=dict(fault=fault,child_pid=child.pid,seams='negative metadata/clock mutation only; real producer, SDK ABI, reader and budget')
+    try:
+        if fault!='live-unreadable':
+            until=time.monotonic()+5
+            while True:
+                value=p._kernel_process_record(child.pid,owner.check)
+                if value[4]==5:break
+                assert time.monotonic()<until;time.sleep(.005)
+        class Library:
+            def __init__(self,actual):self.actual=actual
+            def __getattr__(self,name):return getattr(self.actual,name)
+            def sysctl(self,mib,count,data,size,*rest):
+                target=count==4 and tuple(mib[:3])==(1,14,1) and mib[3]==child.pid
+                if count==3 and mib[2]==child.pid and fault=='live-unreadable':
+                    ctypes.set_errno(22);return -1
+                result=self.actual.sysctl(mib,count,data,size,*rest)
+                if not target:return result
+                calls[0]+=1
+                extent=ctypes.cast(size,ctypes.POINTER(ctypes.c_size_t))
+                value=ctypes.cast(data,ctypes.POINTER(p._KernelProcess)).contents
+                if fault=='short':extent.contents.value-=1
+                elif fault=='missing' or (fault=='disappearance' and calls[0]==2):extent.contents.value=0
+                elif fault=='syscall-error':ctypes.set_errno(3);return -1
+                elif fault=='pid':value.process.pid+=1
+                elif fault=='uid':value.extra.ucred.uid+=1
+                elif fault=='birth-zero':value.process.start.time.sec=0
+                elif fault=='birth-usec':value.process.start.time.usec=1_000_000
+                elif fault=='changed-birth' and calls[0]==2:value.process.start.time.sec+=1
+                elif fault=='state-change' and calls[0]==2:value.process.status=b'\x02'
+                if (fault=='deadline-first' and calls[0]==1) or (fault=='deadline-second' and calls[0]==2):expired[0]=True
+                return result
+        monkeypatch.setattr(p.ctypes,'CDLL',lambda name,*args,**kwargs:Library(real_library(name,*args,**kwargs)) if name is None else real_library(name,*args,**kwargs))
+        monkeypatch.setattr(a,'monotonic_ns',lambda:original if expired[0] else real_clock())
+        if fault=='unsupported-abi':monkeypatch.setattr(p,'_process_abi_layout',lambda:(4,4,0,0,0,0,0))
+        def roster():
+            if fault=='deadline-final':expired[0]=True;return ()
+            return (child.pid,)
+        monkeypatch.setattr(p,'_process_ids',roster)
+        if fault=='deadline-after-terminal':
+            class Events(list):
+                def append(self,event):
+                    super().append(event)
+                    if event.get('event')=='KERNEL_TERMINAL_INVENTORY_ONLY':expired[0]=True
+            owner.events=Events()
+        with pytest.raises((p.PlacementError,ValueError)) as error:owner._inventory()
+        application.update(actual_denial=str(error.value),actual_metadata_calls=calls[0],original_deadline_unchanged=owner.original_deadline==original)
+        assert owner.original_deadline==original
+        assert any(x.get('event')=='KERNEL_TERMINAL_INVENTORY_ONLY' for x in owner.events)==(fault=='deadline-after-terminal')
+    finally:
+        record_property('application_before_fixture_teardown',json.dumps(application,sort_keys=True))
+        code=child.wait(timeout=5);disposition=owner.close()
+        record_property('separate_fixture_teardown',json.dumps(dict(actual_child_exit=code,resource_disposition=disposition),sort_keys=True))
+        assert code==0
+
+
+@pytest.mark.parametrize('phase',('before','after-terminal'))
+def test_process_inventory_actual_helper_uncertainty_not_cleared(tmp_path,record_property,phase):
+    """Actual validation exit79 is sticky; parent-only teardown is separate."""
+    read,write=os.pipe();worker=os.fork()
+    if worker==0:
+        os.close(read)
+        owner=p.Placement(a.ValidationBudget(a.monotonic_ns()+120_000_000_000));original=owner.original_deadline
+        result={}
+        try:
+            def actual_helper():
+                try:a.validation_output([sys.executable,'-B','-c','raise SystemExit(79)'],cwd=tmp_path,
+                    budget=owner.budget,ceiling=5,phase='ACTUAL_INVENTORY_HELPER_UNRESOLVED')
+                except subprocess.CalledProcessError as error:result['actual_helper_exit']=error.returncode
+                assert a.validation_unresolved()
+            terminal=None
+            if phase=='before':actual_helper()
+            else:
+                import time
+                terminal=subprocess.Popen([sys.executable,'-B','-c','import os;os._exit(0)'])
+                until=time.monotonic()+5
+                while p._kernel_process_record(terminal.pid,owner.check)[4]!=5:
+                    assert time.monotonic()<until;time.sleep(.005)
+                p._process_ids=lambda:(terminal.pid,)
+                class Events(list):
+                    def append(self,event):
+                        super().append(event)
+                        if event.get('event')=='KERNEL_TERMINAL_INVENTORY_ONLY':actual_helper()
+                owner.events=Events()
+            try:owner._inventory()
+            except ValueError as error:result['inventory_denial']=str(error)
+            else:raise AssertionError('Actual unresolved helper was admitted')
+            result.update(phase=phase,unresolved=a.validation_unresolved(),deadline_unchanged=owner.original_deadline==original,
+                application_resource=owner.close(),owned_helpers=list(a._OWNED_VALIDATION_HELPERS),
+                terminal_classified=any(x.get('event')=='KERNEL_TERMINAL_INVENTORY_ONLY' for x in owner.events))
+            os.write(write,json.dumps(result).encode());os.close(write)
+            # Actual direct helpers were already observed exit79 by the owner;
+            # this fixture observation cannot clear the unresolved disposition.
+            for helper in a._OWNED_VALIDATION_HELPERS.values():assert helper.wait(timeout=5)==79
+            if terminal is not None:assert terminal.wait(timeout=5)==0
+            os._exit(0)
+        except BaseException:os._exit(91)
+    os.close(write)
+    try:
+        import select
+        assert select.select([read],[],[],10)[0]
+        raw=os.read(read,262144);result=json.loads(raw)
+        record_property('application_before_fixture_teardown',raw.decode())
+        assert result['actual_helper_exit']==79 and result['unresolved'] and result['deadline_unchanged']
+        assert result['application_resource']['state']=='UNRESOLVED'
+        assert result['terminal_classified']==(phase=='after-terminal')
+    finally:
+        os.close(read);pid,status=os.waitpid(worker,0)
+        record_property('separate_fixture_teardown',json.dumps(dict(reaped_pid=pid,actual_worker_exit=os.waitstatus_to_exitcode(status))))
+        assert os.waitstatus_to_exitcode(status)==0
+
 ROOT=Path(__file__).resolve().parents[3]
 P_SHA='85ea2fa04da20f40377b242d71db96762020e77042a7b4923c331c6f82ab7891'
 

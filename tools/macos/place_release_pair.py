@@ -197,6 +197,90 @@ def _process_arguments(pid):
     return tuple(payload.split(b'\0'))
 
 
+# Darwin's published 64-bit SDK types, not offsets inferred from a sample.
+# The native inventory has matching SDK sizeof/offsetof assertions. A live
+# self-record is independently compared with libproc before using this ABI.
+class _ProcessTimeval(ctypes.Structure):
+    _fields_=[('sec',ctypes.c_long),('usec',ctypes.c_int32)]
+class _ProcessQueue(ctypes.Structure):
+    _fields_=[('forward',ctypes.c_void_p),('back',ctypes.c_void_p)]
+class _ProcessStart(ctypes.Union):
+    _fields_=[('time',_ProcessTimeval),('queue',_ProcessQueue)]
+class _ProcessTimer(ctypes.Structure):
+    _fields_=[('interval',_ProcessTimeval),('value',_ProcessTimeval)]
+class _ExternProcess(ctypes.Structure):
+    _fields_=[('start',_ProcessStart),('vmspace',ctypes.c_void_p),('sigacts',ctypes.c_void_p),
+        ('flags',ctypes.c_int),('status',ctypes.c_char),('pid',ctypes.c_int),('oppid',ctypes.c_int),('dupfd',ctypes.c_int),
+        ('user_stack',ctypes.c_void_p),('exit_thread',ctypes.c_void_p),('debugger',ctypes.c_int),('sigwait',ctypes.c_int),
+        ('estcpu',ctypes.c_uint32),('cpticks',ctypes.c_int),('pctcpu',ctypes.c_uint32),
+        ('wchan',ctypes.c_void_p),('wmesg',ctypes.c_void_p),('swtime',ctypes.c_uint32),('slptime',ctypes.c_uint32),
+        ('realtimer',_ProcessTimer),('rtime',_ProcessTimeval),('uticks',ctypes.c_uint64),('sticks',ctypes.c_uint64),
+        ('iticks',ctypes.c_uint64),('traceflag',ctypes.c_int),('tracep',ctypes.c_void_p),('siglist',ctypes.c_int),
+        ('textvp',ctypes.c_void_p),('holdcnt',ctypes.c_int),('sigmask',ctypes.c_uint32),('sigignore',ctypes.c_uint32),
+        ('sigcatch',ctypes.c_uint32),('priority',ctypes.c_ubyte),('usrpri',ctypes.c_ubyte),('nice',ctypes.c_char),
+        ('comm',ctypes.c_char*17),('pgrp',ctypes.c_void_p),('address',ctypes.c_void_p),
+        ('xstat',ctypes.c_ushort),('acflag',ctypes.c_ushort),('usage',ctypes.c_void_p)]
+class _ProcessCredentials(ctypes.Structure):
+    _fields_=[('lock',ctypes.c_char*72),('ucred',ctypes.c_void_p),('ruid',ctypes.c_uint32),
+        ('svuid',ctypes.c_uint32),('rgid',ctypes.c_uint32),('svgid',ctypes.c_uint32),('refcnt',ctypes.c_int)]
+class _UserCredentials(ctypes.Structure):
+    _fields_=[('ref',ctypes.c_int32),('uid',ctypes.c_uint32),('ngroups',ctypes.c_short),('groups',ctypes.c_uint32*16)]
+class _ProcessVMSpace(ctypes.Structure):
+    _fields_=[('dummy',ctypes.c_int32),('dummy2',ctypes.c_void_p),('dummy3',ctypes.c_int32*5),('dummy4',ctypes.c_void_p*3)]
+class _ExtraProcess(ctypes.Structure):
+    _fields_=[('address',ctypes.c_void_p),('session',ctypes.c_void_p),('pcred',_ProcessCredentials),
+        ('ucred',_UserCredentials),('vm',_ProcessVMSpace),('ppid',ctypes.c_int),('pgid',ctypes.c_int),
+        ('jobc',ctypes.c_short),('tdev',ctypes.c_int32),('tpgid',ctypes.c_int),('tsess',ctypes.c_void_p),
+        ('wmesg',ctypes.c_char*8),('xsize',ctypes.c_int32),('xrssize',ctypes.c_short),('xccount',ctypes.c_short),
+        ('xswrss',ctypes.c_short),('flags',ctypes.c_int32),('login',ctypes.c_char*12),('spare',ctypes.c_int32*4)]
+class _KernelProcess(ctypes.Structure):
+    _fields_=[('process',_ExternProcess),('extra',_ExtraProcess)]
+class _ProcessBSDInfo(ctypes.Structure):
+    _fields_=[(n,ctypes.c_uint32) for n in ('flags','status','xstatus','pid','ppid','uid','gid','ruid','rgid','svuid','svgid','reserved')]+[
+        ('comm',ctypes.c_char*16),('name',ctypes.c_char*32)]+[
+        (n,ctypes.c_uint32) for n in ('nfiles','pgid','jobc','tdev','tpgid')]+[
+        ('nice',ctypes.c_int32),('birth_sec',ctypes.c_uint64),('birth_usec',ctypes.c_uint64)]
+
+
+def _process_abi_layout():
+    return (ctypes.sizeof(ctypes.c_void_p),ctypes.sizeof(ctypes.c_long),
+        ctypes.sizeof(_KernelProcess),_ExternProcess.pid.offset,_ExternProcess.status.offset,
+        _KernelProcess.extra.offset+_ExtraProcess.ucred.offset+_UserCredentials.uid.offset,
+        ctypes.sizeof(_ProcessBSDInfo))
+
+
+def _kernel_process_record(pid,check):
+    check()
+    if sys.platform!='darwin' or sys.byteorder!='little' or _process_abi_layout()!=(8,8,648,40,36,420,136):
+        deny('PROCESS_ABI')
+    library=ctypes.CDLL(None,use_errno=True);value=_KernelProcess();size=ctypes.c_size_t(ctypes.sizeof(value))
+    mib=(ctypes.c_int*4)(1,14,1,pid)
+    if library.sysctl(mib,4,ctypes.byref(value),ctypes.byref(size),None,0)!=0 or size.value!=ctypes.sizeof(value):
+        deny('PROCESS_METADATA')
+    status=int.from_bytes(value.process.status,'little');born=value.process.start.time
+    if (value.process.pid!=pid or value.extra.ucred.uid!=os.getuid() or born.sec<=0
+            or not 0<=born.usec<1_000_000 or status not in (1,2,3,4,5)):
+        deny('PROCESS_METADATA_IDENTITY')
+    check()
+    return (pid,value.extra.ucred.uid,born.sec,born.usec,status)
+
+
+def _validate_process_abi(check):
+    observed=_kernel_process_record(os.getpid(),check)
+    library=ctypes.CDLL('/usr/lib/libproc.dylib',use_errno=True)
+    library.proc_pidinfo.argtypes=(ctypes.c_int,ctypes.c_int,ctypes.c_uint64,ctypes.c_void_p,ctypes.c_int)
+    value=_ProcessBSDInfo()
+    if (library.proc_pidinfo(os.getpid(),3,0,ctypes.byref(value),ctypes.sizeof(value))!=ctypes.sizeof(value)
+            or observed[:4]!=(value.pid,value.uid,value.birth_sec,value.birth_usec)):
+        deny('PROCESS_ABI_SELF')
+    check()
+
+
+def _same_process_observation(first,second):
+    if first[:4]!=second[:4] or ((first[4]==5)!=(second[4]==5)):
+        deny('PROCESS_CHANGED')
+
+
 _SDK_LOCK=threading.RLock()
 
 
@@ -313,13 +397,26 @@ class Placement:
 
     def _inventory(self):
         rows=[]
+        _validate_process_abi(self.check)
         for pid in _process_ids():
             if pid<=1 or pid==os.getpid(): continue
             self.check()
+            first=_kernel_process_record(pid,self.check)
+            second=_kernel_process_record(pid,self.check)
+            _same_process_observation(first,second)
+            if second[4]==5:
+                # Inventory classification only: never helper acknowledgement,
+                # historical cleanup, custody release or startup authority.
+                self.check()
+                self.events.append(dict(event='KERNEL_TERMINAL_INVENTORY_ONLY',pid=pid,
+                    birth_seconds=second[2],birth_microseconds=second[3]))
+                continue
             arguments=_process_arguments(pid)
+            _same_process_observation(second,_kernel_process_record(pid,self.check))
             if any(arg.endswith(b'/tools/kronos_browser.py') or arg==b'tools.kronos_browser'
                    or arg.endswith(b'/Contents/MacOS/KRONOS') for arg in arguments):
                 rows.append(dict(pid=pid,arguments_sha256=sha256(b'\0'.join(arguments)).hexdigest()))
+        self.check()
         return rows
 
     def _absent(self, expected_control):

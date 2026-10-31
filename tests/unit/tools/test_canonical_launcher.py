@@ -1482,12 +1482,204 @@ SOURCE = ROOT / 'tools/macos/kronos_launcher.c'
 
 
 def compile_source(source, destination):
+    from hashlib import sha256
     unit = destination.parent / 'unit.c'
     unit.write_text(source)
+    evidence=ROOT.parent/'qualification/native-compile-evidence'/sha256(str(destination).encode()).hexdigest()[:16]
+    evidence.mkdir(parents=True,exist_ok=True)
+    retained=evidence/(sha256(source.encode()).hexdigest()+'.c');retained.write_text(source)
     result = subprocess.run(['clang', '-Wall', '-Wextra', '-Werror', str(unit), '-o', str(destination)],
                    capture_output=True)
+    index=len(list(evidence.glob('command-*.json')))
+    (evidence/f'command-{index:04d}.json').write_text(json.dumps(dict(argv=['clang','-Wall','-Wextra','-Werror',str(unit),'-o',str(destination)],
+        actual_exit=result.returncode,executed_source=str(retained),source_sha256=sha256(source.encode()).hexdigest(),
+        stdout=result.stdout.decode(errors='replace'),stderr=result.stderr.decode(errors='replace')),indent=2))
     assert result.returncode == 0, result.stderr.decode()
     unit.unlink()
+
+
+def test_native_inventory_actual_unreaped_terminal_child(tmp_path,record_property):
+    """Real native inventory and real kernel SZOMB; scoped actual owned PID."""
+    prelude=r'''
+#include <libproc.h>
+static int terminal_fixture_list(uint32_t,uint32_t,void *,int);
+#define proc_listpids terminal_fixture_list
+'''
+    source=_fixture_native_source(SOURCE).replace('int main(void) {','int unused_application_main(void) {')
+    tail=r'''
+#undef proc_listpids
+static pid_t terminal_fixture_child=0;
+static int terminal_fixture_list(uint32_t type,uint32_t uid,void *out,int capacity) {
+    if(type!=PROC_UID_ONLY || uid!=getuid() || capacity<(int)sizeof(pid_t))return 0;
+    memcpy(out,&terminal_fixture_child,sizeof(pid_t));return sizeof(pid_t);
+}
+int main(void) {
+    validation_deadline_ns=validation_now_ns()+120000000000LL;
+    terminal_fixture_child=fork();if(terminal_fixture_child<0)return 90;
+    if(!terminal_fixture_child)_exit(0);
+    struct kinfo_proc info;int observed=0;
+    long long fixture_until=validation_now_ns()+5000000000LL;
+    while(validation_now_ns()<fixture_until) {
+        int mib[]={CTL_KERN,KERN_PROC,KERN_PROC_PID,terminal_fixture_child};size_t size=sizeof(info);
+        if(sysctl(mib,4,&info,&size,NULL,0)==0 && size==sizeof(info) &&
+           info.kp_proc.p_pid==terminal_fixture_child && info.kp_proc.p_stat==SZOMB){observed=1;break;}
+        usleep(5000);
+    }
+    int result=observed?initialization_process_inventory(0):0;
+    printf("{\"inventory\":%d,\"kernel_terminal\":%d,\"child\":%d,\"before_fixture_reap\":true,\"kinfo_bytes\":%zu}\n",result,observed,terminal_fixture_child,sizeof(info));fflush(stdout);
+    int status=0;pid_t reaped;do{reaped=waitpid(terminal_fixture_child,&status,0);}while(reaped<0 && errno==EINTR);
+    printf("{\"fixture_reaped\":%d,\"fixture_exit_zero\":%d}\n",reaped==terminal_fixture_child,WIFEXITED(status)&&WEXITSTATUS(status)==0);fflush(stdout);
+    return observed && reaped==terminal_fixture_child?0:91;
+}
+'''
+    binary=tmp_path/'terminal-inventory'
+    compile_source(prelude+source+tail,binary)
+    record_property('compile',json.dumps(dict(actual_exit=0,exact_unit_and_command='Retained in qualification/native-compile-evidence; actual compile_source asserts exit zero before return')))
+    result=subprocess.run([str(binary)],capture_output=True,text=True,timeout=10)
+    rows=[json.loads(line) for line in result.stdout.splitlines()]
+    record_property('application_before_fixture_teardown',json.dumps(rows[0] if rows else dict(stdout=result.stdout,stderr=result.stderr)))
+    record_property('separate_fixture_teardown',json.dumps(rows[1:]));assert result.returncode==0,result.stderr
+    assert rows[0]['kernel_terminal']==1 and rows[0]['before_fixture_reap']
+    assert rows[1]['fixture_reaped']==1 and rows[1]['fixture_exit_zero']==1
+    assert rows[0]['inventory']==1
+
+
+@pytest.fixture(scope='module')
+def terminal_inventory_fault_probe(tmp_path_factory):
+    root=tmp_path_factory.mktemp('terminal-inventory-faults')
+    prelude=r'''
+#include <libproc.h>
+#include <sys/sysctl.h>
+#include <time.h>
+static int inventory_fixture_list(uint32_t,uint32_t,void *,int);
+static int inventory_fixture_sysctl(int *,u_int,void *,size_t *,void *,size_t);
+static int inventory_fixture_clock(clockid_t,struct timespec *);
+#define proc_listpids inventory_fixture_list
+#define sysctl inventory_fixture_sysctl
+#define clock_gettime inventory_fixture_clock
+'''
+    source=_fixture_native_source(SOURCE).replace('int main(void) {','int unused_application_main(void) {')
+    tail=r'''
+#undef proc_listpids
+#undef sysctl
+#undef clock_gettime
+static pid_t inventory_fixture_child=0;
+static int inventory_fixture_calls=0,inventory_fixture_expired=0,inventory_fixture_after_second=0,inventory_fixture_fired=0;
+static const char *inventory_fixture_fault="",*inventory_fixture_executable="";
+static int inventory_fixture_helper(void) {
+    char output[128];char *args[]={(char *)inventory_fixture_executable,"helper79",NULL};
+    return bounded_validation_cli(NULL,inventory_fixture_executable,args,NULL,output,sizeof(output),0,"INVENTORY_ACTUAL_HELPER",5);
+}
+static int inventory_fixture_clock(clockid_t clock,struct timespec *value) {
+    int result=clock_gettime(clock,value);
+    if(!result && clock==CLOCK_MONOTONIC && inventory_fixture_calls==2) {
+        inventory_fixture_after_second++;
+        if(inventory_fixture_after_second==3 && !inventory_fixture_fired &&
+           (!strcmp(inventory_fixture_fault,"helper-after-terminal") || !strcmp(inventory_fixture_fault,"deadline-after-terminal"))) {
+            inventory_fixture_fired=1;
+            if(!strcmp(inventory_fixture_fault,"helper-after-terminal"))(void)inventory_fixture_helper();
+            else inventory_fixture_expired=1;
+        }
+    }
+    if(!result && clock==CLOCK_MONOTONIC && inventory_fixture_expired) {
+        value->tv_sec=validation_deadline_ns/1000000000LL;
+        value->tv_nsec=validation_deadline_ns%1000000000LL;
+    }
+    return result;
+}
+static int inventory_fixture_list(uint32_t type,uint32_t uid,void *out,int capacity) {
+    if(type!=PROC_UID_ONLY || uid!=getuid() || capacity<(int)sizeof(pid_t))return 0;
+    if(!strcmp(inventory_fixture_fault,"deadline-final")){inventory_fixture_expired=1;return 0;}
+    memcpy(out,&inventory_fixture_child,sizeof(pid_t));return sizeof(pid_t);
+}
+static int inventory_fixture_sysctl(int *mib,u_int count,void *out,size_t *size,void *in,size_t insize) {
+    if(count==3 && mib[0]==CTL_KERN && mib[1]==KERN_PROCARGS2 && mib[2]==inventory_fixture_child &&
+       !strcmp(inventory_fixture_fault,"live-unreadable")){errno=EINVAL;return -1;}
+    int result=sysctl(mib,count,out,size,in,insize);
+    if(count!=4 || mib[0]!=CTL_KERN || mib[1]!=KERN_PROC || mib[2]!=KERN_PROC_PID || mib[3]!=inventory_fixture_child)return result;
+    inventory_fixture_calls++;
+    if(!strcmp(inventory_fixture_fault,"short")){if(*size)*size-=1;return result;}
+    if(!strcmp(inventory_fixture_fault,"missing") || (!strcmp(inventory_fixture_fault,"disappearance") && inventory_fixture_calls==2)){*size=0;return 0;}
+    if(!strcmp(inventory_fixture_fault,"syscall-error")){errno=ESRCH;return -1;}
+    if(result!=0 || *size!=sizeof(struct kinfo_proc))return result;
+    struct kinfo_proc *value=out;
+    if(!strcmp(inventory_fixture_fault,"pid"))value->kp_proc.p_pid++;
+    if(!strcmp(inventory_fixture_fault,"uid"))value->kp_eproc.e_ucred.cr_uid++;
+    if(!strcmp(inventory_fixture_fault,"birth-zero"))value->kp_proc.p_starttime.tv_sec=0;
+    if(!strcmp(inventory_fixture_fault,"birth-usec"))value->kp_proc.p_starttime.tv_usec=1000000;
+    if(!strcmp(inventory_fixture_fault,"changed-birth") && inventory_fixture_calls==2)value->kp_proc.p_starttime.tv_sec++;
+    if(!strcmp(inventory_fixture_fault,"state-change") && inventory_fixture_calls==2)value->kp_proc.p_stat=SRUN;
+    if((!strcmp(inventory_fixture_fault,"deadline-first") && inventory_fixture_calls==1) ||
+       (!strcmp(inventory_fixture_fault,"deadline-second") && inventory_fixture_calls==2))inventory_fixture_expired=1;
+    if(!strcmp(inventory_fixture_fault,"helper-during") && inventory_fixture_calls==2)(void)inventory_fixture_helper();
+    return result;
+}
+int main(int argc,char **argv) {
+    if(argc==2 && !strcmp(argv[1],"helper79"))return 79;
+    if(argc!=2)return 90;
+    inventory_fixture_fault=argv[1];inventory_fixture_executable=argv[0];
+    validation_deadline_ns=validation_now_ns()+120000000000LL;long long original=validation_deadline_ns;
+    int release[2];if(pipe(release)!=0)return 91;
+    int live=!strcmp(argv[1],"live-unreadable") || !strcmp(argv[1],"live-control");
+    inventory_fixture_child=fork();if(inventory_fixture_child<0)return 92;
+    if(!inventory_fixture_child){close(release[1]);if(live){char byte;(void)read(release[0],&byte,1);}close(release[0]);_exit(0);}
+    close(release[0]);struct kinfo_proc observed={0};int ready=0;
+    long long until=validation_now_ns()+5000000000LL;
+    while(validation_now_ns()<until) {
+        int mib[]={CTL_KERN,KERN_PROC,KERN_PROC_PID,inventory_fixture_child};size_t size=sizeof(observed);
+        if(sysctl(mib,4,&observed,&size,NULL,0)==0 && size==sizeof(observed) && observed.kp_proc.p_pid==inventory_fixture_child &&
+           (live?observed.kp_proc.p_stat!=SZOMB:observed.kp_proc.p_stat==SZOMB)){ready=1;break;}
+        usleep(5000);
+    }
+    if(!strcmp(argv[1],"helper-before"))(void)inventory_fixture_helper();
+    int result=ready?initialization_process_inventory(!strcmp(argv[1],"enrolled-terminal")?inventory_fixture_child:0):0;
+    printf("{\"inventory\":%d,\"ready\":%d,\"terminal\":%d,\"before_fixture_reap\":true,\"deadline_unchanged\":%d,\"helper_unresolved\":%d,\"helper_pid\":%d,\"metadata_calls\":%d,\"abi\":[%zu,%zu,%zu,%zu,%zu,%zu,%zu]}\n",
+        result,ready,observed.kp_proc.p_stat==SZOMB,validation_deadline_ns==original,validation_cleanup_unresolved,
+        validation_direct_child,inventory_fixture_calls,sizeof(void *),sizeof(long),sizeof(struct kinfo_proc),
+        offsetof(struct kinfo_proc,kp_proc.p_pid),offsetof(struct kinfo_proc,kp_proc.p_stat),
+        offsetof(struct kinfo_proc,kp_eproc.e_ucred.cr_uid),sizeof(struct proc_bsdinfo));fflush(stdout);
+    if(live){char byte='x';if(write(release[1],&byte,1)!=1)return 93;}close(release[1]);
+    int status=0;pid_t reaped;do{reaped=waitpid(inventory_fixture_child,&status,0);}while(reaped<0 && errno==EINTR);
+    printf("{\"fixture_reaped\":%d,\"fixture_exit_zero\":%d,\"application_helper_uncertainty_preserved\":%d}\n",reaped==inventory_fixture_child,WIFEXITED(status)&&WEXITSTATUS(status)==0,validation_cleanup_unresolved);fflush(stdout);
+    return ready && reaped==inventory_fixture_child?0:94;
+}
+'''
+    binary=root/'inventory-fault-probe';compile_source(prelude+source+tail,binary)
+    return binary
+
+
+@pytest.mark.parametrize('fault',('terminal-control','live-control','short','missing','syscall-error','pid','uid',
+    'birth-zero','birth-usec','changed-birth','state-change','disappearance','deadline-first','deadline-second',
+    'deadline-final','deadline-after-terminal','live-unreadable','helper-before','helper-during','helper-after-terminal','enrolled-terminal'))
+def test_native_inventory_terminal_proof_boundaries(terminal_inventory_fault_probe,record_property,fault):
+    from tools.macos import place_release_pair as placement
+    result=subprocess.run([str(terminal_inventory_fault_probe),fault],capture_output=True,text=True,timeout=12)
+    rows=[json.loads(x) for x in result.stdout.splitlines()]
+    record_property('actual_probe_command',json.dumps(dict(argv=[str(terminal_inventory_fault_probe),fault],actual_exit=result.returncode,stderr=result.stderr)))
+    record_property('application_before_fixture_teardown',json.dumps(rows[0] if rows else dict(stdout=result.stdout)))
+    record_property('separate_fixture_teardown',json.dumps(rows[1:]));assert result.returncode==0,result.stderr
+    assert rows[0]['ready']==1 and rows[0]['before_fixture_reap'] and rows[0]['deadline_unchanged']
+    assert tuple(rows[0]['abi'])==placement._process_abi_layout()
+    assert rows[1]['fixture_reaped']==1 and rows[1]['fixture_exit_zero']==1
+    assert rows[0]['inventory']==(1 if fault in ('terminal-control','live-control') else 0)
+    if fault.startswith('helper-'):
+        assert rows[0]['helper_unresolved']==1 and rows[0]['helper_pid']>1
+        assert rows[1]['application_helper_uncertainty_preserved']==1
+
+
+def test_native_inventory_unsupported_sdk_layout_denies_compilation(tmp_path,record_property):
+    from hashlib import sha256
+    source=_fixture_native_source(SOURCE)
+    assert 'sizeof(struct kinfo_proc)==648' in source
+    source=source.replace('sizeof(struct kinfo_proc)==648','sizeof(struct kinfo_proc)==649')
+    unit=tmp_path/'unsupported-sdk.c';unit.write_text(source)
+    args=['clang','-Wall','-Wextra','-Werror',str(unit),'-o',str(tmp_path/'unsupported-sdk')]
+    result=subprocess.run(args,capture_output=True,text=True)
+    evidence=ROOT.parent/'qualification/native-unsupported-evidence'/sha256(str(tmp_path).encode()).hexdigest()[:16]
+    evidence.mkdir(parents=True);shutil.copy2(unit,evidence/'executed-source.c')
+    (evidence/'command.json').write_text(json.dumps(dict(argv=args,actual_exit=result.returncode,stdout=result.stdout,stderr=result.stderr),indent=2))
+    record_property('actual_compile',json.dumps(dict(argv=args,actual_exit=result.returncode,stderr=result.stderr)))
+    assert result.returncode!=0 and 'unsupported process inventory SDK ABI' in result.stderr
 
 
 def compile_start_monitor_harness(tmp_path):
@@ -3664,7 +3856,8 @@ def test_native_installation_lock_and_helper_alias_exclusion(tmp_path,native_adm
     assert result.returncode==0,result.stderr
 
 
-def test_native_backend_exec_preserves_actual_shared_descriptor(tmp_path,native_admission_probe):
+def test_native_backend_exec_preserves_actual_shared_descriptor(tmp_path,native_admission_probe,record_property):
+    from hashlib import sha256
     anchor=tmp_path/'anchor';anchor.mkdir(mode=0o700)
     marker=tmp_path/'ready';done=tmp_path/'done';entry=tmp_path/'backend.py'
     entry.write_text('''import os,time,subprocess,sys
@@ -3672,9 +3865,14 @@ from pathlib import Path
 from kronos.common import release_admission as a
 path=Path('''+repr(str(anchor))+''');st=path.stat()
 a.CANONICAL_PARENT='''+repr(str(native_admission_probe))+'''
-owner=a.AdmissionCustody(197,a.AnchorBinding(path,st.st_dev,st.st_ino,os.getuid()),os.getppid())
+# Library-mode fixture: native source P was independently verified then bound
+# to NULL by _fixture_native_source. Match that exact disposable binding here.
+a.PERSISTENT_ANCHOR_BINDING=None
+budget=a.inherited_budget(120,required=True)
+assert budget.deadline_ns==int(os.environ['KRONOS_VALIDATION_DEADLINE_NS'])
+owner=a.AdmissionCustody(197,a.AnchorBinding(path,st.st_dev,st.st_ino,os.getuid()),os.getppid(),budget=budget)
 assert not os.get_inheritable(197)
-code='import os;\\ntry:os.fstat(197);raise SystemExit(9)\\nexcept OSError:pass'
+code=chr(10).join(['import os','try:',' os.fstat(197);raise SystemExit(9)','except OSError:pass'])
 assert subprocess.run([sys.executable,'-B','-c',code],close_fds=True).returncode==0
 Path('''+repr(str(marker))+''').write_text('ADOPTED')
 deadline=time.monotonic()+4
@@ -3684,8 +3882,17 @@ while not Path('''+repr(str(done))+''').exists():
 owner.begin_failure_cleanup();owner.completed_failure_cleanup()
 ''')
     python_path=str(ROOT/'src')+':'+str(ROOT)
-    result=subprocess.run([str(native_admission_probe),'exec',str(anchor),str(ROOT),
-        sys.executable,str(entry),str(marker),str(done),python_path],capture_output=True,timeout=8)
+    args=[str(native_admission_probe),'exec',str(anchor),str(ROOT),
+        sys.executable,str(entry),str(marker),str(done),python_path]
+    evidence=ROOT.parent/'qualification/native-descriptor-evidence'/sha256(str(tmp_path).encode()).hexdigest()[:16]
+    evidence.mkdir(parents=True);shutil.copy2(entry,evidence/'executed-backend.py')
+    try:result=subprocess.run(args,capture_output=True,timeout=8)
+    except subprocess.TimeoutExpired as error:
+        (evidence/'stdout.raw').write_bytes(error.stdout or b'');(evidence/'stderr.raw').write_bytes(error.stderr or b'')
+        outcome=dict(argv=args,timeout_seconds=8,outcome='TIMEOUT',application_cleanup='Not certified; native diagnostics retained',fixture_teardown='subprocess.run killed and waited its directly owned native fixture; not product cleanup')
+        (evidence/'outcome.json').write_text(json.dumps(outcome,indent=2));record_property('application_and_fixture_dispositions',json.dumps(outcome));raise
+    (evidence/'stdout.raw').write_bytes(result.stdout);(evidence/'stderr.raw').write_bytes(result.stderr)
+    (evidence/'outcome.json').write_text(json.dumps(dict(argv=args,actual_exit=result.returncode),indent=2))
     assert result.returncode==0,(result.returncode,result.stderr)
     assert marker.read_text()=='ADOPTED'
     assert done.exists()

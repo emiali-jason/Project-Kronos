@@ -15,6 +15,7 @@
 #include <sys/socket.h>
 #include <sys/attr.h>
 #include <stdint.h>
+#include <stddef.h>
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <sys/sysctl.h>
@@ -2970,15 +2971,57 @@ static BackendStartResult start_backend(
 /* Bounded inventory of the governed user's canonical entry processes. Unknown
  * argument observations deny; this is not a claim about arbitrary other users
  * or about a process executing modified/unapproved entry code. */
+/* Supported Darwin64 SDK ABI; Python checks the same declared schema and an
+ * independent live-self libproc observation. Never infer a layout from length. */
+_Static_assert(sizeof(void *)==8 && sizeof(long)==8 && sizeof(struct kinfo_proc)==648 &&
+    offsetof(struct kinfo_proc,kp_proc.p_pid)==40 && offsetof(struct kinfo_proc,kp_proc.p_stat)==36 &&
+    offsetof(struct kinfo_proc,kp_eproc.e_ucred.cr_uid)==420 && sizeof(struct proc_bsdinfo)==136,
+    "unsupported process inventory SDK ABI");
+static int inventory_process_record(pid_t pid,struct kinfo_proc *out) {
+    if(!validation_permitted())return 0;
+    int mib[]={CTL_KERN,KERN_PROC,KERN_PROC_PID,pid};size_t size=sizeof(*out);
+    memset(out,0,sizeof(*out));
+    if(sysctl(mib,4,out,&size,NULL,0)!=0 || size!=sizeof(*out) ||
+       out->kp_proc.p_pid!=pid || out->kp_eproc.e_ucred.cr_uid!=getuid() ||
+       out->kp_proc.p_starttime.tv_sec<=0 || out->kp_proc.p_starttime.tv_usec<0 ||
+       out->kp_proc.p_starttime.tv_usec>=1000000 || out->kp_proc.p_stat<SIDL || out->kp_proc.p_stat>SZOMB)return 0;
+    return validation_permitted();
+}
+static int inventory_same_process(const struct kinfo_proc *first,const struct kinfo_proc *second) {
+    return first->kp_proc.p_pid==second->kp_proc.p_pid &&
+        first->kp_eproc.e_ucred.cr_uid==second->kp_eproc.e_ucred.cr_uid &&
+        first->kp_proc.p_starttime.tv_sec==second->kp_proc.p_starttime.tv_sec &&
+        first->kp_proc.p_starttime.tv_usec==second->kp_proc.p_starttime.tv_usec &&
+        ((first->kp_proc.p_stat==SZOMB)==(second->kp_proc.p_stat==SZOMB));
+}
+static int inventory_self_abi(void) {
+    struct kinfo_proc observed;struct proc_bsdinfo independent;
+    if(!inventory_process_record(getpid(),&observed) ||
+       proc_pidinfo(getpid(),PROC_PIDTBSDINFO,0,&independent,sizeof(independent))!=(int)sizeof(independent) ||
+       observed.kp_proc.p_pid!=(pid_t)independent.pbi_pid || observed.kp_eproc.e_ucred.cr_uid!=independent.pbi_uid ||
+       observed.kp_proc.p_starttime.tv_sec!=(long)independent.pbi_start_tvsec ||
+       observed.kp_proc.p_starttime.tv_usec!=(int)independent.pbi_start_tvusec)return 0;
+    return validation_permitted();
+}
 static int initialization_process_inventory(pid_t enrolled) {
     pid_t pids[16384];int found=0;
+    if(!inventory_self_abi())return 0;
     int bytes=proc_listpids(PROC_UID_ONLY,getuid(),pids,sizeof(pids));
     if(bytes<=0 || bytes>=(int)sizeof(pids) || bytes%(int)sizeof(pid_t))return 0;
     for(int i=0;i<bytes/(int)sizeof(pid_t);i++) {
         pid_t pid=pids[i];if(pid<=1 || pid==getpid())continue;
         if(!validation_permitted())return 0;
+        struct kinfo_proc first,second,after;
+        if(!inventory_process_record(pid,&first) || !inventory_process_record(pid,&second) ||
+           !inventory_same_process(&first,&second))return 0;
+        if(second.kp_proc.p_stat==SZOMB) {
+            /* Terminal for this inventory only. No helper/cleanup clearance. */
+            if(pid==enrolled || !validation_permitted())return 0;
+            continue;
+        }
         int mib[]={CTL_KERN,KERN_PROCARGS2,pid};char arguments[262144];size_t size=sizeof(arguments);
         if(sysctl(mib,3,arguments,&size,NULL,0)!=0 || size<=sizeof(int) || size>=sizeof(arguments))return 0;
+        if(!inventory_process_record(pid,&after) || !inventory_same_process(&second,&after))return 0;
         int relevant=0;size_t offset=sizeof(int);
         while(offset<size) {
             size_t n=strnlen(arguments+offset,size-offset);if(n==size-offset)return 0;
@@ -2990,7 +3033,7 @@ static int initialization_process_inventory(pid_t enrolled) {
         }
         if(relevant){if(pid!=enrolled)return 0;found++;}
     }
-    return enrolled>1 ? found==1 : found==0;
+    return validation_permitted() && (enrolled>1 ? found==1 : found==0);
 }
 static int initialization_environment_reference(const char *prefix,char *out,size_t capacity) {
     char key[128];const char *values[4];const char *suffix[]={"PATH","BYTES","SHA256","ID"};
