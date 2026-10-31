@@ -6,8 +6,6 @@ evidence remains owned by :mod:`kronos.swing.v1.review_evidence_store`.
 
 from __future__ import annotations
 
-from kronos.application.failed_fenced_owners import recorded_cleanup
-
 from copy import deepcopy
 from datetime import UTC, datetime
 import fcntl
@@ -448,8 +446,6 @@ class SwingBulkImportOwner:
     def __init__(self, store: SwingBulkImportStore, intake, *,
                  clock: Callable[[], str] = _now,
                  completion: Callable[[], None] | None = None) -> None:
-        from kronos.application.failed_fenced_owners import register_owner
-        register_owner('BULK', self, __file__)
         if (type(store) is not SwingBulkImportStore or not callable(clock)
                 or not callable(getattr(intake, "bulk_admission", None))
                 or not callable(getattr(intake, "accept_answer", None))
@@ -477,12 +473,9 @@ class SwingBulkImportOwner:
             raise ValueError("SWING_BULK_IMPORT_WORKER_ALREADY_STARTED")
         self._thread = Thread(target=self._run, name="kronos-swing-bulk-import",
                               daemon=True)
-        from kronos.application.failed_fenced_owners import record_resource
-        record_resource(self, self._thread, "WORKER")
         self._thread.start()
         self._wake.set()
 
-    @recorded_cleanup('CLOSE_BULK')
     def close(self, *, timeout_seconds: float = 30) -> None:
         self._stop.set()
         self._wake.set()

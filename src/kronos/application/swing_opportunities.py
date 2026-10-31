@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-from kronos.application.failed_fenced_owners import (record_binding, binding_activated, binding_cleared, recorded_binding_clear)
-
-from kronos.application.failed_fenced_owners import recorded_cleanup
-
 from collections.abc import Callable, Mapping
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass, field, replace
@@ -809,10 +805,6 @@ class SwingOpportunitiesApplication:
         connection_timer_factory=None,
         analysis_process_owner: SwingAnalysisProcessOwner | None = None,
     ) -> None:
-        from kronos.application.failed_fenced_owners import register_owner
-        register_owner('APPLICATION', self, __file__)
-        from kronos.application.failed_fenced_owners import record_analysis_owner
-        self._ff_analysis_owner = record_analysis_owner(self, __file__)
         if not all(callable(item) for item in (
             provider_factory,
             clock,
@@ -1233,25 +1225,20 @@ class SwingOpportunitiesApplication:
                 successor_publication_transition
             )
 
-    def register_research_capture(self, capture, *, capture_owner=None) -> None:
+    def register_research_capture(self, capture) -> None:
         """Register a post-commit listener; startup reconciliation never invokes it."""
         if not callable(capture):
             raise TypeError("SWING_RESEARCH_CAPTURE_INVALID")
         with self.__lock:
             if self.__research_capture is not None:
                 raise ValueError("SWING_RESEARCH_CAPTURE_ALREADY_BOUND")
-            binding = record_binding("RESEARCH_CAPTURE_BINDING", self, capture,
-                self.clear_research_capture, lambda: self.__research_capture, __file__, capture_owner)
             self.__research_capture = capture
-            binding_activated(binding)
 
-    @recorded_binding_clear("RESEARCH_CAPTURE_BINDING")
     def clear_research_capture(self, capture) -> None:
         """Detach only this server's listener after its owner work has drained."""
         with self.__lock:
             if self.__research_capture is capture:
                 self.__research_capture = None
-                binding_cleared(self, "RESEARCH_CAPTURE_BINDING", capture)
 
     def research_capture_status(self) -> str | None:
         with self.__lock:
@@ -1265,18 +1252,13 @@ class SwingOpportunitiesApplication:
         with self.__lock:
             if self.__local_analysis is not None:
                 raise ValueError("NSE_LOCAL_OWNER_ALREADY_BOUND")
-            binding = record_binding('APPLICATION_LOCAL_BINDING', self, owner,
-                self.clear_local_analysis, lambda: self.__local_analysis, __file__)
             self.__local_analysis = owner
-            binding_activated(binding)
 
-    @recorded_binding_clear('APPLICATION_LOCAL_BINDING')
     def clear_local_analysis(self, owner) -> None:
         """Detach this composition only after its counted work has drained."""
         with self.__lock:
             if self.__local_analysis is owner:
                 self.__local_analysis = None
-                binding_cleared(self, 'APPLICATION_LOCAL_BINDING', owner)
 
     def local_analysis_workflow(self):
         with self.__lock:
@@ -2266,7 +2248,6 @@ class SwingOpportunitiesApplication:
             if deadline is not None:
                 deadline.cancel()
 
-    @recorded_cleanup('CLOSE_APPLICATION')
     def close(self) -> None:
         with self.__connection_transition_lock:
             self.__close()

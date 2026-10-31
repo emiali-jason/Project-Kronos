@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from kronos.application.failed_fenced_owners import (record_binding, binding_activated, binding_cleared, recorded_binding_clear)
-
 from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
@@ -875,8 +873,6 @@ class NativeReviewIntakeWorkflow:
     """
 
     def __init__(self, application, native_review, live, store, *, v2_store=None):
-        from kronos.application.failed_fenced_owners import register_owner
-        register_owner('NATIVE', self, __file__)
         self.application, self.native_review, self.live, self.store = application, native_review, live, store
         if v2_store is not None and type(v2_store) is not LocalV2PromotionStore:
             raise TypeError("V2_PROMOTION_STORE_INVALID")
@@ -931,31 +927,21 @@ class NativeReviewIntakeWorkflow:
         require(self._local_analysis is None and owner.intake is self
                 and owner.application is self.application,
                 "NSE_LOCAL_OWNER_BINDING_INVALID")
-        binding = record_binding('NATIVE_LOCAL_BINDING', self, owner,
-            self.clear_local_analysis, lambda: self._local_analysis, __file__)
         self._local_analysis = owner
-        binding_activated(binding)
 
-    @recorded_binding_clear('NATIVE_LOCAL_BINDING')
     def clear_local_analysis(self, owner):
         if self._local_analysis is owner:
             self._local_analysis = None
-            binding_cleared(self, 'NATIVE_LOCAL_BINDING', owner)
 
-    def register_research_capture(self, capture, *, capture_owner=None):
+    def register_research_capture(self, capture):
         """Accepted V2 events only; restoration and page reads do not capture."""
         require(callable(capture) and self._research_capture is None,
                 "SWING_RESEARCH_CAPTURE_INVALID")
-        binding = record_binding("RESEARCH_CAPTURE_BINDING", self, capture,
-            self.clear_research_capture, lambda: self._research_capture, __file__, capture_owner)
         self._research_capture = capture
-        binding_activated(binding)
 
-    @recorded_binding_clear("RESEARCH_CAPTURE_BINDING")
     def clear_research_capture(self, capture):
         if self._research_capture is capture:
             self._research_capture = None
-            binding_cleared(self, "RESEARCH_CAPTURE_BINDING", capture)
 
     def retained_research_promotions(self):
         """Verify each historical V2 event against its retained Review receipt."""

@@ -8,11 +8,6 @@ import json
 import pytest
 
 from tools import kronos_browser
-
-# These tests exercise the unchanged ordinary composition body with isolated
-# fake owners/native leaves. Public capable-entry preparation and HOME/
-# namespace denials are qualified in test_failed_fenced_launcher.py and
-# the actual prepared C roundtrip fixture; no static approval is implied.
 from kronos.application.intraday_runtime import create_intraday_runtime
 from kronos.browser.intraday_probables_v2_control import IntradayProbablesV2OperationalControl
 from kronos.browser.server import KronosBrowserServer
@@ -128,7 +123,13 @@ def test_real_canonical_post_expiry_composition(tmp_path,monkeypatch,request,fau
             result=original(identity,version,*functions)
             return replace(result,implementation_digest='f'*64) if identity=='WO_05A_TRUSTED_TIME_ADMISSION' else result
         monkeypatch.setattr(intraday_runtime_identity,'_capability',changed)
-    if fault=='provider':monkeypatch.setattr(kronos_browser.SharedAuthenticatedProviderRuntime,'read_only_status',lambda _:dict(capability_state='AVAILABLE'))
+    if fault=='provider':
+        actual_status=kronos_browser.SharedAuthenticatedProviderRuntime.read_only_status
+        def capability_present(owner):
+            # Change the intended admission predicate, retaining the actual
+            # cleanup/resource fields consumed by the existing cleanup proof.
+            return dict(actual_status(owner),capability_state='AVAILABLE')
+        monkeypatch.setattr(kronos_browser.SharedAuthenticatedProviderRuntime,'read_only_status',capability_present)
     if fault=='transport':
         from kronos.application.shared_monitoring import SharedSwingMonitoringHub
         monkeypatch.setattr(SharedSwingMonitoringHub,'active_session_count',property(lambda _:1))
@@ -181,10 +182,10 @@ def test_real_canonical_post_expiry_composition(tmp_path,monkeypatch,request,fau
     try:
         if fault=='notification':
             with pytest.raises(ValueError,match='WO13_NOTIFICATION_CHECKPOINT_MISMATCH'):
-                kronos_browser._main(['--port','0','--no-browser'])
+                kronos_browser.main(['--port','0','--no-browser'])
             assert not observed
             assert servers[0].connection_governance.startup_state!='READY'
-        else:assert kronos_browser._main(['--port','0','--no-browser'])==0
+        else:assert kronos_browser.main(['--port','0','--no-browser'])==0
     finally:
         for server in servers:
             if fault=='transport':server.swing_monitoring_hub._session=None

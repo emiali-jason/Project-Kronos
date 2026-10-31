@@ -4,8 +4,6 @@ Durable compact source references are queued only after governed source writes.
 One worker drains the queue; GET reads the centre's restored memory projection.
 No acquisition, subscription, analytical decision or research publication lives here.
 """
-
-from kronos.application.failed_fenced_owners import recorded_cleanup
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, UTC
 from hashlib import sha256
@@ -28,9 +26,10 @@ class IntradayNotifications:
     KINDS = {"PROBABLES", "READINESS", "CURRENTNESS", "COMPARISON", "UNAVAILABLE", "TRACK"}
 
     def __init__(self, *, centre, research, wo09, futures, lifecycle, telegram=None,
-                 background=True, expected_checkpoint=None, monitoring_projection=None):
-        from kronos.application.failed_fenced_owners import register_owner
-        register_owner('WO13', self, __file__)
+                 background=True, expected_checkpoint=None, monitoring_projection=None,
+                 defer_replay=False):
+        if type(defer_replay) is not bool:
+            raise ValueError("WO13_REPLAY_MODE_INVALID")
         if (expected_checkpoint is not None
                 and not _valid_notification_checkpoint(expected_checkpoint)):
             raise ValueError("WO13_EXPECTED_CHECKPOINT_INVALID")
@@ -40,12 +39,12 @@ class IntradayNotifications:
         self.root = centre._store.root / "intraday-source-references-v1"
         self._lock = RLock()
         self._executor = ThreadPoolExecutor(max_workers=1,thread_name_prefix="kronos-notification") if background else None
-        if self._executor is not None:
-            from kronos.application.failed_fenced_owners import record_resource
-            record_resource(self, self._executor, "WORKER")
         self._scheduled = False
         self._closed = False
-        self._failed_fenced_accounting = None
+        self._deferred_replay = defer_replay
+        self._replay_active = not defer_replay
+        self._activation_attempted = False
+        self._binding_state = "UNBOUND"
         self._maintenance_admission: MaintenanceAdmissionCoordinator | None = None
         self.last_failure = None
         self._pending_reference_count = 0
@@ -90,32 +89,50 @@ class IntradayNotifications:
                 return None
         return self._origin(readiness.canonical_subject_identity, readiness.session_identity, readiness.created_at)
 
-    def bind(self, probables, *, defer_start=False):
-        checkpoint = self.checkpoint()
-        if (self._expected_checkpoint is not None
-                and checkpoint != self._expected_checkpoint):
-            raise ValueError("WO13_NOTIFICATION_CHECKPOINT_MISMATCH")
-        self._pending_reference_count = checkpoint["pending_count"]
-        probables.opportunity_origin_listener=self.research.publish_admitted_origins
-        for store in (probables,self.wo09,self.futures,self.lifecycle):
-            store.notification_listener=self.enqueue
-        self.probables=probables
-        self._deferred_start = bool(defer_start)
-        if checkpoint["pending_count"] and not defer_start:
+    def bind(self, probables):
+        with self._lock:
+            if self._closed or (self._deferred_replay and self._binding_state != "UNBOUND"):
+                raise ValueError("WO13_NOTIFICATION_BINDING_CONFLICT")
+            self._binding_state = "BINDING"
+            try:
+                checkpoint = self.checkpoint()
+                if (self._expected_checkpoint is not None
+                        and checkpoint != self._expected_checkpoint):
+                    raise ValueError("WO13_NOTIFICATION_CHECKPOINT_MISMATCH")
+                self._pending_reference_count = checkpoint["pending_count"]
+                probables.opportunity_origin_listener=self.research.publish_admitted_origins
+                for store in (probables,self.wo09,self.futures,self.lifecycle):
+                    store.notification_listener=self.enqueue
+                self.probables=probables
+                self._binding_state = "BOUND"
+            except BaseException:
+                self._binding_state = "FAILED"
+                raise
+        if checkpoint["pending_count"]:
             self._schedule()
 
-    def start_pending(self):
-        """Canonical post-enrollment restoration; never a recovery executor."""
+    def _activate_replay(self):
+        """One compositor-owned activation, after canonical custody release.
+
+        No readiness boolean is accepted. The canonical caller owns the actual
+        READY/receipt/custody checks; this owner serializes the once-only state
+        change with binding, enqueue and close, using its existing lock/executor.
+        """
         with self._lock:
-            if (not getattr(self, "_deferred_start", False)
-                    or self._failed_fenced_accounting is None
-                    or self._maintenance_admission is None
-                    or self._maintenance_admission.snapshot()["state"] != "OPEN"):
-                raise ValueError("WO13_CANONICAL_DEFERRED_START_REQUIRED")
-            self._deferred_start = False
-            pending = self._pending_reference_count
-        if pending:
-            self._schedule()
+            if not self._deferred_replay or self._activation_attempted:
+                return False
+            if self._closed or self._binding_state != "BOUND":
+                raise ValueError("WO13_REPLAY_ACTIVATION_UNAVAILABLE")
+            self._activation_attempted = True
+            self._replay_active = True
+        # Admission is acquired before reentering the owner lock. Close may win
+        # this race; _schedule then leaves the durable references untouched.
+        self._schedule()
+        return True
+
+    def _replay_permitted(self):
+        return (not self._deferred_replay or (self._replay_active
+                and self._binding_state == "BOUND" and not self._closed))
 
     @staticmethod
     def _fsync_directory(path: Path) -> None:
@@ -192,46 +209,19 @@ class IntradayNotifications:
             if ticket is not None:
                 ticket.release()
 
-    def bind_failed_fenced_accounting(self, accounting):
-        """Bind the prospective owning ledger before any reference operation."""
-        from kronos.application.failed_fenced_owners import NativeOwnerAccounting
-        if type(accounting) is not NativeOwnerAccounting:
-            raise ValueError("WO13_RECOVERY_ACCOUNTING_REQUIRED")
-        with self._lock:
-            if self._failed_fenced_accounting is not None or self._scheduled:
-                raise ValueError("WO13_RECOVERY_ACCOUNTING_BINDING_CONFLICT")
-            self._failed_fenced_accounting = accounting
-
-    def complete_registered_reference(self, obligation):
-        """Finish only a ledger-authorized original reference, never delivery.
-
-        The ledger validates the exact originating operation, listener, source,
-        phase and still-owned uninterrupted invocation.  Existing references
-        cannot satisfy a different obligation merely because the key matches.
-        """
-        accounting = self._failed_fenced_accounting
-        if accounting is None:
-            raise ValueError("WO13_RECOVERY_ACCOUNTING_REQUIRED")
-        with accounting.reference_completion(self, obligation) as reference:
-            kind, identity = reference
-            if kind not in {"READINESS", "CURRENTNESS", "COMPARISON", "UNAVAILABLE", "TRACK"}:
-                raise ValueError("WO13_RECOVERY_REFERENCE_UNSUPPORTED")
-            return self._enqueue_owned(kind, identity, schedule=False, require_new=True)
-
-    def _enqueue_owned(self, kind, identity, *, schedule=True, require_new=False):
+    def _enqueue_owned(self, kind, identity):
         if kind not in self.KINDS or not isinstance(identity,str) or len(identity)>200:
             raise ValueError("WO13_SOURCE_REFERENCE_INVALID")
         with self._lock:
+            if self._closed:
+                raise ValueError("WO13_NOTIFICATION_CLOSED")
             created = not self.root.exists()
             self.root.mkdir(parents=True,exist_ok=True)
             if created:
                 self._fsync_directory(self.root.parent)
             key=sha256((kind+":"+identity).encode()).hexdigest()
             path=self.root/(key+".pending")
-            if (self.root/(key+".done")).exists() or path.exists():
-                if require_new:
-                    raise ValueError("WO13_RECOVERY_REFERENCE_ALREADY_EXISTS")
-                return
+            if (self.root/(key+".done")).exists() or path.exists():return
             payload={"kind":kind,"identity":identity,"received_at":datetime.now(UTC).isoformat()}
             fd, staged = tempfile.mkstemp(prefix=f".{key}.", suffix=".staged", dir=self.root)
             with os.fdopen(fd, "w") as f:
@@ -244,29 +234,30 @@ class IntradayNotifications:
             os.unlink(staged)
             self._fsync_directory(self.root)
             self._pending_reference_count += 1
-            # Capture the actual durable original before scheduling can rename
-            # pending to done; a completed drain does not invalidate its bytes.
-            retained = path.read_bytes()
-        if schedule:
-            self._schedule()
-        return {"kind": kind, "identity": identity, "key": key,
-                "state": "PENDING", "bytes": retained}
+        self._schedule()
 
     def _schedule(self):
         if self._executor is not None:
+            with self._lock:
+                if (self._closed or not self._replay_permitted()
+                        or (self._deferred_replay and self._pending_reference_count == 0)):
+                    return
             admission = self._maintenance_admission
             ticket = None if admission is None else admission.admit("NOTIFICATION")
             if admission is not None and ticket is None:
                 return
             scheduled = False
             with self._lock:
-                if not self._scheduled and not self._closed:
+                if (not self._scheduled and not self._closed and self._replay_permitted()
+                        and (not self._deferred_replay or self._pending_reference_count > 0)):
                     self._scheduled=True
                     try:
                         self._executor.submit(self._drain_owned, ticket)
                         scheduled = True
                     except RuntimeError:
                         self._scheduled = False
+                        if self._deferred_replay:
+                            self.last_failure = "WO13_NOTIFICATION_WORKER_UNAVAILABLE"
             if ticket is not None and not scheduled:
                 ticket.release()
 
@@ -284,6 +275,8 @@ class IntradayNotifications:
     def drain(self):
         with self._lock:
             try:
+                if not self._replay_permitted():
+                    return
                 pending=sorted(((p,json.loads(p.read_text())) for p in self.root.glob("*.pending")),key=lambda x:(x[1]["received_at"],x[0].name))
                 for path,ref in pending:
                     try:
@@ -318,6 +311,9 @@ class IntradayNotifications:
         self.centre.record_delivery(item.notification_identity,state)
 
     def _consume(self, kind, identity):
+        with self._lock:
+            if not self._replay_permitted():
+                raise ValueError("WO13_REPLAY_NOT_ACTIVE")
         if kind=="PROBABLES":
             # The synchronous admitted-persistence origin producer has already
             # completed.  Notification delivery merely refreshes its compact
@@ -380,11 +376,11 @@ class IntradayNotifications:
             terminal=details.get("track_identity") in self.terminal_tracks)
         return ' · '.join(lifecycle_monitoring(state))
 
-    @recorded_cleanup('CLOSE_NOTIFICATIONS')
     def close(self, *, wait=True):
-        if self._executor is not None:self._executor.shutdown(wait=wait)
         with self._lock:
             self._closed = True
+        # Never hold the owner lock while joining the worker that needs it.
+        if self._executor is not None:self._executor.shutdown(wait=wait)
 
     def maintenance_status(self):
         with self._lock:

@@ -330,6 +330,250 @@ class _ResearchOriginSource:
         self.published.append(run.run_identity)
 
 
+def seed_r2_f01_retained_notification(evidence_root, centre_root):
+    """Disposable typed source records and one durable pending reference.
+
+    Fixture publication only: no analysis operation, runtime, transport or
+    substitute source reader. The canonical owner later reloads these stores.
+    """
+    from hashlib import sha256
+    from kronos.application.intraday_research import IntradayResearchApplication
+    from kronos.intraday.wo09_persistence import Wo09Store
+    from kronos.intraday.wo10_futures_store import FuturesStore
+    from kronos.intraday.wo11_lifecycle_store import LifecycleStore
+    from kronos.intraday.wo12_research_store import ResearchStore
+
+    probables = ProbablesV2Store(evidence_root)
+    wo09 = Wo09Store(evidence_root / 'wo09-promotion-readiness-v1')
+    futures = FuturesStore(evidence_root / 'prospective-v2-wo10-futures')
+    lifecycle = LifecycleStore(evidence_root / 'prospective-v2-wo11-lifecycle')
+    research_store = ResearchStore(evidence_root / 'prospective-v2-wo12-research-ledger-v1')
+    original = origin()
+    research_store.retain(original)
+    readiness, requirements = evaluated()
+    wo09.retain(readiness, requirements,
+                expected=wo09.expectation(readiness.canonical_subject_identity))
+    assert wo09.load_readiness(readiness.readiness_identity) == readiness
+    assert research_store.load(original.identity) == original
+    detail = ready(original, readiness)
+    assert detail is not None and detail['family'] == 'READY_FIVE'
+    validate(detail)
+    research = IntradayResearchApplication(probables=probables, wo09=wo09,
+        futures=futures, lifecycle=lifecycle, store=research_store,
+        publication_root=evidence_root / 'fixture-unused-publication')
+    shared = SponsorNotificationCentre(SponsorNotificationLifecycleStore(centre_root))
+    seed = IntradayNotifications(centre=shared, research=research, wo09=wo09,
+        futures=futures, lifecycle=lifecycle, background=False)
+    seed.bind(probables)
+    seed.enqueue('READINESS', readiness.readiness_identity)
+    checkpoint = seed.checkpoint(certify_durable=True)
+    assert checkpoint['state'] == 'VALID_PENDING' and checkpoint['pending_count'] == 1
+    pending, = seed.root.glob('*.pending')
+    reference = json.loads(pending.read_bytes())
+    assert reference['kind'] == 'READINESS' and reference['identity'] == readiness.readiness_identity
+    assert shared.snapshot(product='INTRADAY').records == ()
+    seed.close()
+    source_files = {
+        str(p): sha256(p.read_bytes()).hexdigest()
+        for root in (wo09.root, research_store.root)
+        for p in root.rglob('*') if p.is_file()
+    }
+    return dict(checkpoint=checkpoint, reference_root=str(seed.root),
+        centre_root=str(centre_root), reference=reference,
+        pending_name=pending.name, pending_raw=pending.read_text(),
+        original_identity=original.identity, readiness_identity=readiness.readiness_identity,
+        compact_detail=detail, source_files=source_files,
+        seed_owner_closed=seed.maintenance_status()['closed'],
+        seed_background=False, new_reference_publications=1)
+
+
+def deferred_r2_fixture(tmp_path, *, background=True, expected=None, sender=None):
+    from kronos.application.intraday_research import IntradayResearchApplication
+    from kronos.intraday.wo09_persistence import Wo09Store
+    from kronos.intraday.wo10_futures_store import FuturesStore
+    from kronos.intraday.wo11_lifecycle_store import LifecycleStore
+    from kronos.intraday.wo12_research_store import ResearchStore
+    root=tmp_path/'intraday';centre_root=tmp_path/'notifications'
+    seed=seed_r2_f01_retained_notification(root,centre_root)
+    probables=ProbablesV2Store(root)
+    wo09=Wo09Store(root/'wo09-promotion-readiness-v1')
+    futures=FuturesStore(root/'prospective-v2-wo10-futures')
+    lifecycle=LifecycleStore(root/'prospective-v2-wo11-lifecycle')
+    research=IntradayResearchApplication(probables=probables,wo09=wo09,
+        futures=futures,lifecycle=lifecycle,
+        store=ResearchStore(root/'prospective-v2-wo12-research-ledger-v1'),
+        publication_root=root/'unused-publication')
+    shared=SponsorNotificationCentre(SponsorNotificationLifecycleStore(centre_root))
+    owner=IntradayNotifications(centre=shared,research=research,wo09=wo09,
+        futures=futures,lifecycle=lifecycle,telegram=sender,background=background,
+        expected_checkpoint=seed['checkpoint'] if expected is None else expected,
+        defer_replay=True)
+    return owner,probables,seed
+
+
+@pytest.mark.parametrize('entry',['drain','worker','schedule','consume'])
+def test_r2_deferred_owner_denies_every_drain_entry_before_activation(tmp_path,entry,monkeypatch):
+    owner,probables,seed=deferred_r2_fixture(tmp_path)
+    pool=owner._executor;submits=[];submit=pool.submit
+    monkeypatch.setattr(pool,'submit',lambda *a,**kw:(submits.append(a),submit(*a,**kw))[1])
+    try:
+        owner.bind(probables)
+        before={str(p):p.read_bytes() for p in tmp_path.rglob('*') if p.is_file()}
+        if entry=='drain':owner.drain()
+        elif entry=='worker':owner._drain_owned(None)
+        elif entry=='schedule':owner._schedule()
+        else:
+            with pytest.raises(ValueError,match='WO13_REPLAY_NOT_ACTIVE'):
+                owner._consume('READINESS',seed['readiness_identity'])
+        assert owner.checkpoint()==seed['checkpoint']
+        assert before=={str(p):p.read_bytes() for p in tmp_path.rglob('*') if p.is_file()}
+        assert submits==[] and owner._executor is pool and not pool._threads
+    finally:owner.close()
+
+
+def test_r2_deferred_enqueue_retains_new_reference_without_replay_or_digest_reset(tmp_path):
+    owner,probables,seed=deferred_r2_fixture(tmp_path,background=False)
+    try:
+        owner.bind(probables)
+        original=(owner.root/seed['pending_name']).read_bytes()
+        owner.enqueue('PROBABLES','R2-LEGITIMATE-NEW-REFERENCE')
+        changed=owner.checkpoint(certify_durable=True)
+        assert changed['pending_count']==2 and changed['sha256']!=seed['checkpoint']['sha256']
+        owner.drain()
+        assert owner.checkpoint()==changed
+        assert (owner.root/seed['pending_name']).read_bytes()==original
+        assert owner._activate_replay() is True
+        owner.drain()
+        assert owner.checkpoint()['pending_count']==0 and len(list(owner.root.glob('*.done')))==2
+        assert owner._activate_replay() is False
+    finally:owner.close()
+
+
+@pytest.mark.parametrize('fault',['unbound','mismatch','closed'])
+def test_r2_failed_binding_or_closed_owner_cannot_activate(tmp_path,fault):
+    wrong={'state':'VALID_PENDING','pending_count':1,'sha256':'0'*64} if fault=='mismatch' else None
+    owner,probables,seed=deferred_r2_fixture(tmp_path,expected=wrong)
+    try:
+        if fault=='mismatch':
+            with pytest.raises(ValueError,match='CHECKPOINT_MISMATCH'):owner.bind(probables)
+            assert not hasattr(owner,'probables')
+        elif fault=='closed':
+            owner.bind(probables);owner.close()
+        before={str(p):p.read_bytes() for p in tmp_path.rglob('*') if p.is_file()}
+        with pytest.raises(ValueError,match='ACTIVATION_UNAVAILABLE'):owner._activate_replay()
+        owner.drain()
+        assert owner.checkpoint()==seed['checkpoint']
+        assert before=={str(p):p.read_bytes() for p in tmp_path.rglob('*') if p.is_file()}
+        assert not owner._executor._threads
+        if fault=='closed':
+            with pytest.raises(ValueError,match='NOTIFICATION_CLOSED'):owner.enqueue('PROBABLES','late')
+    finally:owner.close()
+
+
+def test_r2_concurrent_enqueue_activation_and_repeat_use_one_executor_and_worker(tmp_path,monkeypatch):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier,Event
+    calls=[]
+    sender=SimpleNamespace(status=lambda:SimpleNamespace(private_chat_configured=True,delivery_enabled=True),
+        send=lambda text:(calls.append(text),SimpleNamespace(state=SimpleNamespace(value='SENT')))[1])
+    owner,probables,seed=deferred_r2_fixture(tmp_path,sender=sender)
+    owner.bind(probables);pool=owner._executor;release=Event();entered=Event();barrier=Barrier(4)
+    original_worker=owner._drain_owned;submitted=[];original_submit=pool.submit;consumed=[];consume=owner._consume
+    def held(ticket):
+        entered.set();assert release.wait(5)
+        return original_worker(ticket)
+    def submit(*args,**kwargs):
+        value=original_submit(*args,**kwargs);submitted.append(value);return value
+    def observe(kind,identity):
+        consumed.append((kind,identity));return consume(kind,identity)
+    monkeypatch.setattr(owner,'_drain_owned',held);monkeypatch.setattr(pool,'submit',submit)
+    monkeypatch.setattr(owner,'_consume',observe)
+    def operation(action):barrier.wait(3);return action()
+    try:
+        with ThreadPoolExecutor(max_workers=4) as producers:
+            jobs=[producers.submit(operation,action) for action in (
+                owner._activate_replay,owner._activate_replay,
+                lambda:owner.enqueue('PROBABLES','RACE-A'),lambda:owner.enqueue('PROBABLES','RACE-B'))]
+            values=[job.result(3) for job in jobs]
+        assert values[:2].count(True)==1 and values[:2].count(False)==1
+        assert entered.wait(2) and len(submitted)==1
+        assert owner.checkpoint()['pending_count']==3
+        release.set();submitted[0].result(3)
+        assert len(consumed)==3 and len(set(consumed))==3
+        assert owner.checkpoint(certify_durable=True)['pending_count']==0
+        assert len(list(owner.root.glob('*.done')))==3 and len(calls)==1
+        assert owner._executor is pool and len(pool._threads)==1
+        assert owner._activate_replay() is False and len(submitted)==1
+    finally:release.set();owner.close()
+
+
+@pytest.mark.parametrize('fault',['submit','consume'])
+def test_r2_repeated_activation_never_retries_failed_work_or_replaces_executor(tmp_path,monkeypatch,fault):
+    owner,probables,seed=deferred_r2_fixture(tmp_path);owner.bind(probables)
+    pool=owner._executor;attempts=[];futures=[];submit=pool.submit
+    def failed_submit(*a,**kw):attempts.append('submit');raise RuntimeError('R2 submit fault')
+    def failed_consume(*a):attempts.append('consume');raise RuntimeError('R2 source fault')
+    if fault=='submit':monkeypatch.setattr(pool,'submit',failed_submit)
+    else:
+        monkeypatch.setattr(owner,'_consume',failed_consume)
+        def observe(*a,**kw):value=submit(*a,**kw);futures.append(value);return value
+        monkeypatch.setattr(pool,'submit',observe)
+    try:
+        assert owner._activate_replay() is True
+        for future in futures:future.result(3)
+        assert owner.last_failure is not None and attempts==[fault]
+        assert owner._activate_replay() is False and attempts==[fault]
+        assert owner._executor is pool and owner.checkpoint()==seed['checkpoint']
+    finally:owner.close()
+
+
+def test_r2_activation_close_race_retains_pending_work_without_late_submission(tmp_path,monkeypatch):
+    from threading import Thread,Event
+    owner,probables,seed=deferred_r2_fixture(tmp_path);owner.bind(probables)
+    activation=Event();release=Event();schedule=owner._schedule;errors=[]
+    def delayed_schedule():activation.set();assert release.wait(3);return schedule()
+    monkeypatch.setattr(owner,'_schedule',delayed_schedule)
+    def activate():
+        try:owner._activate_replay()
+        except BaseException as error:errors.append(error)
+    worker=Thread(target=activate);worker.start()
+    try:
+        assert activation.wait(2);owner.close();release.set();worker.join(3)
+        assert not worker.is_alive() and errors==[]
+        assert owner.checkpoint()==seed['checkpoint'] and not owner._executor._threads
+        assert owner._activate_replay() is False
+    finally:release.set();worker.join(3);owner.close()
+
+
+def test_r2_ambiguous_attempting_survives_owner_restore_without_automatic_resend(tmp_path,monkeypatch):
+    calls=[]
+    class InterruptedSender:
+        def status(self):return SimpleNamespace(private_chat_configured=True,delivery_enabled=True)
+        def send(self,text):calls.append(text);raise KeyboardInterrupt('R2 ambiguous fake dispatch')
+    owner,probables,seed=deferred_r2_fixture(tmp_path,sender=InterruptedSender());owner.bind(probables)
+    futures=[];submit=owner._executor.submit
+    def observe(*args,**kwargs):value=submit(*args,**kwargs);futures.append(value);return value
+    monkeypatch.setattr(owner._executor,'submit',observe)
+    try:
+        owner._activate_replay()
+        with pytest.raises(KeyboardInterrupt,match='ambiguous fake dispatch'):futures[0].result(3)
+        record,=owner.centre.snapshot(product='INTRADAY').records
+        assert record.telegram_delivery=='ATTEMPTING' and len(calls)==1
+        assert owner.checkpoint()==seed['checkpoint']
+        assert owner._activate_replay() is False and len(futures)==1
+    finally:owner.close()
+    restored_centre=SponsorNotificationCentre(SponsorNotificationLifecycleStore(owner.centre._store.root))
+    restored=IntradayNotifications(centre=restored_centre,research=owner.research,wo09=owner.wo09,
+        futures=owner.futures,lifecycle=owner.lifecycle,telegram=owner.telegram,background=False)
+    try:
+        restored.bind(probables);restored.drain()
+        current,=restored.centre.snapshot(product='INTRADAY').records
+        assert current.notification_identity==record.notification_identity
+        assert current.telegram_delivery=='ATTEMPTING' and len(calls)==1
+        assert restored.checkpoint()['pending_count']==0
+    finally:restored.close()
+
+
 def test_incremental_source_queue_restores_and_marks_exact_reference_done(tmp_path):
     shared = centre(tmp_path)
     research = _ResearchOriginSource()

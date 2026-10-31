@@ -6,8 +6,6 @@ lifecycle, and Provider-connection events; it creates no trading decision.
 
 from __future__ import annotations
 
-from kronos.application.failed_fenced_owners import recorded_cleanup
-
 from kronos.common.maintenance import defer_expected_disconnect
 
 from dataclasses import asdict, dataclass
@@ -18,8 +16,6 @@ import json
 import os
 from pathlib import Path
 from threading import RLock, Thread, Timer
-from kronos.application.failed_fenced_owners import recorded_callback
-
 from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
 from typing import Callable
 
@@ -252,9 +248,8 @@ class SwingUx10NotificationService:
         background_runner: Callable[[Callable[[], None], str], object] | None = None,
         retry_scheduler: Callable[[float, Callable[[], None]], object] | None = None,
         maintenance_admission: MaintenanceAdmissionCoordinator | None = None,
+        defer_delivery: bool = False,
     ) -> None:
-        from kronos.application.failed_fenced_owners import register_owner
-        register_owner('UX10', self, __file__)
         self._store = store or Ux10NotificationStore()
         self._telegram = telegram
         self._clock = clock
@@ -263,7 +258,11 @@ class SwingUx10NotificationService:
         self._maintenance_admission = maintenance_admission
         self._lock = RLock()
         self._closed = False
+        self._delivery_active = not defer_delivery
+        self._delivery_activation_failed = False
+        self._delivery_scheduled: set[str] = set()
         self._retry_handles: dict[str, object | None] = {}
+        self._retry_retired_handles: list[object | None] = []
         self._records = {item.deduplication_key: item for item in self._store.load()}
         self._promotion_state = self._store.context("promotion-baselines")
         self._connection_state = self._store.context("connection-baselines")
@@ -271,21 +270,90 @@ class SwingUx10NotificationService:
         self._connection_checkpoint = self._connection_state
         self._reconcile_connection_baselines()
 
-    @recorded_cleanup('CLOSE_UX10')
     def close(self) -> None:
         with self._lock:
             self._closed = True
-            handles = tuple(self._retry_handles.values())
-            self._retry_handles.clear()
+            self._delivery_active = False
+            handles = tuple(self._retry_handles.values()) + tuple(self._retry_retired_handles)
         for handle in handles:
             cancel = getattr(handle, "cancel", None)
             if callable(cancel):
                 cancel()
+        # Cancellation is a request, not proof that an entered timer callback
+        # returned. Keep each handle until maintenance_status can observe its
+        # actual thread termination. Unobservable handles remain unresolved.
 
     def maintenance_status(self) -> dict[str, object]:
         with self._lock:
+            self._prune_retry_handles_locked()
             return {"closed": self._closed,
-                    "retry_callbacks": len(self._retry_handles)}
+                    "retry_callbacks": len(self._retry_handles) + len(self._retry_retired_handles)}
+
+    def retry_timer_snapshot(self) -> tuple[object | None, ...]:
+        """Return the exact retained retry handles without inferring completion.
+
+        Startup cleanup uses these identities to observe the same Timer objects
+        after the single close request. In particular, ``None`` handles remain
+        visible as unknown ownership and are not pruned here.
+        """
+        with self._lock:
+            return tuple(self._retry_handles.values()) + tuple(self._retry_retired_handles)
+
+    def _prune_retry_handles_locked(self) -> None:
+        def completed(handle: object | None) -> bool:
+            is_alive = getattr(handle, "is_alive", None)
+            if not callable(is_alive):
+                return False
+            try:
+                return is_alive() is False
+            except BaseException:
+                return False
+
+        self._retry_handles = {key: handle for key, handle in self._retry_handles.items()
+                               if not completed(handle)}
+        self._retry_retired_handles = [handle for handle in self._retry_retired_handles
+                                       if not completed(handle)]
+
+    @property
+    def delivery_deferred(self) -> bool:
+        with self._lock:
+            return not self._delivery_active and not self._closed and not self._delivery_activation_failed
+
+    def activate_delivery(self) -> bool:
+        """Activate this retained owner once after the caller proves startup."""
+        activation_started = False
+        try:
+            with self._lock:
+                if self._closed:
+                    raise ValueError("UX10_DELIVERY_OWNER_CLOSED")
+                if self._delivery_activation_failed:
+                    raise ValueError("UX10_DELIVERY_ACTIVATION_FAILED")
+                if self._delivery_active:
+                    return False
+                activation_started = True
+                self._delivery_active = True
+                now = self._clock()
+                pending = tuple(
+                    item.deduplication_key for item in self._records.values()
+                    if item.telegram_delivery_state in {
+                        Ux10DeliveryState.PENDING, Ux10DeliveryState.FAILED_RETRYABLE,
+                    }
+                    and item.delivery_attempts < 4
+                    and (item.next_retry_at is None or item.next_retry_at <= now)
+                )
+            for dedup in pending:
+                self._schedule_delivery(dedup)
+        except BaseException:
+            # Activation is a one-shot delivery boundary. Some earlier jobs
+            # may already be submitted, so failure must become sticky before
+            # they can claim an attempt, and their counted tickets stay owned
+            # until those exact jobs finish or are rejected.
+            if activation_started:
+                with self._lock:
+                    self._delivery_activation_failed = True
+                    self._delivery_active = False
+            raise
+        return True
 
     def snapshot(self) -> Ux10NotificationSnapshot:
         with self._lock:
@@ -711,6 +779,9 @@ class SwingUx10NotificationService:
         return event
 
     def retry_pending(self) -> None:
+        with self._lock:
+            if self._closed or not self._delivery_active or self._delivery_activation_failed:
+                return
         if (
             self._telegram is None
             or not self._telegram.status().delivery_enabled
@@ -812,22 +883,45 @@ class SwingUx10NotificationService:
         return record
 
     def _schedule_delivery(self, dedup: str) -> None:
+        with self._lock:
+            if (self._closed or not self._delivery_active or self._delivery_activation_failed
+                    or dedup in self._delivery_scheduled):
+                return
+            self._delivery_scheduled.add(dedup)
         admission = self._maintenance_admission
         ticket = None if admission is None else admission.admit("NOTIFICATION")
         if admission is not None and ticket is None:
+            with self._lock:
+                self._delivery_scheduled.discard(dedup)
             return
         with self._lock:
-            closed = self._closed
-        if closed:
+            denied = (self._closed or not self._delivery_active
+                      or self._delivery_activation_failed)
+            if denied:
+                self._delivery_scheduled.discard(dedup)
+        if denied:
             if ticket is not None:
                 ticket.release()
             return
+
+        def run() -> None:
+            try:
+                if ticket is None:
+                    self._deliver(dedup)
+                else:
+                    with ticket.activate():
+                        self._deliver(dedup)
+            finally:
+                with self._lock:
+                    self._delivery_scheduled.discard(dedup)
+                if ticket is not None:
+                    ticket.release()
+
         try:
-            self._background(
-                lambda: self._deliver_owned(dedup, ticket),
-                "kronos-ux10-telegram",
-            )
+            self._background(run, "kronos-ux10-telegram")
         except BaseException:
+            with self._lock:
+                self._delivery_scheduled.discard(dedup)
             if ticket is not None and not ticket._released:
                 ticket.release()
             raise
@@ -855,7 +949,8 @@ class SwingUx10NotificationService:
     def _deliver(self, dedup: str) -> None:
         with self._lock:
             record = self._records.get(dedup)
-            if (self._closed or record is None or self._telegram is None
+            if (self._closed or not self._delivery_active or self._delivery_activation_failed
+                    or record is None or self._telegram is None
                     or not self._telegram.status().delivery_enabled
                     or record.telegram_delivery_state not in {
                         Ux10DeliveryState.PENDING, Ux10DeliveryState.FAILED_RETRYABLE}
@@ -915,39 +1010,37 @@ class SwingUx10NotificationService:
 
     def _schedule_retry(self, dedup: str, delay: float) -> None:
         with self._lock:
-            if self._closed:
+            if self._closed or not self._delivery_active or self._delivery_activation_failed:
                 return  # The retained retry remains available after restoration.
+            had_previous = dedup in self._retry_handles
             previous = self._retry_handles.get(dedup)
             self._retry_handles[dedup] = None
+            if had_previous:
+                self._retry_retired_handles.append(previous)
         cancel = getattr(previous, "cancel", None)
         if callable(cancel):
             cancel()
         try:
-            callback = lambda: self._retry_due(dedup)
-            if getattr(self, "_ff_composition", None) is not None:
-                if self._retry_scheduler is not _timer_scheduler:
-                    raise ValueError("FAILED_FENCED_TIMER_IMPLEMENTATION_UNSUPPORTED")
-                handle = _timer_scheduler(delay, callback, owner=self)
-            else:
-                handle = self._retry_scheduler(delay, callback)
+            handle = self._retry_scheduler(
+                delay, lambda: self._retry_due(dedup)
+            )
         except BaseException:
             with self._lock:
                 self._retry_handles.pop(dedup, None)
             raise
         with self._lock:
-            if self._closed or dedup not in self._retry_handles:
+            if dedup not in self._retry_handles:
                 cancel = getattr(handle, "cancel", None)
             else:
                 self._retry_handles[dedup] = handle
-                cancel = None
+                cancel = getattr(handle, "cancel", None) if self._closed else None
+                self._prune_retry_handles_locked()
         if callable(cancel):
             cancel()
 
-    @recorded_callback
     def _retry_due(self, dedup: str) -> None:
         with self._lock:
-            self._retry_handles.pop(dedup, None)
-            if self._closed:
+            if self._closed or not self._delivery_active or self._delivery_activation_failed:
                 return
         self._schedule_delivery(dedup)
 
@@ -1042,14 +1135,9 @@ def _thread_runner(operation: Callable[[], None], name: str) -> Thread:
     return thread
 
 
-def _timer_scheduler(delay: float, operation: Callable[[], None], *, owner=None) -> Timer:
+def _timer_scheduler(delay: float, operation: Callable[[], None]) -> Timer:
     timer = Timer(delay, operation)
     timer.daemon = True
-    if owner is not None:
-        from kronos.application.failed_fenced_owners import record_resource, retire_owned_timer
-        record_resource(owner, operation, "CALLBACK")
-        record_resource(owner, timer, "TIMER", cleanup_action="CANCEL_TIMER",
-                        cleanup=lambda: retire_owned_timer(owner, timer))
     timer.start()
     return timer
 

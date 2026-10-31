@@ -5,8 +5,6 @@ Provider acquisition, connection, completed-candle or readiness producer API.
 """
 from __future__ import annotations
 
-from kronos.application.failed_fenced_owners import recorded_cleanup
-
 from dataclasses import asdict
 from contextlib import contextmanager
 from datetime import datetime
@@ -175,8 +173,6 @@ class IntradayExperimentalWatchCoordinator:
     owner_identity = "INTRADAY_WO09_EXPERIMENTAL_WATCH"
 
     def __init__(self, wo09, *, clock, current_binding):
-        from kronos.application.failed_fenced_owners import register_owner
-        register_owner('EXPERIMENTAL', self, __file__)
         if not callable(clock) or not callable(current_binding):
             raise ValueError("WO09_EXPERIMENTAL_WATCH_CONFIGURATION_INVALID")
         self.wo09, self.clock, self.current_binding = wo09, clock, current_binding
@@ -545,8 +541,6 @@ class GovernedExperimentalWatchCoordinator(IntradayExperimentalWatchCoordinator)
                         self._queue_instruments[identity] = instrument
                     registration = self.hub.observe_existing(self.capability_supplier(),
                         _BoundWatchObserver(self, identity), (instrument,))
-                    from kronos.application.failed_fenced_owners import record_registration_alias
-                    record_registration_alias(self, registration)
                     self.registrations[identity] = registration
                     if not registration.active:
                         self.on_subscription_lost(identity)
@@ -834,7 +828,6 @@ class GovernedExperimentalWatchCoordinator(IntradayExperimentalWatchCoordinator)
             if ticket is not None:
                 ticket.release()
 
-    @recorded_cleanup('STOP_EXPERIMENTAL')
     def shutdown(self):
         with self._queue_lock:
             self._queue_closed = True

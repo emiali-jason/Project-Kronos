@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from kronos.application.failed_fenced_owners import recorded_cleanup
-
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -101,8 +99,6 @@ class IntradayWo17MonitoringCoordinator:
         clock: Callable[[], datetime],
         background_runner: Callable[[Callable[[], None], str], object] = _start_thread,
     ) -> None:
-        from kronos.application.failed_fenced_owners import register_owner
-        register_owner('WO17', self, __file__)
         if (
             type(application) is not IntradayWo17Application
             or type(restoration) is not IntradayWo17RestorationService
@@ -202,8 +198,6 @@ class IntradayWo17MonitoringCoordinator:
         if capability is None or getattr(capability, "active", False) is not True:
             raise ValueError("WO17_MONITORING_CAPABILITY_UNAVAILABLE")
         registration = hub.open(capability, self)
-        from kronos.application.failed_fenced_owners import record_registration_alias
-        record_registration_alias(self, registration)
         registration.subscribe((binding.provider_instrument,))
         attached = _AttachedPosition(restored, binding, registration)
         with self._lock:
@@ -349,7 +343,6 @@ class IntradayWo17MonitoringCoordinator:
                 "failure": self._work_failure,
             }
 
-    @recorded_cleanup('STOP_WO17')
     def shutdown(self) -> None:
         """Fence new work; an in-process operation remains owned until return."""
 

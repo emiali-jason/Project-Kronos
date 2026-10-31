@@ -10,6 +10,7 @@ from hashlib import sha256
 import json
 from pathlib import Path
 import shutil
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -23,13 +24,21 @@ from kronos.theta.contracts import SUBJECTS, ThetaError, encode
 from kronos.theta.target_authority import OwnerOptionAuthority, ThetaTargetAuthorityAdapter
 from tests.unit.theta.test_question_packs import packs, commission, question
 
-AT = datetime.fromisoformat("2026-10-12T12:00:00+05:30")
+HISTORICAL_AT = datetime.fromisoformat("2026-10-12T12:00:00+05:30")
+AT = datetime.fromisoformat("2026-10-28T14:00:00+05:30")
 EXPECTED = {
     "GOLDM": (("2026-10-29","2026-11-05"),("2026-11-27","2026-12-04")),
-    "SILVERM": (("2026-10-27","2026-11-30"),("2026-11-23","2026-11-30")),
-    "COPPER": (("2026-10-23","2026-10-30"),("2026-11-23","2026-11-30")),
-    "CRUDEOIL": (("2026-10-15","2026-10-19"),("2026-11-17","2026-11-19")),
-    "NATURALGAS": (("2026-10-23","2026-10-27"),("2026-11-20","2026-11-24")),
+    "SILVERM": (("2026-11-23","2026-11-30"),("2026-12-28","2027-02-26")),
+    "COPPER": (("2026-11-23","2026-11-30"),("2026-12-23","2026-12-31")),
+    "CRUDEOIL": (("2026-11-17","2026-11-19"),("2026-12-16","2026-12-18")),
+    "NATURALGAS": (("2026-11-20","2026-11-24"),("2026-12-23","2026-12-28")),
+}
+LOSS = {
+    "GOLDM": "2026-11-27T23:55:00+05:30",
+    "SILVERM": "2026-11-23T23:55:00+05:30",
+    "COPPER": "2026-11-23T23:55:00+05:30",
+    "CRUDEOIL": "2026-11-17T23:55:00+05:30",
+    "NATURALGAS": "2026-11-20T23:55:00+05:30",
 }
 UNITS = {"GOLDM":"INR per 10 grams","SILVERM":"INR per kilogram",
          "COPPER":"INR per kilogram","CRUDEOIL":"INR per barrel","NATURALGAS":"INR per MMBtu"}
@@ -74,8 +83,25 @@ def local_owner(files):
     return OwnerOptionAuthority(instrument_root=files[0],market_root=files[1])
 
 
+def predecessor_owner(files):
+    """Select exact retained 2026.2.0 bytes with a synthetic test pointer."""
+    i,m=files
+    current=json.loads((m/"current-2026.1.0.json").read_bytes())
+    current.update(identity="SYNTHETIC-TEST-CURRENT-2026.2.0",
+        effective_from="2026-10-12T04:32:40Z",
+        effective_through="2026-12-31T23:59:59+05:30",
+        supersedes=current["identity"],owner_reviews={k:None for k in current["owner_reviews"]})
+    for key,root,name in (("instrument",i,"2026.2.0.json"),("market",m,"2026.2.0.json")):
+        payload=(root/name).read_bytes()
+        value=json.loads(payload)
+        current[key]={"identity":value["publication_identity"],"version":"2026.2.0",
+                      "sha256":sha256(payload).hexdigest(),"filename":name}
+    (m/"current.json").write_bytes(canonical_bytes(current))
+    return local_owner(files)
+
+
 def test_retained_candidate_is_not_owner_qualified(owner):
-    assert len(owner.instrument.rows)==23
+    assert len(owner.instrument.rows)==25
     assert set(r.family for r in owner.instrument.rows)==set(SUBJECTS)
     assert all(v is None for v in owner.current["owner_reviews"].values())
     with pytest.raises(ThetaError,match="THETA_TARGET_OWNER_QUALIFICATION_REQUIRED"):
@@ -98,10 +124,21 @@ def test_five_families_exact_source_bound_candidate_targets(owner,family):
     assert owner.resolve(family,AT+timedelta(days=1))[0].series.identity==targets[0].series.identity
 
 
-def test_same_future_valid_other_families_different(owner):
+def test_actual_current_clock_selects_two_for_all_five_families(owner,record_property):
+    observed=datetime.now(ZoneInfo("Asia/Kolkata"))
+    assert owner.first <= observed <= owner.last
+    assert {family:tuple((t.series.expiry.isoformat(),t.series.futures_expiry.isoformat())
+            for t in owner.resolve(family,observed)) for family in SUBJECTS}==EXPECTED
+    record_property("actual_IST_observed",observed.isoformat())
+    record_property("owner_qualified","false; successor review pending")
+
+
+def test_corrected_silver_future_differs_and_historical_same_future_remains(files,owner):
     silver=owner.resolve("SILVERM",AT)
-    assert silver[0].series.underlying_future==silver[1].series.underlying_future
-    assert silver[0].series.series_kind=="MONTHLY" and silver[1].series.series_kind=="BI_MONTHLY"
+    assert silver[0].series.underlying_future!=silver[1].series.underlying_future
+    assert silver[0].series.series_kind=="BI_MONTHLY" and silver[1].series.series_kind=="MONTHLY"
+    historical=predecessor_owner(files).resolve("SILVERM",HISTORICAL_AT)
+    assert historical[0].series.underlying_future==historical[1].series.underlying_future
     for family in set(SUBJECTS)-{"SILVERM"}:
         t=owner.resolve(family,AT)
         assert t[0].series.underlying_future!=t[1].series.underlying_future
@@ -113,14 +150,14 @@ def test_parsed_dates_and_actual_instant_not_string_or_source_order(files):
     assert owner.resolve("SILVERM",AT)==owner.resolve("SILVERM",AT.astimezone(timezone.utc))
     e1=owner.resolve("GOLDM",AT)[0]
     assert owner.resolve("GOLDM",e1.endpoint.expires_at-timedelta(microseconds=1))[0]==e1
-    with pytest.raises(OptionAuthorityError,match="E2_UNAVAILABLE"):
-        owner.resolve("GOLDM",e1.endpoint.expires_at)
+    moved=owner.resolve("GOLDM",e1.endpoint.expires_at)
+    assert tuple(t.series.expiry.isoformat() for t in moved)==("2026-11-27","2026-12-29")
 
 
-def test_copper_option_session_not_future_cutoff_and_calendar_issue_explicit(owner):
+def test_copper_option_session_not_future_cutoff_and_calendar_issue_explicit(files,owner):
     targets=owner.resolve("COPPER",AT)
     assert targets[0].endpoint.expires_at.hour==23
-    assert targets[0].endpoint.expires_at.minute==30
+    assert targets[0].endpoint.expires_at.minute==55
     assert "OPTION_SESSION" in targets[0].endpoint.session_identity
     assert targets[0].endpoint.expires_at.hour!=17
     # Additive option authority uses the explicit MCX DST-dependent rule and
@@ -128,6 +165,8 @@ def test_copper_option_session_not_future_cutoff_and_calendar_issue_explicit(own
     assert targets[1].endpoint.expires_at.minute==55
     base=MarketCalendarPublisher().publication("MCX")
     assert base.trading_dates[targets[1].series.expiry].windows[0].window_close.minute==30
+    historical=predecessor_owner(files).resolve("COPPER",HISTORICAL_AT)
+    assert historical[0].endpoint.expires_at.minute==30
     assert not targets[1].owner_qualified
 
 
@@ -177,6 +216,66 @@ def test_source_bytes_tamper_not_accepted(files):
     with pytest.raises(OptionAuthorityError,match="SOURCE_INVALID"): local_owner(files)
 
 
+@pytest.mark.parametrize("name,operation,code",[
+    ("silverm-options-december-2026-onwards.pdf","missing","ARTIFACT_UNAVAILABLE"),
+    ("silverm-futures-february-2027-onwards.pdf","corrupt","SOURCE_INVALID"),
+    ("mcx-circular-552-2026.pdf","missing","ARTIFACT_UNAVAILABLE"),
+    ("mcx-circular-552-2026.pdf","corrupt","SOURCE_INVALID"),
+    ("mcx-circular-095-2026.pdf","missing","ARTIFACT_UNAVAILABLE"),
+    ("mcx-circular-095-2026.pdf","corrupt","SOURCE_INVALID"),
+])
+def test_new_official_source_missing_or_corrupt_fails_closed(files,name,operation,code):
+    path=files[0]/"sources"/name
+    if operation=="missing": path.unlink()
+    else: path.write_bytes(path.read_bytes()+b"corrupt")
+    with pytest.raises(OptionAuthorityError,match=code): local_owner(files)
+
+
+def test_exact_date_publications_are_pinned_and_bound_to_the_owning_rows(files,owner):
+    instrument=json.loads((files[0]/"2026.3.0.json").read_bytes())
+    sources={source["identity"]:source for source in instrument["sources"]}
+    expected={
+        "MCX-TRD-552-2026":{
+            "filename":"sources/mcx-circular-552-2026.pdf",
+            "reference":"MCX/TRD/552/2026",
+            "published_on":"2026-09-29",
+            "sha256":"8dd99b01ea1d1d9f10f29f4439dc34bb336df2a0a745312be3e7bfc6de39df03",
+            "page":"page 3",
+        },
+        "MCX-TRD-095-2026":{
+            "filename":"sources/mcx-circular-095-2026.pdf",
+            "reference":"MCX/TRD/095/2026",
+            "published_on":"2026-02-26",
+            "sha256":"13a0433578982b2ae9a44e6ccf8ab473aa998c45b8be347a720b0766d0e94b94",
+            "page":"page 5",
+        },
+    }
+    for identity,binding in expected.items():
+        source=sources[identity]
+        assert all(source[field]==value for field,value in binding.items() if field!="page")
+        assert binding["page"] in source["effective_scope"]
+        assert sha256((files[0]/source["filename"]).read_bytes()).hexdigest()==source["sha256"]
+        assert f"{identity}/SHA256:{source['sha256']}" in owner.instrument.source_provenance
+
+    silver_spec=sources["SILVERM-FUT-FEB2027-ONWARDS"]
+    assert silver_spec["published_on"]=="2026-07-17"
+    assert "exact consolidated-specification publication date remains unavailable" in silver_spec["effective_scope"]
+    assert "not the exact 26 February date" in silver_spec["effective_scope"]
+
+    rows={(row["family"],row["expiry"]):row for row in instrument["series"]}
+    gold=rows[("GOLDM","2026-12-29")]
+    silver=rows[("SILVERM","2026-12-28")]
+    assert "MCX-TRD-552-2026" in gold["source_ids"] and "Annexure 2 page 3" in gold["source_locator"]
+    assert "MCX-TRD-095-2026" in silver["source_ids"] and "Annexure 2 page 5" in silver["source_locator"]
+    assert "without independently proving the exact date" in silver["source_locator"]
+
+    current=json.loads((files[1]/"current.json").read_bytes())
+    market=json.loads((files[1]/current["market"]["filename"]).read_bytes())
+    rules={(rule["family"],rule["series_kind"]):rule for rule in market["rules"]}
+    assert "MCX-TRD-552-2026" in rules[("GOLDM","MONTHLY")]["source_ids"]
+    assert "MCX-TRD-095-2026" in rules[("SILVERM","MONTHLY")]["source_ids"]
+
+
 @pytest.mark.parametrize("filename",["../escape.json","/escape.json","sources/../../escape.json"])
 def test_path_traversal_fails_closed(files,filename):
     with pytest.raises(OptionAuthorityError,match="PATH_INVALID"): read_exact(files[0],filename)
@@ -208,15 +307,15 @@ def test_publication_successor_keeps_predecessor_bytes_and_historical_records(fi
     i,m=files; old=local_owner(files); historical=old.resolve("SILVERM",AT)
     before_i=(i/old.instrument.pin.filename).read_bytes(); before_m=(m/old.market.pin.filename).read_bytes()
     instrument=json.loads(before_i); market=json.loads(before_m)
-    instrument.update(publication_version="2026.1.1",supersedes=old.instrument.pin.reference)
+    instrument.update(publication_version="2026.3.1",supersedes=old.instrument.pin.reference)
     # Explicit successor TEST publication, not mtime/filename currentness.
     instrument["series"][-1]["source_locator"]+="; SYNTHETIC TEST amendment/requalification"
-    encoded=canonical_bytes(instrument); (i/"2026.1.1.json").write_bytes(encoded)
-    ip=PublicationPin(old.instrument.pin.identity,"2026.1.1",sha256(encoded).hexdigest(),"2026.1.1.json")
-    market.update(publication_version="2026.1.1",supersedes=old.market.pin.reference,
+    encoded=canonical_bytes(instrument); (i/"2026.3.1.json").write_bytes(encoded)
+    ip=PublicationPin(old.instrument.pin.identity,"2026.3.1",sha256(encoded).hexdigest(),"2026.3.1.json")
+    market.update(publication_version="2026.3.1",supersedes=old.market.pin.reference,
                   instrument_reference=ip.reference)
-    encoded=canonical_bytes(market); (m/"2026.1.1.json").write_bytes(encoded)
-    mp=PublicationPin(old.market.pin.identity,"2026.1.1",sha256(encoded).hexdigest(),"2026.1.1.json")
+    encoded=canonical_bytes(market); (m/"2026.3.1.json").write_bytes(encoded)
+    mp=PublicationPin(old.market.pin.identity,"2026.3.1",sha256(encoded).hexdigest(),"2026.3.1.json")
     current=deepcopy(old.current)
     current.update(identity="SYNTHETIC-SUCCESSOR-CURRENT",supersedes=old.current["identity"],
                    instrument=asdict(ip),market=asdict(mp),owner_reviews={k:None for k in current["owner_reviews"]})
@@ -226,7 +325,7 @@ def test_publication_successor_keeps_predecessor_bytes_and_historical_records(fi
     assert successor[0].instrument_reference!=historical[0].instrument_reference
     assert successor[0].market_reference!=historical[0].market_reference
     assert (i/old.instrument.pin.filename).read_bytes()==before_i and (m/old.market.pin.filename).read_bytes()==before_m
-    assert historical[0].series.expiry.isoformat()=="2026-10-27"
+    assert historical[0].series.expiry.isoformat()=="2026-11-23"
     with pytest.raises(OptionAuthorityError,match="PUBLICATION_SUPERSEDED"): old.resolve("SILVERM",AT)
 
 
@@ -309,9 +408,7 @@ def test_exact_endpoint_rollover_for_every_family(owner,family):
     endpoint=original[0].endpoint.expires_at
     assert owner.resolve(family,endpoint-timedelta(microseconds=1))==original
     for at in (endpoint,endpoint+timedelta(microseconds=1),endpoint.astimezone(timezone.utc)):
-        if family in {"GOLDM","SILVERM"}:
-            # No unsupported January-2027 underlying/calendar or unlisted
-            # Silver December mapping is invented to supply the missing E2.
+        if family != "GOLDM":
             with pytest.raises(OptionAuthorityError,match="E2_UNAVAILABLE"):
                 owner.resolve(family,at)
         else:
@@ -320,6 +417,15 @@ def test_exact_endpoint_rollover_for_every_family(owner,family):
             assert moved[0].horizon=="E1" and moved[1].horizon=="E2"
             assert moved[1].series.expiry.month==12
             assert moved[1].series.identity!=original[1].series.identity
+
+
+@pytest.mark.parametrize("family",SUBJECTS)
+def test_first_two_expiry_coverage_loss_instant_drives_warning_boundary(owner,family):
+    loss=datetime.fromisoformat(LOSS[family])
+    before=owner.resolve(family,loss-timedelta(microseconds=1))
+    assert len(before)==2 and before[0].endpoint.expires_at==loss
+    with pytest.raises(OptionAuthorityError,match="E2_UNAVAILABLE"):
+        owner.resolve(family,loss)
 
 
 @pytest.mark.parametrize("field",["instrument_reference","market_reference","current_sha256",
@@ -335,6 +441,28 @@ def test_nonempty_strings_do_not_commission_a_review(files):
     update(files,mutate_current=lambda d:d.update(owner_reviews={k:"APPROVED" for k in d["owner_reviews"]}))
     with pytest.raises(ThetaError,match="OWNER_QUALIFICATION_REQUIRED"):
         ThetaTargetAuthorityAdapter(local_owner(files))(SUBJECTS,AT)
+
+
+def test_real_static_owner_review_activates_exact_current_bytes():
+    from kronos.theta.operational import (
+        CURRENT_SHA256, INSTRUMENT_REFERENCE, MARKET_REFERENCE, reviewed_owner)
+    owner=reviewed_owner()
+    assert owner.review.review_reference=="KRONOS-S3-01-O1-ATTRIBUTED-OWNER-REVIEW-20261028"
+    assert owner.review.instrument_reference==owner.instrument.pin.reference==INSTRUMENT_REFERENCE
+    assert owner.review.market_reference==owner.market.pin.reference==MARKET_REFERENCE
+    assert owner.review.current_sha256==owner.current_sha256==CURRENT_SHA256
+    assert all(v is None for v in owner.current["owner_reviews"].values())
+    assert all(t.owner_qualified for subject in SUBJECTS for t in owner.resolve(subject,AT))
+
+
+def test_predecessor_static_review_cannot_activate_new_current_bytes():
+    review=OptionAuthorityReview("KRONOS-CA-TE03A-20261012",
+        "KRONOS-MCX-OPTION-SERIES-2026/2026.2.0/SHA256:6fb82deb2485d1098f848257b23417caf494eece91fbdeced7988edab284a97e",
+        "KRONOS-MCX-OPTION-EXPIRY-2026/2026.2.0/SHA256:c34f63e6c59c8c02edb0d21ebeeef1479583e6653422bc2b73bd0213c3adde05",
+        "bfd2f9c50c823455e124cccf50722d05a92cacaf8665d6b6968d1327940dda1d",
+        "APPROVED","APPROVED")
+    with pytest.raises(OptionAuthorityError,match="OPTION_AUTHORITY_REVIEW_INVALID"):
+        OwnerOptionAuthority(review=review)
 
 
 def test_loaded_authority_detects_later_source_corruption(files):
@@ -392,10 +520,13 @@ def test_te04a_binding_compatibility_without_contract_changes(files):
         assert combined["answers"][subject]["binding"]["target_authority"]==owner.descriptor
 
 
-def test_predecessor_publication_and_source_bytes_stay_readable(owner):
+def test_predecessor_publication_and_source_bytes_stay_readable(files,owner):
     old=OwnerOptionAuthority(current_filename="current-2026.1.0.json")
+    predecessor=predecessor_owner(files)
     assert len(old.instrument.rows)==20
     assert old.instrument.pin.version=="2026.1.0"
-    assert owner.instrument.supersedes==old.instrument.pin.reference
-    assert owner.market.supersedes==old.market.pin.reference
-    assert old.resolve("SILVERM",AT)[0].series==owner.resolve("SILVERM",AT)[0].series
+    assert predecessor.instrument.supersedes==old.instrument.pin.reference
+    assert predecessor.market.supersedes==old.market.pin.reference
+    assert owner.instrument.supersedes==predecessor.instrument.pin.reference
+    assert owner.market.supersedes==predecessor.market.pin.reference
+    assert old.resolve("SILVERM",HISTORICAL_AT)[0].series==predecessor.resolve("SILVERM",HISTORICAL_AT)[0].series

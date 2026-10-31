@@ -8,8 +8,6 @@ evaluates K5, watches prices, or creates a trading state.
 
 from __future__ import annotations
 
-from kronos.application.failed_fenced_owners import recorded_cleanup
-
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
@@ -17,9 +15,8 @@ from hashlib import sha256
 import json
 import os
 from pathlib import Path
-from threading import RLock, Timer
-from kronos.application.failed_fenced_owners import recorded_callback
-
+from threading import Condition, RLock, Thread, Timer, current_thread
+from time import monotonic
 from kronos.common.maintenance_admission import MaintenanceAdmissionCoordinator
 from typing import Callable
 from zoneinfo import ZoneInfo
@@ -174,19 +171,37 @@ class SwingK5RefreshReminderWorkflow:
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         scheduler: Callable[[float, Callable[[], None]], object] | None = None,
         maintenance_admission: MaintenanceAdmissionCoordinator | None = None,
+        defer_execution: bool = False,
     ) -> None:
-        from kronos.application.failed_fenced_owners import register_owner
-        register_owner('REMINDERS', self, __file__)
         self._store = store or K5RefreshReminderStore()
         self._calendar = calendar or MarketCalendarPublisher()
         self._listener = notification_listener
         self._clock = clock
         self._scheduler = scheduler or _timer_scheduler
         self._lock = RLock()
+        # Durable mutations serialize independently. Never hold the execution
+        # state lock across store I/O: close must be able to fence and observe
+        # a stalled write within the existing cleanup deadline.
+        self._mutation_lock = RLock()
+        self._mutations = 0
+        self._completion = Condition(self._lock)
+        self._deferred_execution = defer_execution
+        self._active = not defer_execution
+        self._closed = False
+        self._failed = False
+        self._cleanup_unresolved = False
         self._records = {
             item.reminder_identity: item for item in self._store.load_current()
         }
+        # Reserve each timer BEFORE calling a scheduler that may start it before
+        # returning its handle. Keep returned threads until actual termination.
         self._timers: dict[str, object] = {}
+        self._handles: dict[object, object] = {}
+        self._scheduling: set[object] = set()
+        self._callbacks: set[object] = set()
+        self._firing: set[str] = set()
+        self._callback_threads: dict[object, Thread] = {}
+        self._cancelled: set[object] = set()
         self._maintenance_admission = maintenance_admission
         for record in tuple(self._records.values()):
             if record.state is RefreshReminderState.PENDING:
@@ -245,6 +260,28 @@ class SwingK5RefreshReminderWorkflow:
     def _synchronize_owned(
         self, current_run_identity, promotions, exchange_by_instrument
     ) -> K5RefreshReminderSnapshot:
+        with self._lock:
+            if self._closed or self._failed:
+                raise ValueError("K5_REFRESH_REMINDER_OWNER_CLOSED_OR_FAILED")
+            self._mutations += 1
+        try:
+            with self._mutation_lock:
+                self._synchronize_records(current_run_identity, promotions,
+                                          exchange_by_instrument)
+            with self._lock:
+                pending = tuple(self._records.values())
+            for record in pending:
+                if record.state is RefreshReminderState.PENDING:
+                    self._schedule(record)
+            return self.snapshot()
+        finally:
+            with self._completion:
+                self._mutations -= 1
+                self._completion.notify_all()
+
+    def _synchronize_records(
+        self, current_run_identity, promotions, exchange_by_instrument
+    ) -> None:
         if current_run_identity is not None and not is_swing_analysis_run_id(current_run_identity):
             raise ValueError("K5_REFRESH_REMINDER_RUN_INVALID")
         if type(promotions) is not tuple or any(
@@ -315,7 +352,6 @@ class SwingK5RefreshReminderWorkflow:
                     values_dict | {"integrity_sha256": _integrity_values(values_dict)}
                 ))
                 self._retain(record)
-                self._schedule(record)
 
         with self._lock:
             pending = tuple(
@@ -325,52 +361,176 @@ class SwingK5RefreshReminderWorkflow:
             )
         for record in pending:
             self._transition(record, RefreshReminderState.SUPERSEDED, now)
-        return self.snapshot()
+    def _activate_execution(self) -> bool:
+        """Called by canonical composition only after verified custody release."""
+        with self._lock:
+            if self._closed or self._failed:
+                raise ValueError("K5_REFRESH_REMINDER_OWNER_CLOSED_OR_FAILED")
+            if self._active:
+                return False
+            self._active = True
+            pending = tuple(self._records.values())
+        for record in pending:
+            if record.state is RefreshReminderState.PENDING:
+                self._schedule(record)
+        return True
 
-    @recorded_cleanup('CLOSE_REMINDERS')
+    def _cancel(self, token: object) -> None:
+        with self._lock:
+            timer = self._handles.get(token)
+            if timer is None or token in self._cancelled:
+                return
+            self._cancelled.add(token)
+        try:
+            timer.cancel()
+        except BaseException:
+            with self._lock:
+                self._cleanup_unresolved = True
+            raise
+
     def close(self) -> None:
         with self._lock:
-            timers = tuple(self._timers.values())
-            self._timers.clear()
-        for timer in timers:
-            cancel = getattr(timer, "cancel", None)
-            if callable(cancel):
-                cancel()
+            self._closed = True
+            self._active = False
+            tokens = tuple(self._handles)
+            self._completion.notify_all()
+        for token in tokens:
+            self._cancel(token)
+
+    def cleanup_complete(self) -> bool:
+        with self._lock:
+            return (self._closed and not self._scheduling and not self._callbacks
+                and not self._firing and not self._mutations and not self._cleanup_unresolved
+                and all(isinstance(handle, Thread) and handle.ident is not None
+                        and not handle.is_alive()
+                        for handle in self._handles.values()))
+
+    def _wait_closed(self, deadline: float) -> bool:
+        """Observe the same close operation within the caller's absolute budget."""
+        while monotonic() < deadline:
+            with self._lock:
+                if self.cleanup_complete():
+                    return True
+                if self._cleanup_unresolved:
+                    return False
+                threads = tuple(handle for handle in self._handles.values()
+                    if isinstance(handle, Thread) and handle.is_alive())
+            for thread in threads:
+                remaining = deadline - monotonic()
+                if remaining <= 0 or thread is current_thread():
+                    return False
+                thread.join(timeout=min(.01, remaining))
+            with self._completion:
+                remaining = deadline - monotonic()
+                if remaining > 0 and not self.cleanup_complete():
+                    self._completion.wait(timeout=min(.01, remaining))
+        return False
+
+    def maintenance_status(self) -> dict[str, object]:
+        with self._lock:
+            return dict(closed=self._closed, active=self._active, failed=self._failed,
+                scheduling=len(self._scheduling), callbacks=len(self._callbacks),
+                mutations=self._mutations,
+                firing=len(self._firing), live_timers=sum(
+                    isinstance(handle, Thread) and handle.is_alive()
+                    for handle in self._handles.values()),
+                cleanup_unresolved=self._cleanup_unresolved,
+                cleanup_complete=self.cleanup_complete())
 
     def _schedule(self, record: K5RefreshReminderRecord) -> None:
+        with self._lock:
+            if (not self._active or self._closed or self._failed
+                    or self._records.get(record.reminder_identity) is not record
+                    or record.state is not RefreshReminderState.PENDING
+                    or record.reminder_identity in self._timers
+                    or record.reminder_identity in self._firing):
+                return
+            # Reap only known terminated handles; never discard unresolved work.
+            for old, handle in tuple(self._handles.items()):
+                if (isinstance(handle, Thread) and handle.ident is not None
+                        and not handle.is_alive()):
+                    self._handles.pop(old)
+                    self._callback_threads.pop(old, None)
+                    self._cancelled.discard(old)
+            token = object()
+            self._timers[record.reminder_identity] = token
+            self._scheduling.add(token)
         delay = max(
             0.0,
             (record.next_eligible_completed_1h_boundary - self._clock()).total_seconds(),
         )
-        callback = lambda: self._fire(record.reminder_identity)
-        if getattr(self, "_ff_composition", None) is not None:
-            if self._scheduler is not _timer_scheduler:
-                raise ValueError("FAILED_FENCED_TIMER_IMPLEMENTATION_UNSUPPORTED")
-            timer = _timer_scheduler(delay, callback, owner=self)
-        else:
-            timer = self._scheduler(delay, callback)
-        with self._lock:
-            self._timers[record.reminder_identity] = timer
-
-    @recorded_callback
-    def _fire(self, reminder_identity: str) -> None:
-        admission = self._maintenance_admission
-        ticket = None if admission is None else admission.admit("REMINDER")
-        if admission is not None and ticket is None:
-            return
         try:
+            timer = self._scheduler(
+                delay, lambda: self._fire(record.reminder_identity, token))
+        except BaseException:
+            with self._completion:
+                # A scheduler may have started work before raising. Unknown
+                # ownership is not repaired by an empty timer dictionary.
+                self._failed = True
+                self._active = False
+                self._cleanup_unresolved = True
+                self._scheduling.discard(token)
+                self._completion.notify_all()
+            raise
+        with self._completion:
+            self._handles[token] = timer
+            self._scheduling.remove(token)
+            entered = self._callback_threads.get(token)
+            if isinstance(timer, Thread) and entered is not None and entered is not timer:
+                self._cleanup_unresolved = True
+            cancel = (self._closed or self._failed
+                      or self._timers.get(record.reminder_identity) is not token)
+            self._completion.notify_all()
+        if cancel:
+            self._cancel(token)
+
+    def _fire(self, reminder_identity: str, token: object | None = None) -> None:
+        scheduled = token is not None
+        if token is None:
+            token = object()
+        with self._completion:
+            self._callbacks.add(token)
+            if scheduled:
+                self._callback_threads[token] = current_thread()
+            eligible = (self._active and not self._closed and not self._failed
+                and reminder_identity not in self._firing
+                and (not scheduled or self._timers.get(reminder_identity) is token))
+            if eligible:
+                self._firing.add(reminder_identity)
+        admission = self._maintenance_admission
+        ticket = None
+        try:
+            if not eligible:
+                return
+            ticket = None if admission is None else admission.admit("REMINDER")
+            if admission is not None and ticket is None:
+                return
             if ticket is None:
                 self._fire_owned(reminder_identity)
             else:
                 with ticket.activate():
                     self._fire_owned(reminder_identity)
+        except BaseException:
+            with self._lock:
+                self._failed = True
+                self._active = False
+            raise
         finally:
             if ticket is not None:
                 ticket.release()
+            with self._completion:
+                if eligible:
+                    self._firing.discard(reminder_identity)
+                self._callbacks.discard(token)
+                if scheduled and self._timers.get(reminder_identity) is token:
+                    self._timers.pop(reminder_identity)
+                self._completion.notify_all()
 
     def _fire_owned(self, reminder_identity: str) -> None:
         with self._lock:
             record = self._records.get(reminder_identity)
+            if not self._active or self._closed or self._failed:
+                return
         if (
             record is None
             or record.state is not RefreshReminderState.PENDING
@@ -406,12 +566,15 @@ class SwingK5RefreshReminderWorkflow:
         updated = K5RefreshReminderRecord(**(
             values | {"integrity_sha256": _integrity_values(values)}
         ))
-        self._retain(updated)
-        with self._lock:
-            timer = self._timers.pop(record.reminder_identity, None)
-        cancel = getattr(timer, "cancel", None)
-        if callable(cancel):
-            cancel()
+        with self._mutation_lock:
+            with self._lock:
+                if self._records.get(record.reminder_identity) is not record:
+                    return  # Never overwrite a later lawful reconciliation.
+            self._retain(updated)
+            with self._lock:
+                token = self._timers.pop(record.reminder_identity, None)
+        if token is not None:
+            self._cancel(token)
 
     def _retain(self, record: K5RefreshReminderRecord) -> None:
         self._store.retain(record)
@@ -539,14 +702,9 @@ def _json_default(value: object) -> object:
     raise TypeError
 
 
-def _timer_scheduler(delay: float, operation: Callable[[], None], *, owner=None) -> Timer:
+def _timer_scheduler(delay: float, operation: Callable[[], None]) -> Timer:
     timer = Timer(delay, operation)
     timer.daemon = True
-    if owner is not None:
-        from kronos.application.failed_fenced_owners import record_resource, retire_owned_timer
-        record_resource(owner, operation, "CALLBACK")
-        record_resource(owner, timer, "TIMER", cleanup_action="CANCEL_TIMER",
-                        cleanup=lambda: retire_owned_timer(owner, timer))
     timer.start()
     return timer
 

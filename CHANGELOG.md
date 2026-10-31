@@ -1,42 +1,38 @@
 # CHANGELOG
 
+## Slice 2.4 ordinary Release B maintenance successor — 25 October 2026
+
+Status: Sponsor-authorized isolated integration; CA exact-source review pending.
+Entry is corrected Slice 2.3 manifest
+`f3a9b1ef1ab3508b0b56813349fdc2b72af05387cf6ff1cb6fd755e0feb46332`.
+Scope ceiling is `1b7be60bd37ed5ed456e347c03ada9eef5a37b89e92b8f782662359f1117b328`.
+The selected 19 inputs are bound by
+`1c2c09127dba712af6965a596d05b09a6ec572b9c1ef9c8a37cda0faa1f41fb9`.
+This candidate integrates the original 1579 compact/dedicated-review server,
+renderer and diagnostics with the selected R3 material-warning/view inputs.
+The optional FAILED-successor Native/Local projection and its dependent
+server/test changes are excluded. Published R3 recovery authority is separate.
+
+The eight Slice 2.3 platform/source-gate/custody/helper paths are byte-identical.
+The only runtime-state change is the fixed maintenance source-policy literal;
+its existing checksum derives automatically. No readiness/restoration rule changes.
+LOCAL-01/02 mathematics, Native/KR-370/K4/V2, WO-07F, WO-12 originals, workbooks,
+recording schedule, Intraday, Theta and Option A remain with their existing owners.
+No model/Provider acquisition or trading authority is added.
+
+Current qualification, exact source identities, negative attempts and limitations
+are recorded in the separate Slice 2.4 frozen evidence package. Historical results
+below retain their original scope and dates; they are not tests or deployed
+acceptance of this successor. Exact-source owner review, final combined/release
+qualification, Release Policy applicability, installation applicability and
+source/artifact/operational authorization remain separate gates. No release,
+production-anchor population, provisioning, installation or runtime operation is
+performed by this slice. See the maintenance profile documents for the bounded
+source/custody/helper contract. No previous TradingView disposition is transferred.
+
 All notable changes to PROJECT KRONOS will be documented in this file.
 
 This project follows a milestone-based development approach.
-
-## Unreleased — R3 failed-fenced engineering checkpoint, 2026-10-22
-
-- Add isolated implementation of the approved closed recovery schemas, private
-  immutable store, prospective owner/operation accounting, cleanup journal,
-  notification reconciliation and distinct counted recovery transaction.
-- Add strict control framing, original executor return/join evidence and a
-  reviewed-tail integration boundary that withholds ordinary product finalizers.
-- Add bounded native bootstrap, anonymous grant-pipe and guard validation
-  components. Original V1/V2 maintenance and failed-active behavior remain
-  separately qualified; no historical result transfers to this checkpoint.
-- Full canonical FAILED_FENCED recovery is **not complete or operational**.
-  Independent trust-preparation delivery into the native App entry, its original
-  controller ledger/closure wiring, and a genuine supported native positive path
-  remain blocked. No API-injection fixture establishes those missing paths.
-- Preserve analytical methodology, immutable research/product history and all
-  existing Provider/trading authority. No production publication, build,
-  installation, maintenance or runtime transition is authorized by this source.
-
-## Unreleased — Bounded Swing failed-active recovery, 2026-10-22
-
-- Extend the existing canonical recovery class for the closed October Swing
-  release incident. Require exact reviewed source/package/diagnosis, Sponsor
-  authorization, predecessor PID/start/control, bounded validity and one use.
-- Preserve clean published source admission, independently validated retained
-  continuity, absent Provider, counted drain and authenticated V2 handoff.
-- Verify actual successor restoration and immutable consumption/startup records
-  within the unchanged 120-second READY limit. Never retry automatically.
-- FAILED_FENCED, incomplete drain, uncertain cleanup and invalid authority remain
-  denied. Successful failed-fence continuation requires a separate Chief Architect
-  decision; this candidate does not close that mandatory recovery gate.
-- No application mathematics, shared owner implementation, Pine, historical
-  record or Provider/trading authority changes. Isolated engineering only;
-  independent owner/artifact approval and operational authority remain pending.
 
 ## Unreleased — Swing coordinated Opportunities and market Review UX, 2026-10-21
 
@@ -336,26 +332,3 @@ Existing production source and ownership remain unchanged from the frozen UX
 candidate. EA-Swing and PCP exact-source reviews are PENDING. Qualification
 results and exact source hashes are in the separate frozen closure evidence
 package; no predecessor approval or production authority transfers.
-
-## Isolated continuation — R3 native integration and compact warnings, 2026-10-23
-
-- Continue the preserved 22 October checkpoint under the existing approved R3
-  contract and explicit Sponsor engineering order. No new authority schema,
-  recovery permission, analytical methodology or operating action is introduced.
-- Wire fixed-estate preparation selection, actual native controller ownership,
-  original helper/executor closure, source-pinned startup, guarded dispatch and
-  the counted recovery/child handshake. Native package checks retain their strict
-  predicates and share the recovery deadline when invoked by this path.
-- Restore accepted compact warning summaries for unavailable evidence, bounded
-  no-setup reasons and K5 refresh/reminder state. Move obsolete full-detail test
-  expectations to the retained detailed renderer while testing current compact
-  navigation, identities, missingness and action suppression.
-- Preserve the existing admission-specific unavailable-Local fallback. Genuine
-  invalid or changing source authority still denies the page; missing charts or
-  Answers do not fabricate an accepted Review result.
-- Final actual-source qualification, native roundtrip results, reconstruction and
-  remaining gates are recorded in the separately frozen 23 October engineering
-  package. Component passes alone do not establish complete native recovery.
-- The preceding checkpoint entries are historical. This engineering continuation
-  authorizes no publication, production artifact build, installation, maintenance,
-  runtime replacement, Provider/model acquisition or trading.

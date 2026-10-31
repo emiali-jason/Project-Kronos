@@ -13,8 +13,6 @@ from kronos.intraday.wo10_futures_store import _sync_directory
 
 class LifecycleStore:
     def __init__(self, root):
-        from kronos.application.failed_fenced_owners import register_owner
-        register_owner('WO11', self, __file__)
         self.root = Path(root)
         self._deferred_notices = {}
 
@@ -129,11 +127,6 @@ class LifecycleStore:
             raise ValueError("WO11_CURRENT_POINTER_CHANGED")
         if previous is not None and transition.current.data["predecessor"] != previous:
             raise ValueError("WO11_PREDECESSOR_MISMATCH")
-        from kronos.application.failed_fenced_owners import prepare_effect, committed_effect
-        changed = current is None or any(current.data[key] != transition.current.data[key]
-            for key in ("state", "entry", "exit", "monitoring"))
-        recovery = prepare_effect(self, "TRACK", transition.current.identity,
-            transition.current, previous=current, required=changed)
         for item in transition.evidence:
             self.retain(item)
         self.retain(transition.current)
@@ -154,7 +147,6 @@ class LifecycleStore:
         finally:
             if os.path.exists(temporary):
                 os.unlink(temporary)
-        committed_effect(self, recovery, transition.current)
         if emit_notifications:
             self.notify_publication(current, transition.current)
         else:
@@ -177,24 +169,6 @@ class LifecycleStore:
             raise ValueError("WO11_PUBLICATION_NOTICE_INVALID")
         if previous is not None and self.load(previous.identity) != previous:
             raise ValueError("WO11_PUBLICATION_NOTICE_INVALID")
-        accounting = getattr(self, "_failed_fenced_accounting", None)
-        if accounting is not None:
-            changed = previous is None or any(previous.data[key] != current.data[key]
-                for key in ("state", "entry", "exit", "monitoring"))
-            captured = self._deferred_notices.pop(current.identity, None)
-            if captured is not None:
-                if captured[0] != (None if previous is None else previous.identity):
-                    raise ValueError("WO11_PUBLICATION_NOTICE_INVALID")
-                _, book, notification, journal = captured
-            else:
-                book = getattr(self, "book_listener", None)
-                notification = getattr(self, "notification_listener", None) if changed else None
-                journal = getattr(self, "journal_listener", None) if changed else None
-            accounting.dispatch("TRACK", current.identity, (
-                ("book_failure", book, "INTRADAY_BOOK_SOURCE_UNAVAILABLE"),
-                ("notification_failure", notification, "NOTIFICATION_PROJECTION_UNAVAILABLE"),
-                ("journal_failure", journal, "JOURNAL_PROJECTION_UNAVAILABLE")))
-            return
         if current.identity in self._deferred_notices:
             reference = self._deferred_notices[current.identity]
             if reference[0] != (None if previous is None else previous.identity):

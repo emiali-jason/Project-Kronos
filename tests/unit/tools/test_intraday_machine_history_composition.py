@@ -11,7 +11,9 @@ from tests.unit.application.test_intraday_machine_history import inventory
 
 def test_canonical_assignment_injects_same_stores_and_bound_method_without_reads(tmp_path):
     tree=ast.parse((Path(__file__).resolve().parents[3]/'tools/kronos_browser.py').read_text())
-    main=next(n for n in tree.body if isinstance(n,ast.FunctionDef) and n.name=='main')
+    owners=[n for n in ast.walk(tree) if isinstance(n,ast.FunctionDef) and n.name=='_run_main']
+    assert len(owners)==1
+    main=owners[0]
     assignment=next(n for n in ast.walk(main) if isinstance(n,ast.Assign)
         and any(isinstance(t,ast.Name) and t.id=='intraday_machine_history' for t in n.targets))
     runtime=SimpleNamespace(wo08_store=Wo08AssessmentStore(tmp_path),

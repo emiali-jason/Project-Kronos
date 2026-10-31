@@ -9,11 +9,6 @@ from kronos.common.maintenance import DrainStartupContext
 from kronos.application.intraday_notifications import IntradayNotifications
 from kronos.browser.runtime_state import complete_startup
 from tools import kronos_browser
-
-# These tests exercise the unchanged ordinary composition body with isolated
-# fake owners/native leaves. Public capable-entry preparation and HOME/
-# namespace denials are qualified in test_failed_fenced_launcher.py and
-# the actual prepared C roundtrip fixture; no static approval is implied.
 from kronos.provider.contracts.provider_authentication import ReadOnlyProviderOperation
 from kronos.provider.runtime import (
     SharedAuthenticatedProviderRuntime, ProviderRuntimeAccessError,
@@ -25,35 +20,83 @@ from provider.test_shared_provider_runtime import _Runtime, _authenticate
 import pytest
 
 
+class _FixtureNotifications:
+    """Inert component double with observable once-only close bookkeeping."""
+    _executor = None
+    def __init__(self, **kwargs):
+        from hashlib import sha256
+        self._closed = False
+        self._checkpoint = kwargs.get('expected_checkpoint') or dict(
+            state='EMPTY',pending_count=0,sha256=sha256(b'').hexdigest())
+    def bind_maintenance_admission(self, admission):
+        self.maintenance_admission = admission
+    def bind(self, _probables): pass
+    def close(self, **_kwargs): self._closed = True
+    def maintenance_status(self): return dict(closed=self._closed,scheduled=False)
+    def checkpoint(self, **_kwargs): return dict(self._checkpoint)
+
+
+class _FixtureApplication:
+    _closed = False
+    def authenticated_read_only_capability(self): return None
+    def close(self): self._closed = True
+    def connection_attempt_status(self): return None
+    def analysis_work_status(self):
+        assert self._closed
+        return dict(state='IDLE',generation=None,owned_workers=0,queued_items=0)
+    def analysis_execution_status(self):
+        assert self._closed
+        return dict(state='IDLE',generation=None,owned_workers=0,queued_jobs=0,cleanup_state='COMPLETE')
+
+
+def _fixture_housekeeping(bind):
+    class Housekeeping:
+        production_activation = True
+        _stopped = False
+        def bind_maintenance_admission(self, admission): bind(admission)
+        def shutdown(self): self._stopped = True
+        def status_document(self):
+            return dict(lifecycle_state='STOPPED' if self._stopped else 'RUNNING',owned_workers=0,pass_active=False)
+    return Housekeeping()
+
+
+def _own_fixture_server(server, cleanup):
+    # The component factory owns only its returned fake server. Real factory
+    # tests below still use the actual server construction and cleanup ledger.
+    server._fixture_closed = False
+    original = server.server_close
+    def close():
+        original()
+        server.swing_monitoring_hub.close()
+        server._fixture_closed = True
+    server.server_close = close
+    server._maintenance_final_owner_proof = lambda: server._fixture_closed
+    cleanup.server = server
+    cleanup.own('server',server,'server_close',lambda owner:owner._fixture_closed)
+    return server
+
+
 @pytest.fixture(autouse=True)
 def isolated_composition_authority(monkeypatch):
     # Tests compose fake servers in the kernel-isolated test home; no production bypass.
     monkeypatch.setattr("tools.runtime_source_gate.qualify_startup", lambda *_: "a" * 40)
     monkeypatch.setattr("kronos.browser.runtime_state.complete_startup", lambda *_, **__: None)
-    class _IntradayNotifications:
-        def __init__(self, **_kwargs):
-            pass
-        def bind_maintenance_admission(self, admission):
-            self.maintenance_admission = admission
-        def bind(self, _probables):
-            pass
-        def close(self, **_kwargs):
-            pass
     monkeypatch.setattr(
         "kronos.application.intraday_notifications.IntradayNotifications",
-        _IntradayNotifications,
+        _FixtureNotifications,
     )
 
 
 @pytest.mark.parametrize("family", list(McxFamily))
 def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch, tmp_path, family) -> None:
     events: list[object] = []
-    control = object()
+    control = kronos_browser.BrowserBackendRestartControl.create(path=tmp_path/'control')
     checkpoint = DrainStartupContext("a" * 64, "EMPTY", 0, "b" * 64)
     monkeypatch.setattr(kronos_browser, "consume_startup_context", lambda *_args, **_kwargs: checkpoint)
 
-    class _Notifications:
+    class _Notifications(_FixtureNotifications):
         def __init__(self, **kwargs):
+            super().__init__(**kwargs)
             assert kwargs["expected_checkpoint"] == checkpoint.notification_checkpoint()
             events.append("checkpoint-bound")
 
@@ -86,7 +129,7 @@ def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch, tm
 
     server = _Server()
 
-    class _Application:
+    class _Application(_FixtureApplication):
         def authenticated_read_only_capability(self):
             return None
 
@@ -106,7 +149,8 @@ def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch, tm
         lambda app, port, restart_control, product_routes,
         provider_instrument_master_operation, intraday_discovery_control,
         intraday_historical_control, provider_login_navigation,
-        mcx_v1_composition_factory, intraday_dashboard_summary: (
+        mcx_v1_composition_factory, intraday_dashboard_summary,
+        _startup_cleanup, _defer_k5_execution, _defer_ux10_delivery: (
             events.append(intraday_dashboard_summary()) or events.append((
                 app,
                 port,
@@ -117,14 +161,10 @@ def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch, tm
                 intraday_historical_control,
                 provider_login_navigation,
                 mcx_v1_composition_factory,
-            )) or server
+            )) or _own_fixture_server(server,_startup_cleanup)
         ),
     )
-    housekeeping = SimpleNamespace(
-        production_activation=True,
-        bind_maintenance_admission=lambda admission: events.append(
-            ("housekeeping-admission", admission)),
-    )
+    housekeeping = _fixture_housekeeping(lambda admission:events.append(('housekeeping-admission',admission)))
     monkeypatch.setattr(
         kronos_browser,
         "_compose_housekeeping",
@@ -135,7 +175,7 @@ def test_launcher_uses_loopback_server_and_opens_swing_workspace(monkeypatch, tm
         "open_new_tab",
         lambda url: events.append(url) or True,
     )
-    assert kronos_browser._main(["--port", "9123"]) == 0
+    assert kronos_browser.main(["--port", "9123"]) == 0
     assert events.index("checkpoint-bound") < events.index("notification-bind") < events.index("ready")
     assert "http://127.0.0.1:9123/swing/opportunities" in events
     assert "close" in events
@@ -285,8 +325,8 @@ def test_swing_grant_cannot_exceed_authenticated_provider_capability(tmp_path):
     shared.end_kronos_session()
 
 
-def test_developer_no_browser_mode_does_not_open_browser(monkeypatch) -> None:
-    control = object()
+def test_developer_no_browser_mode_does_not_open_browser(monkeypatch,tmp_path) -> None:
+    control = kronos_browser.BrowserBackendRestartControl.create(path=tmp_path/'control')
     class _Server:
         def startup_restoration_outcomes(self): return ()
         server_port = 9123
@@ -297,7 +337,7 @@ def test_developer_no_browser_mode_does_not_open_browser(monkeypatch) -> None:
         def serve_forever(self, **_kwargs): pass  # type: ignore[no-untyped-def]
         def server_close(self): pass
 
-    class _Application:
+    class _Application(_FixtureApplication):
         def authenticated_read_only_capability(self):
             return None
 
@@ -317,22 +357,20 @@ def test_developer_no_browser_mode_does_not_open_browser(monkeypatch) -> None:
         lambda _app, port, restart_control, product_routes,
         provider_instrument_master_operation, intraday_discovery_control,
         intraday_historical_control, provider_login_navigation,
-        mcx_v1_composition_factory, intraday_dashboard_summary: _Server(),
+        mcx_v1_composition_factory, intraday_dashboard_summary,
+        _startup_cleanup, _defer_k5_execution, _defer_ux10_delivery: _own_fixture_server(_Server(),_startup_cleanup),
     )
     monkeypatch.setattr(
         kronos_browser,
         "_compose_housekeeping",
-        lambda _server, _runtime: SimpleNamespace(
-            production_activation=True,
-            bind_maintenance_admission=lambda _admission: None,
-        ),
+        lambda _server, _runtime: _fixture_housekeeping(lambda _admission:None),
     )
     monkeypatch.setattr(
         kronos_browser.webbrowser,
         "open_new_tab",
         lambda _url: (_ for _ in ()).throw(AssertionError),
     )
-    assert kronos_browser._main(["--no-browser"]) == 0
+    assert kronos_browser.main(["--no-browser"]) == 0
 
 
 def test_canonical_main_installs_real_mcx_owner_before_ready_without_acquisition(
@@ -382,7 +420,7 @@ def test_canonical_main_installs_real_mcx_owner_before_ready_without_acquisition
     monkeypatch.setattr(kronos_browser, 'create_browser_server', composed)
     monkeypatch.setattr('kronos.browser.runtime_state.complete_startup', ready)
     monkeypatch.setattr(KronosBrowserServer, 'serve_forever', serve)
-    assert kronos_browser._main(['--port', '0', '--no-browser']) == 0
+    assert kronos_browser.main(['--port', '0', '--no-browser']) == 0
     assert events == ['owners-installed', 'ready', 'serve']
 
 
@@ -483,14 +521,14 @@ def test_canonical_startup_restores_pre_mcx_continuity_without_rewriting_it(
     args = ["--port", "0"] + ([] if failure_stage == "workspace" else ["--no-browser"])
     try:
         if checkpoint_matches and failure_stage is None:
-            assert kronos_browser._main(args) == 0
+            assert kronos_browser.main(args) == 0
             assert served == servers and len(served) == 1
         else:
             error = ValueError if failure_stage is None else RuntimeError
             message = ("WO13_NOTIFICATION_CHECKPOINT_MISMATCH" if failure_stage is None
                        else "isolated " + failure_stage + " startup failure")
             with pytest.raises(error, match=message):
-                kronos_browser._main(args)
+                kronos_browser.main(args)
             assert not served
             # Failure after server construction must clean canonical owners;
             # the test's defensive finally must not hide a leaked listener.
@@ -584,7 +622,7 @@ def test_macos_launcher_is_minimal_double_click_app_without_credentials() -> Non
     assert "request_graceful_shutdown" in source
     assert "wait_for_backend_stop" in source
     assert (
-        "if (!bootstrap && !replacement && !recovery && backend_is_reusable(control_path)) "
+        "if (!bootstrap && !replacement && !recovery && !restoration && native_reuse(control_path)) "
         "return open_workspace();"
     ) in source
     assert 'strcmp(mode, "GOVERNED_REPLACEMENT") == 0' in source

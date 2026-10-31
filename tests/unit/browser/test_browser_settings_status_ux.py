@@ -21,6 +21,61 @@ from kronos.market.calendar import CalendarCoverageHealth, CalendarCoverageStatu
 from tests.unit.application.test_swing_opportunities import _ready
 
 
+def test_s303_calendar_card_distinguishes_checker_and_approved_authority(tmp_path):
+    from tests.unit.application.test_mcx_official_check import engine
+    status = engine(tmp_path).settings_status()
+    status.update(checker_state='UPDATE AVAILABLE', lifecycle_state='RUNNING',
+                  last_failure='<script>private token</script>')
+    rendered = render_settings(_ready(), ChartAnalystConnectionStatus.NOT_CONFIGURED,
+        ChartAnalystV2ActivationStatus.DISABLED, mcx_check=status)
+    assert 'Official source checker: <strong>UPDATE AVAILABLE</strong>' in rendered
+    assert 'Approved active authority' in rendered and 'Checking / pending' in rendered
+    for family in ('GOLDM', 'SILVERM', 'COPPER', 'CRUDEOIL', 'NATURALGAS'):
+        assert family in rendered
+    assert '/settings/mcx-check/configure' in rendered
+    assert '/settings/mcx-check/now' in rendered
+    assert 'Automatic MCX checks' in rendered and 'MCX check frequency' in rendered
+    assert 'MCX_CHECK_FAILED' in rendered
+    assert 'private token' not in rendered and 'worker_thread_identity' not in rendered
+    assert 'max-width:600px' in rendered and 'overflow-wrap:anywhere' in rendered
+
+
+def test_s303_visual_observation_artifact_uses_real_view_and_approved_coverage(tmp_path):
+    from pathlib import Path
+    from tests.unit.application.test_mcx_official_check import engine, NOW
+    from kronos.theta.operational import reviewed_owner
+    status = engine(tmp_path, authority=reviewed_owner(), clock=lambda: NOW).settings_status()
+    status.update(checker_state='FAILED', last_failure='MCX_CHECK_TRANSPORT_UNAVAILABLE')
+    rendered = render_settings(_ready(), ChartAnalystConnectionStatus.NOT_CONFIGURED,
+        ChartAnalystV2ActivationStatus.DISABLED, mcx_check=status)
+    output = Path(__file__).resolve().parents[4] / 'evidence/visual'
+    output.mkdir(parents=True, exist_ok=True)
+    (output / 'settings.html').write_text(rendered)
+    assert not (tmp_path / 'mcx-check').exists()
+    request = output / 'observation-request.json'
+    if request.exists():
+        import json
+        import time
+        from tests.unit.browser.test_browser_server import _running_server
+        server, serving = _running_server(_ready())
+        checker = engine(tmp_path, authority=reviewed_owner(), clock=lambda: NOW)
+        checker._last_state = 'FAILED'
+        checker._last_failure = 'MCX_CHECK_TRANSPORT_UNAVAILABLE'
+        server.mcx_official_check = checker
+        (output / 'observation-ports.json').write_text(json.dumps(dict(
+            application=server.server_port)))
+        try:
+            deadline = time.monotonic() + 120
+            while not (output / 'observation-done').exists():
+                if time.monotonic() >= deadline: raise AssertionError('VISUAL_OBSERVATION_TIMEOUT')
+                time.sleep(.05)
+            assert not checker.store_root.exists()
+        finally:
+            server.shutdown(); serving.join(3); server.server_close()
+            assert not serving.is_alive()
+            request.rename(output / 'observation-request.completed.json')
+
+
 def _calendar(status: CalendarCoverageStatus) -> CalendarCoverageHealth:
     return CalendarCoverageHealth(
         "NSE",

@@ -1,4 +1,4 @@
-"""TE-09R real-authority, real-clock composition; all market evidence SYNTHETIC."""
+"""TE-09R real authority; explicit-window positives and actual-clock denials. All market evidence SYNTHETIC."""
 from contextlib import contextmanager
 from copy import deepcopy
 from datetime import datetime,timezone
@@ -23,11 +23,52 @@ import pytest
 from kronos.theta.contracts import SUBJECTS,ThetaError,digest,encode,stamp
 from kronos.theta.operational import TrialPaths,compose,admit_originals,reviewed_owner,OWNERSHIP
 from kronos.theta.methodology import ThetaMethodologyPublication
+from kronos.market.option_authority import OptionAuthorityReview
+from kronos.theta.target_authority import OwnerOptionAuthority
 from tests.unit.theta.test_assessment import documented_child,limited_c3
 from tests.unit.theta.test_combined_intake import snapshot
 from tests.unit.theta.test_producer_v3 import completed
 from tests.unit.theta.test_workflow import chart
 from tools import theta_trial
+
+
+# This is a fixture instant inside the S3.01 candidate window. Its review is
+# explicitly synthetic and exact-byte-bound; it grants no operational authority.
+APPROVED_WINDOW = datetime(2026, 10, 28, 8, 30, tzinfo=timezone.utc)
+
+
+def synthetic_candidate_owner():
+    candidate=OwnerOptionAuthority()
+    review=OptionAuthorityReview('SYNTHETIC-S3-01-TEST-REVIEW-NOT-OWNER-APPROVAL',
+        candidate.instrument.pin.reference,candidate.market.pin.reference,
+        candidate.current_sha256,'APPROVED','APPROVED')
+    return OwnerOptionAuthority(review=review)
+
+
+def bind_approved_window(app, at=APPROVED_WINDOW):
+    from kronos.theta.workflow import ThetaWorkflow
+    assert type(app.workflow) is ThetaWorkflow and not app.workflow.qualification_mode
+    if at is not None:
+        assert type(at) is datetime and at.tzinfo is not None
+        app.workflow.clock = lambda: at
+        assert app.workflow.now() == at
+    return app
+
+
+@pytest.fixture
+def approved_window(monkeypatch):
+    from kronos.theta import composition,operational
+    from kronos.theta.workflow import ThetaWorkflow
+    owner=synthetic_candidate_owner()
+    def actual_workflow(*args, **kwargs):
+        assert 'clock' not in kwargs
+        result = ThetaWorkflow(*args, clock=lambda: APPROVED_WINDOW, **kwargs)
+        assert type(result) is ThetaWorkflow and not result.qualification_mode
+        return result
+    monkeypatch.setattr(operational, 'ThetaWorkflow', actual_workflow)
+    monkeypatch.setattr(operational, 'reviewed_owner', lambda: owner)
+    monkeypatch.setattr(composition, 'reviewed_owner', lambda: owner)
+    return APPROVED_WINDOW
 
 
 def paths(root):
@@ -43,16 +84,17 @@ def originals():
             for role in (*SUBJECTS,'GLOBAL_MACRO')}
 
 
-def test_real_clock_review_methodology_targets_and_fresh_original_receipts(tmp_path):
-    config=paths(tmp_path.resolve());before=datetime.now(timezone.utc)
+def test_approved_window_review_methodology_targets_and_fresh_original_receipts(tmp_path,approved_window):
+    config=paths(tmp_path.resolve());before=approved_window
     app,metadata=compose(config)
     assert not app.workflow.qualification_mode and len(metadata['targets'])==5
-    assert reviewed_owner().current_sha256=='bfd2f9c50c823455e124cccf50722d05a92cacaf8665d6b6968d1327940dda1d'
+    assert app.producer.target_authority.owner.review.review_reference=='SYNTHETIC-S3-01-TEST-REVIEW-NOT-OWNER-APPROVAL'
     assert sum(len(x['targets']) for x in metadata['targets'].values())==10
     with pytest.raises(ThetaError,match='CONFIRMATION_REQUIRED'):
         admit_originals(app,originals(),sponsor_confirmed=False)
     workspace=admit_originals(app,originals(),sponsor_confirmed=True)
-    after=datetime.now(timezone.utc)
+    after=app.workflow.now()
+    assert before == after == APPROVED_WINDOW
     for card in workspace['cards']:
         assert before<=stamp(card['intake']['accepted_at'])<=after
         assert card['intake']['cutoff_basis']=='INTAKE_RECEIPT_NOT_CHART_TIME'
@@ -63,7 +105,7 @@ def test_real_clock_review_methodology_targets_and_fresh_original_receipts(tmp_p
 
 
 @pytest.mark.parametrize('mutation',['sha','bytes','role','extra','corrupt'])
-def test_original_payload_only_preflight_fails_before_selection(tmp_path,mutation):
+def test_original_payload_only_preflight_fails_before_selection(tmp_path,mutation,approved_window):
     app,_=compose(paths(tmp_path.resolve()));values=originals()
     if mutation=='sha': values['COPPER']['sha256']='0'*64
     if mutation=='bytes': values['COPPER']['payload']=b'bad'
@@ -77,14 +119,14 @@ def test_original_payload_only_preflight_fails_before_selection(tmp_path,mutatio
     assert not (app.store.root/'current.json').exists()
 
 
-def test_foreign_and_qualification_stores_cannot_be_adopted(tmp_path):
+def test_foreign_and_qualification_stores_cannot_be_adopted(tmp_path,approved_window):
     config=paths(tmp_path.resolve());config.root.mkdir(mode=0o700);(config.root/'evidence').mkdir()
     (config.root/'evidence/current.json').write_bytes(b'qualification selection')
     with pytest.raises(ThetaError,match='FOREIGN_STORE'): compose(config)
     assert not (config.root/OWNERSHIP).exists()
 
 
-def test_rehearsal_ownership_cannot_be_relabelled_genuine(tmp_path):
+def test_rehearsal_ownership_cannot_be_relabelled_genuine(tmp_path,approved_window):
     config=paths(tmp_path.resolve());app,_=compose(config)
     raw=(config.root/OWNERSHIP).read_bytes()
     forged=json.loads(raw);forged['mode']='GENUINE_TRIAL'
@@ -157,7 +199,7 @@ def test_child_without_kernel_denial_cannot_initialize_kronos(tmp_path):
     assert not (config.root/OWNERSHIP).exists()
 
 
-def test_six_originals_may_include_exact_jpeg_without_receipt_conversion(tmp_path):
+def test_six_originals_may_include_exact_jpeg_without_receipt_conversion(tmp_path,approved_window):
     config=paths(tmp_path.resolve());app,_=compose(config);values=originals()
     image=Image.new('RGB',(64,32),'#102436');stream=BytesIO();image.save(stream,format='JPEG')
     raw=stream.getvalue();values['COPPER']={'payload':raw,'media_type':'image/jpeg','sha256':digest(raw)}
@@ -214,8 +256,8 @@ def http_create(port):
     assert request(port,'POST','/theta-earners/question',urlencode({'input_state_sha256':state}))[0]==303
 
 
-def synthetic_answer(batch,questions,*,invalid=None):
-    value=completed(batch,questions);now=datetime.now(timezone.utc)
+def synthetic_answer(batch,questions,*,invalid=None,at=None):
+    value=completed(batch,questions);now=datetime.now(timezone.utc) if at is None else at
     for subject,child in value['answers'].items():
         child['analyzed_at']=now.isoformat();documented_child(child)
         if subject=='SILVERM':limited_c3(child,'E2')
@@ -223,7 +265,7 @@ def synthetic_answer(batch,questions,*,invalid=None):
     return json.dumps(value,ensure_ascii=False,indent=2).encode()+b'\n'
 
 
-def test_kernel_http_workflow_security_restart_replay_and_exact_projection(tmp_path):
+def test_kernel_http_workflow_security_restart_replay_and_exact_projection(tmp_path,approved_window):
     config=paths(tmp_path.resolve());port=free_port()
     # Admit six controlled originals through the same future transfer operation.
     app,_=compose(config);admit_originals(app,originals(),sponsor_confirmed=True)
@@ -237,7 +279,7 @@ def test_kernel_http_workflow_security_restart_replay_and_exact_projection(tmp_p
         http_create(port)
         app,_=compose(config);batch,questions=app.intake._batch(app.producer.selected()['batch_id'])
         assert not batch['synthetic'] and all(not q['synthetic'] for q in questions.values())
-        raw=synthetic_answer(batch,questions)
+        raw=synthetic_answer(batch,questions,at=approved_window)
         (config.inbox/(batch['batch_id']+'_ANSWERS.json')).write_bytes(raw)
         assert request(port,'POST','/theta-earners/import',urlencode({'question_batch_id':batch['batch_id']}))[0]==303
         result=app.restore_status()['import_operation']['result']
@@ -277,14 +319,39 @@ def test_kernel_http_workflow_security_restart_replay_and_exact_projection(tmp_p
     assert all('"provider_calls": 0' in ''.join(log) for log in (logs,second_log))
 
 
-def test_partial_acceptance_and_assessment_remain_independent(tmp_path):
+def test_partial_acceptance_and_assessment_remain_independent(tmp_path,approved_window):
     config=paths(tmp_path.resolve());app,_=compose(config)
     admit_originals(app,originals(),sponsor_confirmed=True)
     created=app.create_question_pack(app.input_state_sha256())['result']
-    batch,questions=app.intake._batch(created['batch_id']);raw=synthetic_answer(batch,questions,invalid='COPPER')
+    batch,questions=app.intake._batch(created['batch_id']);raw=synthetic_answer(batch,questions,invalid='COPPER',at=approved_window)
     (config.inbox/(batch['batch_id']+'_ANSWERS.json')).write_bytes(raw)
     result=app.import_astra_answers(batch['batch_id'])['result']
     assert result['intake']['package_status']=='PARTIAL'
     assert result['assessments']['COPPER'] is None
     assert sum(v['status']=='ACCEPTED' for v in result['intake']['children'].values())==4
     assert all(v['receipt_id'] for s,v in result['intake']['children'].items() if s!='COPPER')
+
+
+def test_real_current_clock_static_review_composes_with_actual_binding(tmp_path,record_property):
+    from kronos.theta.operational import CURRENT_SHA256,REVIEW_SHA256
+    now=datetime.now(timezone.utc)
+    candidate=OwnerOptionAuthority()
+    assert all(len(candidate.resolve(subject,now))==2 for subject in SUBJECTS)
+    owner=reviewed_owner()
+    assert owner.current_sha256==CURRENT_SHA256
+    assert owner.review.review_reference=='KRONOS-S3-01-O1-ATTRIBUTED-OWNER-REVIEW-20261028'
+    config=paths(tmp_path.resolve())
+    app,metadata=compose(config)
+    ownership=json.loads((config.root/OWNERSHIP).read_bytes())
+    assert ownership['review_sha256']==REVIEW_SHA256
+    assert ownership['target_authority']['sha256']==CURRENT_SHA256
+    assert app.producer.target_authority.owner is not candidate
+    assert app.producer.target_authority.owner.review.review_reference==owner.review.review_reference
+    assert len(metadata['targets'])==len(SUBJECTS)
+    assert all(set(value['targets'])=={'E1','E2'} for value in metadata['targets'].values())
+    record_property('actual_UTC_observed',now.isoformat())
+    record_property('eligible_families','5 with two targets each')
+    record_property('fixture_clock_binding','NONE; actual UTC; real static review admitted')
+    record_property('application_resource_disposition',
+        'composition returned; ownership committed; no server, provider or subprocess acquired')
+    record_property('fixture_teardown_disposition','pytest tmp_path cleanup occurs after assertions')

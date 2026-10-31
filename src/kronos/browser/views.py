@@ -6,6 +6,7 @@ from dataclasses import dataclass, replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from html import escape
+import re
 from urllib.parse import quote, urlencode
 from zoneinfo import ZoneInfo
 from uuid import uuid4
@@ -6541,6 +6542,51 @@ def _settings_status(
     )
 
 
+def _render_mcx_checker(status: dict[str, object] | None) -> str:
+    if status is None:
+        return '<p class="configuration-note">Official MCX checking is unavailable in this composition.</p>'
+    safe = lambda value: escape(str(value if value is not None else '—'))
+    enabled = status.get('automatic_check_enabled') is True
+    frequency = status.get('frequency', 'DAILY')
+    options = ''.join('<option value="' + item + '"' +
+        (' selected' if frequency == item else '') + '>' + item.title() + '</option>'
+        for item in ('DAILY', 'EVERY THREE DAYS', 'WEEKLY'))
+    state = status.get('checker_state') or 'NOT YET CHECKED'
+    running = status.get('lifecycle_state') in {'RUNNING', 'SCHEDULED'}
+    rows = []
+    coverage = status.get('coverage', {})
+    for family in ('GOLDM', 'SILVERM', 'COPPER', 'CRUDEOIL', 'NATURALGAS'):
+        item = coverage.get('families', {}).get(family, {})
+        rows.append('<details class="mcx-family"><summary><strong>' + family + '</strong> · ' +
+            safe(item.get('authority_health', 'UNAVAILABLE')) + ' · ' +
+            safe(item.get('warning', 'UNAVAILABLE')) + '</summary><div class="configuration-note">' +
+            'Approved E1: ' + safe(item.get('e1')) + '<br>Approved E2: ' + safe(item.get('e2')) +
+            '<br>Two-expiry coverage ends: ' + safe(item.get('coverage_loss_at')) + '</div></details>')
+    failure = status.get('last_failure')
+    # Only bounded internal codes are eligible for display; arbitrary transport
+    # exceptions, page contents and credentials cannot reach the Settings card.
+    if failure and (not isinstance(failure, str) or not re.fullmatch(r'MCX_CHECK_[A-Z_]{1,80}', failure)):
+        failure = 'MCX_CHECK_FAILED'
+    return ('<div id="mcx-check-controls"><p class="configuration-note">Official source checker: <strong>' +
+        safe(state) + '</strong>' + (' · Checking / pending' if running else '') + '</p>' +
+        '<form method="post" action="/settings/mcx-check/configure" class="mcx-check-form">' +
+        '<label>Automatic checks <select name="enabled" aria-label="Automatic MCX checks">' +
+        '<option value="on"' + (' selected' if enabled else '') + '>On</option>' +
+        '<option value="off"' + ('' if enabled else ' selected') + '>Off</option></select></label>' +
+        '<label>Frequency <select name="frequency" aria-label="MCX check frequency">' + options +
+        '</select></label><button type="submit">Save</button></form>' +
+        '<form method="post" action="/settings/mcx-check/now"><button type="submit"' +
+        (' disabled' if running else '') + '>Check now</button></form>' +
+        '<p class="configuration-note">Last attempt: ' + safe(status.get('last_attempt')) +
+        '<br>Last successful check: ' + safe(status.get('last_successful_check')) +
+        '<br>Next scheduled check: ' + (safe(status.get('next_scheduled_check') or 'Due after activation')
+        if enabled else 'Automatic checks off; Check now remains available') +
+        (('<br>Check failure: ' + safe(failure)) if failure else '') + '</p>' +
+        '<p class="configuration-note">Approved active authority</p>' + ''.join(rows) +
+        '<p class="configuration-note">Downloaded and staged evidence requires review. '
+        'Checking never activates Instrument or Market publications.</p></div>')
+
+
 def render_settings(
     snapshot: BrowserWorkspaceSnapshot,
     chart_analyst_status: ChartAnalystConnectionStatus,
@@ -6551,6 +6597,7 @@ def render_settings(
     telegram_status: TelegramConfigurationStatus | None = None,
     telegram_candidates: tuple[TelegramPrivateChatCandidate, ...] = (),
     kite_active_watch_count: int = 0,
+    mcx_check: dict[str, object] | None = None,
 ) -> str:
     if (
         type(chart_analyst_status) is not ChartAnalystConnectionStatus
@@ -6637,10 +6684,11 @@ def render_settings(
         for item in market_calendar_health
     )
     calendar_section = (
-        '<section class="configuration settings-card settings-calendar">'
+        '<section class="configuration settings-card settings-calendar" id="market-calendar">'
         '<div class="configuration-head"><div><h2>MARKET CALENDAR</h2>'
         '<small>Exchange trading sessions and calendar coverage</small></div></div>'
         f'{calendar_rows or "<p class=configuration-note>Calendar health unavailable.</p>"}'
+        + _render_mcx_checker(mcx_check) +
         '<details><summary>Technical details</summary>DOMAIN-008 Market Calendar</details></section>'
     )
     diagnostics_section = (
@@ -6828,7 +6876,13 @@ def render_settings(
         + '</div><script>const liveInitial=document.getElementById("kite-market-data").dataset.state;'
         'setInterval(async()=>{try{const r=await fetch("/status",{cache:"no-store"});'
         'if(!r.ok)return;const s=await r.json();if(s.live_monitoring!==liveInitial)'
-        'globalThis.kronosReloadWhenNavigationIdle();}catch(_e){}},1000);</script>'
+        'globalThis.kronosReloadWhenNavigationIdle();'
+        'const m=await fetch("/settings/mcx-check/status",{cache:"no-store"});'
+        'if(m.ok){const c=await m.json();const signature=JSON.stringify([c.checker_state,'
+        'c.lifecycle_state,c.last_attempt,c.last_failure]);'
+        'if(globalThis.mcxCheckSignature&&globalThis.mcxCheckSignature!==signature)'
+        'globalThis.kronosReloadWhenNavigationIdle();globalThis.mcxCheckSignature=signature;}'
+        '}catch(_e){}},1000);</script>'
     )
     return _page(
         title="Settings",
@@ -6837,7 +6891,11 @@ def render_settings(
         active_nav="Settings",
         active_tab="",
         body=body,
-        extra_styles=_SETTINGS_CSS,
+        extra_styles=_SETTINGS_CSS + '.mcx-check-form{display:flex;flex-wrap:wrap;gap:12px;align-items:end}'
+        '.mcx-check-form label{display:grid;gap:5px}.mcx-family{padding:10px 0;border-bottom:1px solid #283346}'
+        '.mcx-family .configuration-note{overflow-wrap:anywhere}.settings-calendar{min-width:0}'
+        '@media(max-width:600px){.mcx-check-form{display:grid;grid-template-columns:1fr}'
+        '.mcx-check-form select{width:100%;max-width:100%}}',
     )
 
 

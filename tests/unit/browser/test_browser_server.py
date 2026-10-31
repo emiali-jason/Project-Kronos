@@ -90,6 +90,83 @@ def _request_bytes(server, method: str, path: str):  # type: ignore[no-untyped-d
     return response.status, dict(response.headers), body
 
 
+def test_s303_settings_protected_posts_and_zero_write_gets(tmp_path):
+    from tests.unit.application.test_mcx_official_check import engine, activation, FixtureTransport
+    fixture = FixtureTransport()
+    checker = engine(tmp_path, transport=fixture)
+    checker.activate(activation())  # Explicit library fixture; canonical proof is separate.
+    from kronos.application.mcx_official_check import CheckFrequency
+    checker.configure(automatic_check_enabled=False, frequency=CheckFrequency.DAILY)
+    server, thread = _running_server(_ready())
+    server.mcx_official_check = checker
+    server._startup_cleanup.own('official_check', checker, 'close', lambda owner: owner.cleanup_complete())
+    headers = {'Origin': f'http://127.0.0.1:{server.server_port}',
+               'Content-Type': 'application/x-www-form-urlencoded'}
+    inventory = lambda: {str(p): p.read_bytes() for p in checker.store_root.rglob('*') if p.is_file()}
+    try:
+        before = inventory()
+        assert _request(server, 'GET', '/settings')[0] == 200
+        assert _request(server, 'GET', '/settings/mcx-check/status')[0] == 200
+        assert inventory() == before and fixture.calls == []
+        assert _request(server, 'POST', '/settings/mcx-check/now')[0] == 403
+        for body in ('enabled=yes&frequency=DAILY', 'enabled=off&frequency=BAD',
+                     'enabled=off&enabled=on&frequency=DAILY', 'enabled=off'):
+            assert _request(server, 'POST', '/settings/mcx-check/configure',
+                            headers=headers, body=body)[0] == 409
+        assert inventory() == before
+        assert _request(server, 'POST', '/settings/mcx-check/configure', headers=headers,
+                        body='enabled=off&frequency=WEEKLY')[0] == 303
+        assert checker.automatic_check_enabled is False
+        assert _request(server, 'POST', '/settings/mcx-check/now', headers=headers)[0] == 303
+        assert fixture.calls
+        assert checker.status_document()['checker_state'] == 'CURRENT'
+        assert server.maintenance_admission.claim('a' * 64)
+        assert _request(server, 'POST', '/settings/mcx-check/now', headers=headers)[0] == 503
+    finally:
+        server.shutdown(); thread.join(3); server.server_close()
+        assert not thread.is_alive()
+        assert checker.cleanup_complete()
+
+
+@pytest.mark.parametrize('kind', ['timely', 'expired', 'unknown'])
+def test_s303_server_cleanup_observes_actual_checker_owner(tmp_path, kind):
+    from tests.unit.application.test_mcx_official_check import engine, activation
+    from kronos.common.release_admission import ValidationBudget, monotonic_ns
+    from kronos.browser.server import _StartupCleanup
+    release, entered = Event(), Event()
+    handles = []
+    def runner(callback):
+        if kind == 'unknown':
+            raise RuntimeError('UNCERTAIN_TEST_LAUNCH')
+        def work():
+            entered.set(); assert release.wait(3); callback()
+        handle = Thread(target=work); handles.append(handle); handle.start(); return handle
+    checker = engine(tmp_path, runner=runner)
+    checker.activate(activation())
+    ledger = _StartupCleanup()
+    ledger.own('official_check', checker, 'close', lambda owner: owner.cleanup_complete())
+    if kind == 'unknown':
+        with pytest.raises(RuntimeError): checker.check_now()
+    else:
+        assert checker.check_now() == 'SCHEDULED' and entered.wait(1)
+    budget = ValidationBudget(monotonic_ns() + (1_000_000_000 if kind == 'timely' else 1_000_000))
+    try:
+        if kind == 'timely': release.set()
+        complete = ledger.cleanup(deadline=budget.deadline_ns / 1_000_000_000)
+        assert complete is (kind == 'timely')
+        assert checker.cleanup_complete() is (kind == 'timely')
+        assert checker._cleanup_outcome.budget_deadline_ns <= budget.deadline_ns + 1
+        if kind != 'timely':
+            assert ledger.snapshot()['official_check']['state'] == 'CLEANUP_UNRESOLVED'
+            assert checker.check_now() == 'DENIED'
+    finally:
+        release.set()
+        for handle in handles:
+            handle.join(3); assert not handle.is_alive()
+        # Cooperative fixture release cannot change the retained application result.
+        if kind != 'timely': assert not checker.cleanup_complete()
+
+
 def test_governed_handoff_waits_for_accepted_worker_and_final_cleanup() -> None:
     admission = MaintenanceAdmissionCoordinator()
     worker = admission.admit("WO11")

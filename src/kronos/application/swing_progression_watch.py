@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from kronos.application.failed_fenced_owners import recorded_cleanup
-
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -84,8 +82,6 @@ class SwingProgressionWatchWorkflow:
             [str, str, MonitoringConnectionState, datetime], None
         ] | None = None,
     ) -> None:
-        from kronos.application.failed_fenced_owners import register_owner
-        register_owner('PROGRESSION', self, __file__)
         if (
             not all(callable(item) for item in (clock, instrument_resolver))
             or (watch_listener is not None and not callable(watch_listener))
@@ -311,7 +307,6 @@ class SwingProgressionWatchWorkflow:
                 self._watches[watch_id] = updated
         return updated
 
-    @recorded_cleanup('CLOSE_PROGRESSION')
     def close_monitoring(self) -> None:
         with self._lock:
             consumers = tuple(self._consumers.values())
@@ -505,8 +500,6 @@ class _ProgressionMonitoringConsumer:
         self.notification_observation = None
 
     def bind(self, session) -> None:  # type: ignore[no-untyped-def]
-        from kronos.application.failed_fenced_owners import record_registration_alias
-        record_registration_alias(self.workflow, session)
         self.session = session
 
     def on_market_tick(self, tick: ProviderMarketTick) -> None:

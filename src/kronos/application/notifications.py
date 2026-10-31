@@ -86,11 +86,6 @@ __all__ = [
 
 def notify_persisted(store, kind, identity):
     """Notify independent projections; failure cannot invalidate a committed source."""
-    accounting = getattr(store, "_failed_fenced_accounting", None)
-    if accounting is not None and kind in {"READINESS", "CURRENTNESS", "COMPARISON", "UNAVAILABLE", "TRACK"}:
-        return accounting.dispatch(kind, identity, (
-            ("notification_failure", getattr(store, "notification_listener", None), "NOTIFICATION_PROJECTION_UNAVAILABLE"),
-            ("journal_failure", getattr(store, "journal_listener", None), "JOURNAL_PROJECTION_UNAVAILABLE")))
     for attribute, failure in (
         ("notification_listener", "NOTIFICATION_PROJECTION_UNAVAILABLE"),
         ("journal_listener", "JOURNAL_PROJECTION_UNAVAILABLE"),

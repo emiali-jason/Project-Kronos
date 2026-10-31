@@ -25,10 +25,10 @@ from kronos.theta.workflow import CHART_ROLES, MAX_CHART_BYTES, ThetaWorkflow
 REPOSITORY = Path(__file__).resolve().parents[3]
 GENUINE_ROOT = REPOSITORY / "output/theta-te09b-genuine-trial"
 SPONSOR_ROOT = Path("/Users/imranali/Documents/Project-KRONOS/KRONOS REVIEW PACK/Theta Earners")
-REVIEW_SHA256 = "4c297cde5c09b7c96b57707137ad21c14c0ae94091a9f8b785f9f0194d06dca0"
-CURRENT_SHA256 = "bfd2f9c50c823455e124cccf50722d05a92cacaf8665d6b6968d1327940dda1d"
-INSTRUMENT_REFERENCE = "KRONOS-MCX-OPTION-SERIES-2026/2026.2.0/SHA256:6fb82deb2485d1098f848257b23417caf494eece91fbdeced7988edab284a97e"
-MARKET_REFERENCE = "KRONOS-MCX-OPTION-EXPIRY-2026/2026.2.0/SHA256:c34f63e6c59c8c02edb0d21ebeeef1479583e6653422bc2b73bd0213c3adde05"
+REVIEW_SHA256 = "9d88e8539b229654fe3e853e6aaf0499ba0d1d419a8d692f68e942768fec6dd6"
+CURRENT_SHA256 = "c5e903c17b0d7c1ce28614fad5d8b78faf4e486425a5c6b8619efbc8dffd47ef"
+INSTRUMENT_REFERENCE = "KRONOS-MCX-OPTION-SERIES-2026/2026.3.0/SHA256:52c79cb0772830469483d1f05567aba846f7061f75ae7e05d5d4881f0bc569c1"
+MARKET_REFERENCE = "KRONOS-MCX-OPTION-EXPIRY-2026/2026.3.0/SHA256:b29356b18ced3f5fe9719d6439adc254cffc46354d4090ce30880fbfff7929dd"
 OWNERSHIP = "theta-operational.json"
 
 
@@ -81,7 +81,7 @@ def reviewed_owner():
         raw = read_at(fd, "ca-final-domain-review.json")
     require(digest(raw) == REVIEW_SHA256, "THETA_TRIAL_CA_REVIEW_INVALID")
     value = parse(raw)
-    require(value["review_reference"] == "KRONOS-CA-TE03A-20261012",
+    require(value["review_reference"] == "KRONOS-S3-01-O1-ATTRIBUTED-OWNER-REVIEW-20261028",
             "THETA_TRIAL_CA_REVIEW_INVALID")
     review = OptionAuthorityReview(value["review_reference"], INSTRUMENT_REFERENCE,
         MARKET_REFERENCE, CURRENT_SHA256, "APPROVED", "APPROVED")

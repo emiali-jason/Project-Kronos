@@ -1,5 +1,35 @@
 # KRONOS Engine Ownership
 
+## Slice 2.4 ordinary Release B maintenance successor — 25 October 2026
+
+Status: Sponsor-authorized isolated integration; CA exact-source review pending.
+Entry is corrected Slice 2.3 manifest
+`f3a9b1ef1ab3508b0b56813349fdc2b72af05387cf6ff1cb6fd755e0feb46332`.
+Scope ceiling is `1b7be60bd37ed5ed456e347c03ada9eef5a37b89e92b8f782662359f1117b328`.
+The selected 19 inputs are bound by
+`1c2c09127dba712af6965a596d05b09a6ec572b9c1ef9c8a37cda0faa1f41fb9`.
+This candidate integrates the original 1579 compact/dedicated-review server,
+renderer and diagnostics with the selected R3 material-warning/view inputs.
+The optional FAILED-successor Native/Local projection and its dependent
+server/test changes are excluded. Published R3 recovery authority is separate.
+
+The eight Slice 2.3 platform/source-gate/custody/helper paths are byte-identical.
+The only runtime-state change is the fixed maintenance source-policy literal;
+its existing checksum derives automatically. No readiness/restoration rule changes.
+LOCAL-01/02 mathematics, Native/KR-370/K4/V2, WO-07F, WO-12 originals, workbooks,
+recording schedule, Intraday, Theta and Option A remain with their existing owners.
+No model/Provider acquisition or trading authority is added.
+
+Current qualification, exact source identities, negative attempts and limitations
+are recorded in the separate Slice 2.4 frozen evidence package. Historical results
+below retain their original scope and dates; they are not tests or deployed
+acceptance of this successor. Exact-source owner review, final combined/release
+qualification, Release Policy applicability, installation applicability and
+source/artifact/operational authorization remain separate gates. No release,
+production-anchor population, provisioning, installation or runtime operation is
+performed by this slice. See the maintenance profile documents for the bounded
+source/custody/helper contract. No previous TradingView disposition is transferred.
+
 ## PLC-03C transport-only hygiene
 
 The Market reader may consume the same hash-pinned NIST original from its
@@ -233,49 +263,3 @@ Existing production source and ownership remain unchanged from the frozen UX
 candidate. EA-Swing and PCP exact-source reviews are PENDING. Qualification
 results and exact source hashes are in the separate frozen closure evidence
 package; no predecessor approval or production authority transfers.
-
-
-## Bounded Swing recovery engineering — 2026-10-22
-
-Status: isolated source candidate; independent owner approval and deployment pending.
-The existing canonical launcher and read-only successor verifier gain one closed
-October release incident. No analytical engine, numbering, method, persistence or
-product responsibility changes. Browser/application maintenance, counted owners,
-V2 handoff, source gate and startup completion remain their existing owners.
-FAILED_FENCED continuation is not implemented or approved; it remains safely held.
-See [recovery contract](../engineering/SWING-RELEASE-RECOVERY-20261022.md).
-<!-- R3 append-only ownership clarification; prior ownership decisions retained. -->
-
-## R3 recovery engineering checkpoint — 2026-10-22
-
-Status: approved prospective architecture under ADR-0068; implementation source
-review pending and full native recovery blocked. Shared runtime retains source,
-admission, original controller and lifecycle authority. Native product owners
-retain their own effect, callback, cleanup and immutable evidence semantics.
-The new recovery code cannot reconstruct Journal/Books history, run analytical
-work, acquire Provider data or create trading authority. Preparation, launcher,
-PCP, Intraday and Swing exact-source reviews are not inferred from contract
-approval. See [implementation limits](../engineering/FAILED-FENCED-R3-IMPLEMENTATION-STATUS.md).
-
-## R3 native integration ownership continuation — 2026-10-23
-
-Status: isolated implementation under the approved ADR-0068/R3 contract; actual
-source-owner and artifact approvals are pending independent review. Earlier
-checkpoint entries remain historical. No product ownership is transferred.
-
-The canonical launcher retains controller, service-lock, guard, single-child and
-private grant authority. Source-pinned helpers validate bounded factual evidence
-without acquiring signing keys or composition authority. Original execution and
-its evidence publisher remain separately counted until actual completion.
-Browser startup and shutdown preserve their existing owner boundaries.
-
-The package owner retains strict manifest/signature/executable verification.
-Recovery uses the existing canonical installer's retained exchanged-original
-layout and independently approved exact artifact identity; no arbitrary path or
-latest-file selection grants authority. Source-owned availability failures do not
-manufacture recovery eligibility. Product cleanup remains finite and once-only;
-unknown/started/failed cleanup, active WO17 and unsupported callbacks deny.
-
-The final frozen engineering package records actual qualification and limitations.
-Swing, PCP, affected Intraday and Chief Architect reviews of changed source do
-not transfer from contract approval. All later release gates remain separate.

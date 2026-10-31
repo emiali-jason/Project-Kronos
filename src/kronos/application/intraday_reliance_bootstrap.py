@@ -44,7 +44,9 @@ from kronos.provider.contracts.market_data import HistoricalCandle, HistoricalCa
 
 RELIANCE = "RELIANCE"
 PRESENTATION_SELECTION_POLICY = "LATEST_COMPLETED_FACT_PRESENTATION_ONLY_V1"
-from kronos.intraday.evidence_paths import DEFAULT_INTRADAY_EVIDENCE_ROOT
+DEFAULT_INTRADAY_EVIDENCE_ROOT = (
+    Path.home() / "Library" / "Application Support" / "KRONOS" / "evidence" / "intraday-v1"
+)
 _TIMEFRAMES = (
     IntradayTimeframe.DAILY,
     IntradayTimeframe.ONE_HOUR,

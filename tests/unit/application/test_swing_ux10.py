@@ -101,6 +101,212 @@ def ux10(tmp_path: Path, telegram=None):  # type: ignore[no-untyped-def]
     )
 
 
+def test_canonical_delivery_deferral_blocks_creation_retry_and_direct_worker_entry(tmp_path: Path) -> None:
+    telegram = Telegram()
+    service = SwingUx10NotificationService(
+        Ux10NotificationStore(tmp_path), telegram=telegram, clock=lambda: NOW,
+        background_runner=immediate, retry_scheduler=lambda _delay, _operation: None,
+        defer_delivery=True,
+    )
+
+    record = service.observe_progression_watch(_triggered("CANBK"))
+    assert record is not None
+    assert record.telegram_delivery_state is Ux10DeliveryState.PENDING
+    assert service.delivery_deferred
+    assert telegram.messages == []
+    assert Ux10NotificationStore(tmp_path).load() == (record,)
+
+    service.retry_pending()
+    service._retry_due(record.deduplication_key)
+    service._schedule_delivery(record.deduplication_key)
+    service._deliver(record.deduplication_key)
+    retained = Ux10NotificationStore(tmp_path).load()[0]
+    assert retained == record
+    assert retained.delivery_attempts == 0
+    assert telegram.messages == []
+
+    assert service.activate_delivery() is True
+    assert service.activate_delivery() is False
+    service.retry_pending()
+    assert len(telegram.messages) == 1
+    assert service.snapshot().records[0].telegram_delivery_state is Ux10DeliveryState.SENT
+    service.close()
+
+
+def test_deferred_owner_restores_pending_work_and_closed_owner_cannot_activate(tmp_path: Path) -> None:
+    unavailable = Telegram(enabled=False)
+    seed = ux10(tmp_path, unavailable)
+    original = seed.observe_progression_watch(_triggered("CANBK"))
+    assert original.telegram_delivery_state is Ux10DeliveryState.PENDING
+    seed.close()
+
+    telegram = Telegram()
+    restored = SwingUx10NotificationService(
+        Ux10NotificationStore(tmp_path), telegram=telegram, clock=lambda: NOW,
+        background_runner=immediate, defer_delivery=True,
+    )
+    assert restored.snapshot().records == (original,)
+    assert telegram.messages == []
+    restored.close()
+    with pytest.raises(ValueError, match="UX10_DELIVERY_OWNER_CLOSED"):
+        restored.activate_delivery()
+    assert telegram.messages == []
+    assert Ux10NotificationStore(tmp_path).load() == (original,)
+
+
+def test_deferred_activation_enqueue_and_close_keep_one_counted_worker(tmp_path: Path) -> None:
+    queued = []
+    admission = MaintenanceAdmissionCoordinator()
+    telegram = Telegram()
+    service = SwingUx10NotificationService(
+        Ux10NotificationStore(tmp_path), telegram=telegram, clock=lambda: NOW,
+        background_runner=lambda operation, _name: queued.append(operation),
+        maintenance_admission=admission, defer_delivery=True,
+    )
+    watch = _triggered("CANBK")
+    record = service.observe_progression_watch(watch)
+    assert record is not None
+
+    barrier = __import__("threading").Barrier(4)
+    errors = []
+    def call(operation):
+        barrier.wait()
+        try:
+            operation()
+        except BaseException as error:
+            errors.append(error)
+    threads = [
+        __import__("threading").Thread(target=call, args=(service.activate_delivery,)),
+        __import__("threading").Thread(target=call, args=(service.activate_delivery,)),
+        __import__("threading").Thread(target=call, args=(service.retry_pending,)),
+        __import__("threading").Thread(target=call, args=(lambda: service.observe_progression_watch(watch),)),
+    ]
+    for thread in threads: thread.start()
+    for thread in threads: thread.join(2)
+    assert all(not thread.is_alive() for thread in threads)
+    assert errors == []
+    assert len(queued) == 1
+    assert admission.snapshot()["owners"] == {"NOTIFICATION": 1}
+
+    service.close()
+    assert admission.snapshot()["owners"] == {"NOTIFICATION": 1}
+    queued.pop()()
+    assert admission.snapshot()["owners"] == {}
+    retained = Ux10NotificationStore(tmp_path).load()
+    assert retained == (record,)
+    assert retained[0].telegram_delivery_state is Ux10DeliveryState.PENDING
+    assert retained[0].delivery_attempts == 0
+    assert telegram.messages == []
+
+
+def test_activation_failure_is_sticky_and_blocks_earlier_queued_delivery(tmp_path: Path) -> None:
+    queued = []
+    admission = MaintenanceAdmissionCoordinator()
+    telegram = Telegram()
+
+    def submit(operation, _name):
+        if queued:
+            raise RuntimeError("UX10_SECOND_SCHEDULE_FAILED")
+        queued.append(operation)
+
+    service = SwingUx10NotificationService(
+        Ux10NotificationStore(tmp_path), telegram=telegram, clock=lambda: NOW,
+        background_runner=submit, retry_scheduler=lambda _delay, _operation: None,
+        maintenance_admission=admission, defer_delivery=True,
+    )
+    first = service.observe_progression_watch(_triggered("CANBK"))
+    second = service._create(
+        family=Ux10NotificationFamily.PROMOTION_WATCH,
+        notification_type=Ux10NotificationType.PROMOTION_CONDITION_MET,
+        priority=Ux10Priority.NORMAL,
+        instrument="INFY",
+        source_event_identity="C01-DISPOSABLE-SECOND-SOURCE",
+        summary="C01 distinct pending fixture.",
+        action="NO TRADE HAS BEEN AUTHORIZED",
+    )
+    assert first is not None and second is not None
+    before = Ux10NotificationStore(tmp_path).load()
+    assert len(before) == 2
+    assert all(item.telegram_delivery_state is Ux10DeliveryState.PENDING
+               and item.delivery_attempts == 0 for item in before)
+
+    with pytest.raises(RuntimeError, match="UX10_SECOND_SCHEDULE_FAILED"):
+        service.activate_delivery()
+
+    assert service._delivery_activation_failed is True
+    assert service._delivery_active is False
+    assert len(queued) == 1  # The first worker is submitted but not yet claimed.
+    assert admission.snapshot()["owners"] == {"NOTIFICATION": 1}
+
+    with pytest.raises(ValueError, match="UX10_DELIVERY_ACTIVATION_FAILED"):
+        service.activate_delivery()
+    third = service._create(
+        family=Ux10NotificationFamily.PROMOTION_WATCH,
+        notification_type=Ux10NotificationType.PROMOTION_CONDITION_MET,
+        priority=Ux10Priority.NORMAL,
+        instrument="TCS",
+        source_event_identity="C01-DISPOSABLE-THIRD-SOURCE",
+        summary="C01 enqueue after failed activation.",
+        action="NO TRADE HAS BEEN AUTHORIZED",
+    )
+    assert third is not None  # New facts are retained, but cannot be dispatched.
+    service.retry_pending()
+    service._retry_due(first.deduplication_key)
+    service._schedule_delivery(first.deduplication_key)
+    service._deliver(first.deduplication_key)
+    assert len(queued) == 1
+    assert telegram.messages == []
+
+    queued.pop()()  # The already-submitted, still-unclaimed worker is denied.
+    assert admission.snapshot()["owners"] == {}
+    after = Ux10NotificationStore(tmp_path).load()
+    assert len(after) == 3
+    for original in before:
+        retained = next(item for item in after if item.deduplication_key == original.deduplication_key)
+        assert retained == original
+        assert retained.delivery_attempts == 0
+        assert retained.telegram_delivery_state is Ux10DeliveryState.PENDING
+    assert telegram.messages == []
+    service.close()
+
+
+def test_activation_clock_failure_latches_owner_before_propagating_original_exception(
+    tmp_path: Path,
+) -> None:
+    telegram = Telegram()
+    service = SwingUx10NotificationService(
+        Ux10NotificationStore(tmp_path), telegram=telegram, clock=lambda: NOW,
+        background_runner=immediate, defer_delivery=True,
+    )
+    original = service.observe_progression_watch(_triggered("CANBK"))
+    assert original is not None
+    before = Ux10NotificationStore(tmp_path).load()
+
+    failure = RuntimeError("UX10_ACTIVATION_CLOCK_FAILED")
+    def failed_clock():
+        raise failure
+    service._clock = failed_clock
+
+    with pytest.raises(RuntimeError, match="UX10_ACTIVATION_CLOCK_FAILED") as raised:
+        service.activate_delivery()
+    assert raised.value is failure
+    assert service._delivery_activation_failed is True
+    assert service._delivery_active is False
+
+    with pytest.raises(ValueError, match="UX10_DELIVERY_ACTIVATION_FAILED"):
+        service.activate_delivery()
+    service.retry_pending()
+    service._schedule_delivery(original.deduplication_key)
+    service._retry_due(original.deduplication_key)
+    service._deliver(original.deduplication_key)
+
+    assert Ux10NotificationStore(tmp_path).load() == before
+    assert service.snapshot().records == before
+    assert before[0].telegram_delivery_state is Ux10DeliveryState.PENDING
+    assert before[0].delivery_attempts == 0
+    assert telegram.messages == []
+
+
 def test_completed_bar_trigger_creates_one_reassessment_only_notification(tmp_path: Path) -> None:
     service = ux10(tmp_path)
     watch = _triggered("CANBK")
@@ -317,18 +523,30 @@ def test_retryable_delivery_is_persisted_and_bounded(tmp_path: Path) -> None:
 
 
 def test_maintenance_cancels_retry_timer_without_losing_durable_retry(tmp_path: Path) -> None:
+    import threading
+
     scheduled = []
 
     class TimerHandle:
         cancelled = False
+        finished = False
+        thread = None
 
         def cancel(self) -> None:
             self.cancelled = True
 
+        def is_alive(self) -> bool:
+            return not self.finished
+
     handle = TimerHandle()
 
     def schedule(_delay, operation):  # type: ignore[no-untyped-def]
-        scheduled.append(operation)
+        def callback():
+            try:
+                operation()
+            finally:
+                handle.finished = True
+        scheduled.append(callback)
         return handle
 
     admission = MaintenanceAdmissionCoordinator()
@@ -343,12 +561,37 @@ def test_maintenance_cancels_retry_timer_without_losing_durable_retry(tmp_path: 
     service.observe_progression_watch(_triggered("CANBK"))
     assert service.maintenance_status() == {"closed": False, "retry_callbacks": 1}
     assert len(scheduled) == 1
+    entered = threading.Event()
+    release = threading.Event()
+    original_due = service._retry_due
+
+    def blocked_due(dedup):
+        entered.set()
+        assert release.wait(2)
+        return original_due(dedup)
+
+    service._retry_due = blocked_due
+
+    operation = scheduled[0]
+
+    def run_callback():
+        try:
+            operation()
+        finally:
+            pass
+
+    handle.thread = threading.Thread(target=run_callback)
+    handle.thread.start()
+    assert entered.wait(2)
     generation = "d" * 64
     assert admission.claim(generation)
     admission.draining(generation)
     service.close()
     assert handle.cancelled
-    scheduled[0]()  # A racing callback after close cannot send or rewrite.
+    assert service.maintenance_status() == {"closed": True, "retry_callbacks": 1}
+    release.set()
+    handle.thread.join(2)
+    assert not handle.thread.is_alive()
     assert len(telegram.messages) == 1
     assert service.maintenance_status() == {"closed": True, "retry_callbacks": 0}
     assert Ux10NotificationStore(tmp_path).load()[0].next_retry_at is not None

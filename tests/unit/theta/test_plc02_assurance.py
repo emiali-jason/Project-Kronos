@@ -75,16 +75,21 @@ def test_three_product_current_composition_navigation_restart_and_private_shutdo
     from kronos.theta.composition import compose_theta_sponsor_workflow
     from kronos.theta.operational import admit_originals
     from tests.unit.theta.test_plc01_integration import configured
-    from tests.unit.theta.test_operational_trial import originals,synthetic_answer
+    from tests.unit.theta.test_operational_trial import (
+        originals,synthetic_answer,bind_approved_window,synthetic_candidate_owner)
     from tests.unit.theta.test_combined_intake import snapshot
     app=configured(tmp_path);admit_originals(app,originals(),sponsor_confirmed=True)
     batch=app.create_question_pack(app.input_state_sha256())['result']['batch_id']
     descriptor,questions=app.intake._batch(batch)
-    (app.workflow.inbox/(batch+'_ANSWERS.json')).write_bytes(synthetic_answer(descriptor,questions))
+    (app.workflow.inbox/(batch+'_ANSWERS.json')).write_bytes(synthetic_answer(descriptor,questions,at=app.workflow.now()))
     accepted=app.import_astra_answers(batch)['result'];before=snapshot(app.store.root);calls=[]
     def forbidden(*_,**__):calls.append('FORBIDDEN');raise AssertionError('PLC02_PROVIDER_FORBIDDEN')
     for iteration in range(2):
-        if iteration:app=compose_theta_sponsor_workflow(root=app.store.root,inbox=app.workflow.inbox,outbox=app.workflow.outbox)
+        if iteration:
+            from unittest.mock import patch
+            with patch('kronos.theta.composition.reviewed_owner',return_value=synthetic_candidate_owner()):
+                app=bind_approved_window(compose_theta_sponsor_workflow(
+                    root=app.store.root,inbox=app.workflow.inbox,outbox=app.workflow.outbox))
         shared=SharedAuthenticatedProviderRuntime(forbidden,provider_identity='KITE')
         intraday=create_intraday_runtime(shared,evidence_root=tmp_path/'intraday')
         owner=IntradayBrowserRoutes(intraday.discovery_v2_application,

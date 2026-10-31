@@ -13,8 +13,6 @@ from kronos.intraday.wo10_futures_contract import Record, encoded, digest, recor
 
 class FuturesStore:
     def __init__(self, root: Path):
-        from kronos.application.failed_fenced_owners import register_owner
-        register_owner('WO10', self, __file__)
         self.root = Path(root)  # No I/O on composition or historical restoration.
         self._deferred_notices = {}
 
@@ -35,9 +33,6 @@ class FuturesStore:
         if type(item) is not Record:
             raise ValueError("WO10_RECORD_REQUIRED")
         item.__post_init__()
-        from kronos.application.failed_fenced_owners import prepare_effect, committed_effect
-        recovery = (prepare_effect(self, "UNAVAILABLE", item.identity, item)
-            if item.schema == "WO10_CONSTRUCTION_UNAVAILABLE_V1" else None)
         target = self.root / "records" / (item.identity + ".json")
         target.parent.mkdir(parents=True, exist_ok=True)
         data = encoded(asdict(item)) + b"\n"
@@ -55,7 +50,6 @@ class FuturesStore:
             os.unlink(temp)
         _sync_directory(target.parent)
         if item.schema == "WO10_CONSTRUCTION_UNAVAILABLE_V1":
-            committed_effect(self, recovery, item)
             from kronos.application.notifications import notify_persisted
             notify_persisted(self, "UNAVAILABLE", item.identity)
         return item
@@ -93,9 +87,6 @@ class FuturesStore:
         current = self.current(c["subject"])
         if (None if current is None else current.identity) != previous:
             raise ValueError("WO10_CURRENT_POINTER_CHANGED")
-        from kronos.application.failed_fenced_owners import prepare_effect, committed_effect
-        recovery = prepare_effect(self, "COMPARISON", comparison.identity,
-            comparison, previous=current)
         self.retain(comparison)
         pointer = record("WO10_CURRENT_POINTER_V1", subject=c["subject"],
                          comparison_identity=comparison.identity, predecessor=previous,
@@ -112,7 +103,6 @@ class FuturesStore:
         finally:
             if os.path.exists(temp):
                 os.unlink(temp)
-        committed_effect(self, recovery, comparison)
         if emit_notifications:
             self.notify_publication(comparison.identity)
         else:
@@ -126,16 +116,6 @@ class FuturesStore:
     def notify_publication(self, comparison_identity):
         comparison = self.load(comparison_identity)
         require(comparison, "WO10_SPONSOR_COMPARISON_V1")
-        accounting = getattr(self, "_failed_fenced_accounting", None)
-        if accounting is not None:
-            callbacks = self._deferred_notices.pop(comparison.identity, (
-                getattr(self, "notification_listener", None),
-                getattr(self, "journal_listener", None)))
-            notification, journal = callbacks
-            accounting.dispatch("COMPARISON", comparison.identity, (
-                ("notification_failure", notification, "NOTIFICATION_PROJECTION_UNAVAILABLE"),
-                ("journal_failure", journal, "JOURNAL_PROJECTION_UNAVAILABLE")))
-            return
         if comparison.identity not in self._deferred_notices:
             from kronos.application.notifications import notify_persisted
             notify_persisted(self, "COMPARISON", comparison.identity)

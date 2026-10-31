@@ -4,6 +4,7 @@ from http.client import HTTPConnection
 import json
 from pathlib import Path
 from threading import Thread
+from unittest.mock import patch
 from urllib.parse import urlencode
 
 import pytest
@@ -15,14 +16,19 @@ from kronos.browser.product_routes import ProductBrowserRoutes, with_theta_route
 from kronos.browser.server import create_browser_server
 from kronos.theta.composition import compose_theta_sponsor_workflow
 from kronos.theta.operational import admit_originals
-from tests.unit.theta.test_operational_trial import originals,synthetic_answer
+from tests.unit.theta.test_operational_trial import (
+    originals,synthetic_answer,APPROVED_WINDOW,bind_approved_window,synthetic_candidate_owner)
 from tests.unit.theta.test_combined_intake import snapshot
 
 
-def configured(root):
+def configured(root,*,at=APPROVED_WINDOW):
     inbox=root/'answers';outbox=root/'questions'
     inbox.mkdir();outbox.mkdir()
-    return compose_theta_sponsor_workflow(root=root/'theta',inbox=inbox,outbox=outbox)
+    # Exact S3.01 bytes with an explicitly synthetic test review. Production's
+    # retained CA review remains unmodified and is separately proven to deny.
+    with patch('kronos.theta.composition.reviewed_owner',return_value=synthetic_candidate_owner()):
+        app=compose_theta_sponsor_workflow(root=root/'theta',inbox=inbox,outbox=outbox)
+    return bind_approved_window(app,at)
 
 
 def test_prospective_composition_is_offline_and_does_not_create_a_store(tmp_path):
@@ -82,12 +88,15 @@ def test_three_product_http_and_disposable_restart_preserve_theta_evidence(tmp_p
     app=configured(tmp_path);admit_originals(app,originals(),sponsor_confirmed=True)
     batch=app.create_question_pack(app.input_state_sha256())['result']['batch_id']
     descriptor,questions=app.intake._batch(batch)
-    raw=synthetic_answer(descriptor,questions)
+    raw=synthetic_answer(descriptor,questions,at=app.workflow.now())
     (app.workflow.inbox/(batch+'_ANSWERS.json')).write_bytes(raw)
     result=app.import_astra_answers(batch)['result'];assert result['intake']['package_status']=='COMPLETE'
     before=snapshot(app.store.root);calls=[]
     for restarted in (False,True):
-        if restarted:app=compose_theta_sponsor_workflow(root=app.store.root,inbox=app.workflow.inbox,outbox=app.workflow.outbox)
+        if restarted:
+            with patch('kronos.theta.composition.reviewed_owner',return_value=synthetic_candidate_owner()):
+                app=bind_approved_window(compose_theta_sponsor_workflow(
+                    root=app.store.root,inbox=app.workflow.inbox,outbox=app.workflow.outbox))
         with server(app,calls) as runtime:
             assert runtime.server_port not in {8947,8948,8968,8970}
             for path,label in (('/swing/opportunities',b'Swing'),('/intraday',b'Intraday'),('/theta-earners',b'Theta')):
@@ -104,3 +113,20 @@ def test_three_product_http_and_disposable_restart_preserve_theta_evidence(tmp_p
     restored=app.restore_status()['import_operation']['result']
     assert restored['intake']['package_status']=='COMPLETE'
     assert {s:r['receipt_id'] for s,r in restored['intake']['children'].items()}=={s:r['receipt_id'] for s,r in result['intake']['children'].items()}
+
+
+def test_real_current_clock_shared_theta_selects_corrected_inputs_without_writes(tmp_path,record_property):
+    from datetime import datetime,timezone
+    app=configured(tmp_path,at=None)
+    before_clock=datetime.now(timezone.utc)
+    admit_originals(app,originals(),sponsor_confirmed=True)
+    # Candidate selection is read-only; commissioning remains an explicit later operation.
+    before=snapshot(app.store.root)
+    state=app.input_state_sha256()
+    assert len(state)==64
+    assert snapshot(app.store.root)==before
+    assert app.producer.selected() is None
+    assert before_clock<=app.workflow.now()<=datetime.now(timezone.utc)
+    record_property('actual_UTC_observed',app.workflow.now().isoformat())
+    record_property('authority_binding','synthetic exact-byte S3.01 review; no owner approval')
+    record_property('fixture_clock_binding','NONE; actual UTC')

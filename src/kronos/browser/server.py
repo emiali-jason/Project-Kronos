@@ -18,9 +18,10 @@ from hashlib import sha256
 from html import escape
 import json
 import logging
+import os
 from pathlib import Path
 import re
-from threading import BoundedSemaphore, Condition, Lock, RLock, Thread, local
+from threading import BoundedSemaphore, Lock, RLock, Thread, Timer, local
 from time import monotonic
 from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit
 from uuid import uuid4
@@ -295,6 +296,331 @@ _PLACEHOLDERS = {
 }
 
 
+class _StartupCleanup:
+    """Private construction ledger; no authority, retries or missing-owner defaults.
+
+    A slot becomes ENTERED before its factory runs. Only the exact returned owner
+    (or the server's pre-construction container) can resolve it. Cleanup is once
+    per object/operation even when main and the server share that object.
+    """
+    _names = ("provider", "intraday_runtime", "wo08_shadow", "lifecycle",
+        "experimental", "wo17", "application", "control", "server", "coordinator", "sponsor_work",
+        "step32", "progression", "native", "trade", "monitoring", "ux10",
+        "reminders", "mcx", "research", "local", "local_bindings", "bulk", "housekeeping",
+        "notifications", "research_bindings", "listener", "official_check")
+    _order = ("official_check", "housekeeping", "bulk", "notifications", "lifecycle", "experimental",
+        "wo17", "application", "local", "local_bindings", "reminders", "ux10", "progression",
+        "native", "trade", "monitoring", "step32", "mcx", "research",
+        "research_bindings", "wo08_shadow", "provider", "listener",
+        "intraday_runtime", "coordinator", "sponsor_work", "server", "control")
+
+    def __init__(self):
+        self._slots = {name: {"state": "NOT_CREATED"} for name in self._names}
+        self._operations = {}
+        self.server = None
+        self.errors = []
+        self.original_failure = None
+
+    def begin(self, name):
+        if self._slots[name]["state"] != "NOT_CREATED":
+            raise RuntimeError("STARTUP_CONSTRUCTION_REENTERED:" + name)
+        self._slots[name] = {"state": "CONSTRUCTION_ENTERED"}
+
+    def own(self, name, owner, method, proof):
+        if owner is None:
+            self._slots[name] = {"state": "CLEANUP_UNRESOLVED"}
+            raise RuntimeError("STARTUP_OWNER_NOT_RETURNED:" + name)
+        key = (id(owner), method if method is not None else name)
+        record = self._operations.get(key)
+        if record is None:
+            record = {"state": "CREATED", "owner": owner, "method": method,
+                      "proof": proof, "attempted": False}
+            self._operations[key] = record
+        previous = self._slots[name]
+        if previous["state"] not in {"NOT_CREATED", "CONSTRUCTION_ENTERED", "COMPOSITION_PENDING"} and previous is not record:
+            raise RuntimeError("STARTUP_OWNER_SUBSTITUTED:" + name)
+        self._slots[name] = record
+        return owner
+
+    def construct(self, name, factory, method, proof):
+        self.begin(name)
+        return self.own(name, factory(), method, proof)
+
+    def container(self, name, owner, dependencies):
+        # A composition has no separate worker: account for its exact child owners.
+        return self.own(name, owner, None, lambda _owner: all(
+            self._slots[child]["state"] in {"NOT_CREATED", "CREATED_AND_CLEANED"}
+            for child in dependencies))
+
+    def returned_intraday_composition(self, factory):
+        self.begin("intraday_runtime")
+        names = ("lifecycle", "experimental", "wo17", "wo08_shadow")
+        for name in names:
+            if self._slots[name]["state"] != "NOT_CREATED":
+                raise RuntimeError("STARTUP_COMPOSITION_REENTERED:" + name)
+            self._slots[name] = {"state": "COMPOSITION_PENDING"}
+        composition = factory()
+        self.own("intraday_runtime", composition, None, self._intraday_complete)
+        # Retain the entire returned set BEFORE registering any child. If a
+        # getter or registration is interrupted, unresolved slots stay pending.
+        self._slots["intraday_runtime"]["returned_owners"] = dict(zip(names, (
+            composition.lifecycle_application,
+            composition.wo09_application.experimental_watches,
+            composition.wo17_monitoring, composition.wo08_shadow)))
+        return composition
+
+    def absent_returned_shadow(self, composition):
+        record = self._slots["intraday_runtime"]
+        owners = record.get("returned_owners")
+        if (record.get("owner") is not composition or owners is None
+                or owners["wo08_shadow"] is not None
+                or self._slots["wo08_shadow"]["state"] != "COMPOSITION_PENDING"):
+            raise RuntimeError("STARTUP_SHADOW_ABSENCE_UNPROVED")
+        self._slots["wo08_shadow"] = {"state": "NOT_CREATED",
+            "absence": "EXACT_RETURNED_COMPOSITION_NONE"}
+
+    def _intraday_complete(self, composition):
+        record = self._slots["intraday_runtime"]
+        owners = record.get("returned_owners")
+        if record.get("owner") is not composition or owners is None:
+            return False
+        for name, owner in owners.items():
+            slot = self._slots[name]
+            if name == "wo08_shadow" and owner is None:
+                if slot.get("absence") != "EXACT_RETURNED_COMPOSITION_NONE":
+                    return False
+            elif slot.get("owner") is not owner or slot["state"] != "CREATED_AND_CLEANED":
+                return False
+        return True
+
+    def _async_notification_snapshot(self, name, record, kwargs, deadline):
+        from concurrent.futures import ThreadPoolExecutor
+        from math import isfinite
+        if (name != "notifications" or kwargs.get("wait") is not False
+                or record["proof"] is not _startup_notifications_closed
+                or type(deadline) not in {int, float} or not isfinite(deadline)
+                or monotonic() >= deadline):
+            return None
+        pool = record["owner"]._executor
+        if not isinstance(pool, ThreadPoolExecutor) or pool._shutdown is not True:
+            return None
+        threads = tuple(pool._threads)
+        if not threads or not all(isinstance(thread, Thread) for thread in threads):
+            return None
+        if not any(thread.is_alive() for thread in threads):
+            return None
+        return pool, threads
+
+    def _async_ux10_snapshot(self, name, record, deadline):
+        from math import isfinite
+        if (name != "ux10" or record["proof"] is not _startup_ux10_closed
+                or type(deadline) not in {int, float} or not isfinite(deadline)
+                or monotonic() >= deadline
+                or type(record["owner"]) is not SwingUx10NotificationService):
+            return None
+        timers = record["owner"].retry_timer_snapshot()
+        if not timers or not all(isinstance(timer, Timer) for timer in timers):
+            return None
+        if not any(timer.is_alive() for timer in timers):
+            return None
+        return record["owner"], timers
+
+    @staticmethod
+    def _same_async_owner(record):
+        snapshot = record.get("async_close_snapshot")
+        if snapshot is None:
+            return False
+        if record.get("async_close_kind") == "ux10":
+            owner, timers = snapshot
+            current = owner.retry_timer_snapshot()
+            return (record["owner"] is owner and owner._closed
+                    and all(isinstance(timer, Timer) for timer in current)
+                    and set(current).issubset(set(timers)))
+        pool, threads = snapshot
+        return (record["owner"]._executor is pool and pool._shutdown is True
+                and set(pool._threads) == set(threads))
+
+    def close_one(self, name, *, _deadline=None, **kwargs):
+        record = self._slots[name]
+        if record["state"] == "NOT_CREATED":
+            return True
+        if record["state"] == "CREATED_AND_CLEANED":
+            return True
+        if record["state"] != "CREATED" or record["attempted"]:
+            return False
+        record["attempted"] = True  # An unknown outcome is never retried.
+        record["state"] = "CLEANUP_UNRESOLVED"
+        record["operation_returned"] = False
+        try:
+            if record["method"] is not None:
+                if name == 'official_check':
+                    from kronos.common.release_admission import ValidationBudget
+                    if _deadline is None:
+                        raise RuntimeError('MCX_CHECK_CLEANUP_DEADLINE_MISSING')
+                    deadline_ns = int(_deadline * 1_000_000_000)
+                    original = getattr(record['owner']._canonical_custody, 'budget', None)
+                    kwargs['budget'] = (original if original is not None
+                        and original.deadline_ns / 1_000_000_000 == _deadline
+                        else ValidationBudget(deadline_ns))
+                getattr(record["owner"], record["method"])(**kwargs)
+            record["operation_returned"] = True
+            if (name == "reminders" and _deadline is not None
+                    and type(record["owner"]) is SwingK5RefreshReminderWorkflow):
+                record["observation_deadline"] = _deadline
+                if not record["owner"]._wait_closed(_deadline):
+                    return False
+                record["observed_completion_at"] = monotonic()
+                if record["observed_completion_at"] >= _deadline:
+                    return False
+            # Capture exact executor/worker objects after the one successful
+            # close request, before proof can race actual worker completion.
+            record["async_close_snapshot"] = self._async_notification_snapshot(
+                name, record, kwargs, _deadline)
+            if record["async_close_snapshot"] is not None:
+                record["async_close_kind"] = "notifications"
+            else:
+                record["async_close_snapshot"] = self._async_ux10_snapshot(
+                    name, record, _deadline)
+                if record["async_close_snapshot"] is not None:
+                    record["async_close_kind"] = "ux10"
+            if record["proof"](record["owner"]) is not True:
+                if record["async_close_snapshot"] is not None:
+                    state = record["owner"].maintenance_status()
+                    notification_checkpoint_ok = True
+                    if record["async_close_kind"] == "notifications":
+                        from kronos.common.maintenance import _valid_notification_checkpoint
+                        checkpoint = record["owner"].checkpoint(certify_durable=True)
+                        notification_checkpoint_ok = (
+                            type(state["scheduled"]) is bool
+                            and _valid_notification_checkpoint(checkpoint))
+                    if (self._same_async_owner(record) and state["closed"] is True
+                            and notification_checkpoint_ok and monotonic() < _deadline):
+                        record["state"] = "CLEANUP_PENDING"
+                        record["observation_deadline"] = _deadline
+                return False
+        except BaseException as error:
+            self.errors.append((name, error))
+            return False
+        record["state"] = "CREATED_AND_CLEANED"
+        return True
+
+    def observe_one(self, name, deadline):
+        """Observe the SAME returned close operation; never close or extend it."""
+        record = self._slots[name]
+        if (name not in {"notifications", "ux10"} or record["state"] != "CLEANUP_PENDING"
+                or record.get("operation_returned") is not True):
+            return False
+        record["state"] = "CLEANUP_UNRESOLVED"
+        try:
+            if deadline != record["observation_deadline"]:
+                raise RuntimeError("ASYNC_COMPLETION_DEADLINE_CHANGED")
+            while monotonic() < deadline:
+                if not self._same_async_owner(record):
+                    raise RuntimeError("ASYNC_COMPLETION_OWNER_UNKNOWN")
+                handles = (record["async_close_snapshot"][1]
+                    if record["async_close_kind"] == "notifications"
+                    else record["async_close_snapshot"][1])
+                for thread in handles:
+                    remaining = deadline - monotonic()
+                    if remaining <= 0:
+                        break
+                    if thread.is_alive():
+                        thread.join(timeout=min(.01, remaining))
+                if monotonic() >= deadline:
+                    break
+                if record["proof"](record["owner"]) is True:
+                    completed = monotonic()
+                    if completed >= deadline or not self._same_async_owner(record):
+                        break
+                    record["state"] = "CREATED_AND_CLEANED"
+                    record["observed_completion_at"] = completed
+                    return True
+                if not any(thread.is_alive() for thread in record["async_close_snapshot"][1]):
+                    raise RuntimeError("ASYNC_COMPLETION_PROOF_UNAVAILABLE")
+            raise RuntimeError("ASYNC_COMPLETION_DEADLINE_EXPIRED")
+        except BaseException as error:
+            self.errors.append((name, error))
+            return False
+
+    def cleanup(self, *, deadline=None):
+        if deadline is None and self._slots['official_check']['state'] != 'NOT_CREATED':
+            deadline = monotonic() + 30.0
+        for name in self._order:
+            if name == "server" and deadline is not None:
+                # The server is the aggregate proof for its constructed child
+                # owners.  Observe the same returned asynchronous close
+                # operations before consuming that aggregate's one proof
+                # attempt; observation never closes again or renews deadline.
+                for pending in ("notifications", "ux10"):
+                    if self._slots[pending]["state"] == "CLEANUP_PENDING":
+                        self.observe_one(pending, deadline)
+            if name == "control" and not all(self._slots[n]["state"] in
+                    {"NOT_CREATED", "CREATED_AND_CLEANED"} for n in self._names if n != "control"):
+                continue  # Do not erase the control while any owner is unresolved.
+            self.close_one(name, _deadline=deadline)
+        if deadline is not None:
+            for name in ("notifications", "ux10"):
+                if self._slots[name]["state"] == "CLEANUP_PENDING":
+                    self.observe_one(name, deadline)
+        return self.complete()
+
+    def complete(self):
+        return all(row["state"] in {"NOT_CREATED", "CREATED_AND_CLEANED"}
+                   for row in self._slots.values()) and not self.errors
+
+    def snapshot(self):
+        return {name: {"state": ("CLEANUP_UNRESOLVED" if row["state"] ==
+                "CONSTRUCTION_ENTERED" or row["state"] == "COMPOSITION_PENDING" else row["state"]),
+                "source_state": row["state"],
+                "operation": row.get("method"),
+                "attempted": row.get("attempted", False),
+                "operation_returned": row.get("operation_returned", False),
+                "observation_deadline": row.get("observation_deadline"),
+                "observed_completion_at": row.get("observed_completion_at")}
+                for name, row in self._slots.items()}
+
+
+def _startup_bulk_closed(owner):
+    status = owner.work_status()
+    return (owner._stop.is_set() and status["state"] == "STOPPED"
+        and status["owned_workers"] == 0 and not status["batch_active"]
+        and not owner.store.list_incomplete())
+
+
+def _startup_notifications_closed(owner):
+    from kronos.common.maintenance import _valid_notification_checkpoint
+    state = owner.maintenance_status()
+    checkpoint = owner.checkpoint(certify_durable=True)
+    return (state["closed"] and not state["scheduled"]
+        and _valid_notification_checkpoint(checkpoint)
+        and (owner._executor is None or all(not t.is_alive() for t in owner._executor._threads)))
+
+
+def _startup_ux10_closed(owner):
+    state = owner.maintenance_status()
+    return state == {"closed": True, "retry_callbacks": 0}
+
+
+def _startup_work_stopped(owner):
+    status = owner.work_status()
+    return (status["owned_workers"] == 0 and status["queued_items"] == 0
+        and status["state"] == "TERMINATED" and status["continuity"] == "COMPLETE")
+
+
+def _startup_application_closed(owner):
+    connection = owner.connection_attempt_status()
+    return ((connection is None or not any(connection[key] for key in
+        ("worker_active", "resources_pending", "restoration_worker_active")))
+        and KronosBrowserServer._work_owner_idle(owner.analysis_work_status())
+        and KronosBrowserServer._analysis_execution_drained(owner.analysis_execution_status()))
+
+
+def _startup_provider_closed(owner):
+    state = owner.read_only_status()
+    return state["cleanup_state"] == "COMPLETE" and not any(state[key] for key in
+        ("owned_work_count", "retained_lease_count", "unresolved_cleanup_count"))
+
+
 class KronosBrowserServer(ThreadingHTTPServer):
     connection_governance = None
     daemon_threads = True
@@ -340,7 +666,15 @@ class KronosBrowserServer(ThreadingHTTPServer):
         mcx_v1_composition_factory: Callable | None = None,
         swing_research_control: SwingResearchControl | None = None,
         intraday_dashboard_summary: Callable | None = None,
+        _startup_cleanup=None,
+        _defer_k5_execution: bool = False,
+        _defer_ux10_delivery: bool = False,
     ) -> None:
+        self._startup_cleanup = _startup_cleanup if _startup_cleanup is not None else _StartupCleanup()
+        self._startup_fully_composed = False
+        self._startup_cleanup.server = self
+        self._startup_cleanup.container("server", self,
+            tuple(name for name in _StartupCleanup._names if name not in {"server", "control", "intraday_runtime"}))
         # The research workbook imports the Browser package. Resolve its
         # composition only when constructing a server, after module import.
         from kronos.application.swing_research_control import SwingResearchControl
@@ -438,7 +772,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
             raise ValueError("BROWSER_SERVER_MUST_BIND_LOOPBACK")
         config = OpenAIChartAnalystV2Config.from_environment()
         transport, default_credentials = _openai_chart_analyst_security(config)
-        self.application = application
+        self.application = self._startup_cleanup.own("application", application, "close", _startup_application_closed)
         # Fixture-injected isolated integration only. Production composition
         # supplies no owner and both routes fail closed.
         self.mcx_slice3 = mcx_slice3
@@ -450,6 +784,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
             chart_analyst_activation or ChartAnalystV2ActivationService()
         )
         self.restart_control = restart_control
+        if restart_control is not None:
+            self._startup_cleanup.own("control", restart_control, "remove",
+                lambda o: not o.path.exists())
         self.connection_governance = getattr(application, "connection_governance", None)
         self.provider_instrument_master_operation = (
             provider_instrument_master_operation
@@ -460,25 +797,8 @@ class KronosBrowserServer(ThreadingHTTPServer):
         self._domain_close_lock = Lock()
         self._domain_closed = False
         self._monitoring_quiesced = False
-        # ADR-0068: enrolled composition starts before native owner construction.
-        # A missing prospective ledger confers no FAILED_FENCED capability.
-        from kronos.common.failed_fenced_recovery import current_ledger
-        from kronos.application.failed_fenced_owners import register_owner
-        self._failed_fenced_ledger = current_ledger()
-        self._failed_fenced_binding = None
-        self._failed_fenced_original_binding = None
-        self._failed_fenced_binding_lock = RLock()
-        self._failed_fenced_write_free = False
-        self._failed_fenced_transport_frozen = False
-        self._failed_fenced_dispatch_owners = 0
-        self._failed_fenced_diagnostic_owners = 0
-        self._failed_fenced_detached_requests = {}
-        self.maintenance_admission = (
-            self._failed_fenced_ledger.coordinator
-            if self._failed_fenced_ledger is not None
-            else MaintenanceAdmissionCoordinator()
-        )
-        register_owner("BROWSER", self, __file__)
+        self.maintenance_admission = self._startup_cleanup.construct("coordinator",
+            MaintenanceAdmissionCoordinator, None, lambda o: not o.snapshot()["owners"])
         self.application.bind_maintenance_admission(self.maintenance_admission)
         if self.mcx_v1_control is not None:
             self.mcx_v1_control.bind_maintenance_admission(
@@ -497,6 +817,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
         self._startup_restoration_outcomes = ()
         self._shutdown_started = False
         self._active_sponsor_work = 0
+        self._startup_cleanup.own("sponsor_work", self, None, lambda o: o._active_sponsor_work == 0)
         self._next_lifecycle_pulse = 0.0
         self.intraday_dashboard_summary = intraday_dashboard_summary
         self.product_routes = (
@@ -507,9 +828,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
             )
         )
         self.step32_workflow = (
-            step32_workflow or SwingV1BrowserOperationalization()
+            self._startup_cleanup.construct("step32", lambda: (step32_workflow or SwingV1BrowserOperationalization()), "close", lambda o: not o._monitoring)
         )
-        self.progression_watches = progression_watches or SwingProgressionWatchWorkflow()
+        self.progression_watches = self._startup_cleanup.construct("progression", lambda: (progression_watches or SwingProgressionWatchWorkflow()), None, lambda o: o.active_monitoring_count == 0)
         self.progression_watches.bind_maintenance_admission(self.maintenance_admission)
         self.application.register_progression_watch_workflow(self.progression_watches)
         if v1_review is not None:
@@ -589,7 +910,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
         visual_v2_diagnostic_store = LocalVisualEvidenceV2DiagnosticStore(
             native_review_store.root / "visual-v2-diagnostics"
         )
-        self.native_review = native_review or NativeReviewWorkflow(
+        self.native_review = self._startup_cleanup.construct("native", lambda: (native_review or NativeReviewWorkflow(
             native_review_store,
             chart_store=evidence_store,
             visual_v2_provider=OpenAIVisualEvidenceV2Provider(
@@ -608,7 +929,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 PdfReviewRecordStore(native_review_store.root / "pdf-transport-v0"),
                 clock=lambda: datetime.now(UTC),
             ),
-        )
+        )), "close", lambda o: not o.active_lifecycle_monitoring_ids)
         governed_review_root = self.native_review.evidence_root
         if mcx_supporting_context is None:
             context_questions, context_answers = (
@@ -673,7 +994,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
                      or self.native_intake is not self.mcx_v1_control.review_owner)):
             raise ValueError("MCX_V1_BROWSER_OWNER_MISMATCH")
         self.bulk_import = None
-        self.trade_window = trade_window or SwingTradeWindowWorkflow(
+        self.trade_window = self._startup_cleanup.construct("trade", lambda: (trade_window or SwingTradeWindowWorkflow(
             LocalKr370Step31HandoffStore(
                 governed_review_root / "kr370-step31-handoff-v1"
             ),
@@ -697,10 +1018,10 @@ class KronosBrowserServer(ThreadingHTTPServer):
             LocalSponsorObservationDecisionStore(
                 governed_review_root / "sponsor-observation-decision-v1"
             ),
-        )
+        )), "close_monitoring", lambda o: not o._monitoring_registrations and not o._monitoring_consumers)
         self.telegram = telegram or _telegram_security()
         self.provider_login_navigation = provider_login_navigation
-        self.swing_monitoring_hub = SharedSwingMonitoringHub()
+        self.swing_monitoring_hub = self._startup_cleanup.construct("monitoring", lambda: (SharedSwingMonitoringHub()), "close", lambda o: o.status_document()["transport_cleanup"]["state"] == "COMPLETE" and not any(o.status_document()[k] for k in ("session_count", "owner_count", "subscription_count")))
         self.swing_monitoring_hub.bind_maintenance_admission(self.maintenance_admission)
         self.swing_monitoring_hub.maintenance_governance = self.connection_governance
         self.swing_monitoring_hub.set_connection_listener(
@@ -711,12 +1032,16 @@ class KronosBrowserServer(ThreadingHTTPServer):
         self.progression_watches.set_shared_monitoring_hub(self.swing_monitoring_hub)
         self.native_review.set_shared_monitoring_hub(self.swing_monitoring_hub)
         self.trade_window.set_shared_monitoring_hub(self.swing_monitoring_hub)
-        self.ux10_notifications = ux10_notifications or SwingUx10NotificationService(
+        self.ux10_notifications = self._startup_cleanup.construct("ux10", lambda: (ux10_notifications or SwingUx10NotificationService(
             Ux10NotificationStore(governed_review_root / "ux10-notifications-v1"),
             telegram=self.telegram,
             maintenance_admission=self.maintenance_admission,
-        )
-        self.refresh_reminders = refresh_reminders or SwingK5RefreshReminderWorkflow(
+            defer_delivery=_defer_ux10_delivery,
+        )), "close", _startup_ux10_closed)
+        if (_defer_ux10_delivery and
+                not self.ux10_notifications.delivery_deferred):
+            raise ValueError("UX10_CANONICAL_DELIVERY_NOT_DEFERRED")
+        self.refresh_reminders = self._startup_cleanup.construct("reminders", lambda: (refresh_reminders or SwingK5RefreshReminderWorkflow(
             K5RefreshReminderStore(
                 governed_review_root / "refresh-analysis-reminders-v1"
             ),
@@ -726,7 +1051,12 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 ).notification_id
             ),
             maintenance_admission=self.maintenance_admission,
-        )
+            defer_execution=_defer_k5_execution,
+        )), "close", lambda o: o.cleanup_complete())
+        if (_defer_k5_execution and
+                (not self.refresh_reminders._deferred_execution
+                 or self.refresh_reminders._active)):
+            raise ValueError("K5_CANONICAL_EXECUTION_NOT_DEFERRED")
         self.notification_centre = notification_centre or SponsorNotificationCentre(
             SponsorNotificationLifecycleStore(
                 governed_review_root / "notification-centre-v1"
@@ -748,11 +1078,15 @@ class KronosBrowserServer(ThreadingHTTPServer):
             if self.mcx_v1_control is not None or self.mcx_slice3 is not None:
                 raise ValueError("MCX_V1_COMPOSITION_CONFLICT")
             from kronos.application.swing_mcx_v1_composition import SwingMcxV1Composition
+            self._startup_cleanup.begin("mcx")
             composition = mcx_v1_composition_factory(self)
             if type(composition) is not SwingMcxV1Composition:
                 raise ValueError("MCX_V1_COMPOSITION_INVALID")
             self.mcx_v1_composition = composition
             self.mcx_v1_control = composition.control
+        if self.mcx_v1_control is not None:
+            self._startup_cleanup.own("mcx", self.mcx_v1_control, "close",
+                lambda o: o.worker_status()["pending"] == 0)
         native_run = self.application.native_discovery_run()
         mtf_facts = self.application.mtf_fact_snapshot()
         self.native_review_run = native_run
@@ -819,7 +1153,6 @@ class KronosBrowserServer(ThreadingHTTPServer):
         self.reconcile_progression()
         self._request_slots = BoundedSemaphore(_MAX_ACTIVE_BROWSER_REQUESTS)
         self._request_capacity_lock = Lock()
-        self._request_capacity_change = Condition(self._request_capacity_lock)
         self._active_request_count = 0
         self._request_capacity_refusals = 0
         self.request_diagnostics = RequestDiagnostics()
@@ -846,6 +1179,7 @@ class KronosBrowserServer(ThreadingHTTPServer):
             ),
             review_owner=self.native_intake,
         )
+        self._startup_cleanup.begin("research")
         if swing_research_control is None:
             from kronos.application.swing_prospective_research import (
                 CANONICAL_ROOT as SWING_RESEARCH_ROOT, SwingProspectiveResearchApplication,
@@ -872,7 +1206,10 @@ class KronosBrowserServer(ThreadingHTTPServer):
                     Path(__file__).resolve().parents[3],
                     lambda: (None if self.connection_governance is None else
                              self.connection_governance.process.loaded_revision)))
-        self.swing_research_control = swing_research_control
+        self.swing_research_control = self._startup_cleanup.own("research", swing_research_control, "close",
+            lambda o: o.work_status()["closed"] and o.work_status()["cleanup_state"] == "COMPLETE"
+                and o.work_status()["owned_workers"] == 0 and o.work_status()["queued_items"] == 0
+                and all(not t.is_alive() for t in o._worker._threads))
         self.swing_research_control.configure_daily(
             admission=self.maintenance_admission, shutdown_lock=self._shutdown_lock,
             shutdown_started=lambda: self._shutdown_started,
@@ -886,19 +1223,21 @@ class KronosBrowserServer(ThreadingHTTPServer):
         self.local_analysis = None
         if self.native_intake is not None:
             from kronos.application.swing_local_analysis import SwingLocalAnalysisWorkflow
-            self.local_analysis = SwingLocalAnalysisWorkflow(
+            self.local_analysis = self._startup_cleanup.construct("local", lambda: (SwingLocalAnalysisWorkflow(
                 self.application, self.native_intake, swing_research_control.research,
-                capture=swing_research_control.capture)
-            from kronos.application.failed_fenced_owners import record_resource
-            history_reader = self.local_analysis.retained_research
-            record_resource(swing_research_control, history_reader, "BINDING")
-            swing_research_control.research.local_history_reader = history_reader
+                capture=swing_research_control.capture)), "close", lambda o: o.status()["state"] == "CLOSED")
+            self._startup_cleanup.own("local_bindings", self, "_clear_startup_local_bindings",
+                lambda o: o._startup_local_bindings_cleared)
+            self._startup_local_bindings_cleared = False
+            swing_research_control.research.local_history_reader = self.local_analysis.retained_research
             self.native_intake.register_local_analysis(self.local_analysis)
             self.application.register_local_analysis(self.local_analysis)
         capture = swing_research_control.capture
         self._research_owner_bindings = []
+        self._startup_cleanup.own("research_bindings", self, "_clear_startup_research_bindings",
+            lambda o: not o._research_owner_bindings)
         def bind_research_owner(owner, callback):
-            owner.register_research_capture(callback, capture_owner=capture)
+            owner.register_research_capture(callback)
             self._research_owner_bindings.append((owner, callback))
         bind_research_owner(self.application,
             lambda bundle: (None if not capture.capture_enabled() or bundle.continuity is None else
@@ -925,19 +1264,35 @@ class KronosBrowserServer(ThreadingHTTPServer):
             if runtime_root is None:
                 runtime_root = (DEFAULT_BULK_IMPORT_ROOT if native_review is None else
                     governed_review_root.parent / "runtime" / "swing-bulk-import-v1")
-            self.bulk_import = SwingBulkImportOwner(
+            self.bulk_import = self._startup_cleanup.construct("bulk", lambda: (SwingBulkImportOwner(
                 SwingBulkImportStore(runtime_root), self.native_intake,
                 completion=self._complete_bulk_import,
-            )
+            )), "close", _startup_bulk_closed)
             self.bulk_import.bind_maintenance_admission(self.maintenance_admission)
         self._swing_notification_lock = RLock()
         self._swing_notification_failure = None
         self.synchronize_swing_notifications()
         # Freeze only after the constructor's required preparation completed.
         self._startup_restoration_outcomes = tuple(sorted(startup_outcomes.items()))
-        super().__init__(address, _BrowserHandler)
+        self._startup_cleanup.begin("listener")
+        try:
+            super().__init__(address, _BrowserHandler)
+        finally:
+            # HTTPServer may raise after creating its socket. Retain that exact
+            # object; an absent socket after entry remains unresolved.
+            if hasattr(self, "socket"):
+                self._startup_cleanup.own("listener", self, "_close_startup_listener", lambda o: o.socket.fileno() == -1)
         if self.bulk_import is not None:
             self.bulk_import.start()
+
+    def _close_startup_listener(self):
+        return super().server_close()
+
+    def server_bind(self):
+        # TCPServer creates the socket before calling this hook, including its
+        # own exception-cleanup path. Account for it before bind/activate effects.
+        self._startup_cleanup.own("listener", self, "_close_startup_listener", lambda o: o.socket.fileno() == -1)
+        return super().server_bind()
 
     def startup_restoration_outcomes(self):
         """Immutable in-process constructor results; no I/O or owner execution."""
@@ -982,29 +1337,6 @@ class KronosBrowserServer(ThreadingHTTPServer):
             return None if retained is None or monotonic() - retained[0] > 600 else retained[1]
 
     def process_request(self, request, client_address) -> None:  # type: ignore[no-untyped-def]
-        # Admission and its freeze use the same lock. Even a capacity-refusal
-        # trace remains owned until its synchronous dispatch path has returned.
-        with self._request_capacity_lock:
-            frozen = self._failed_fenced_transport_frozen
-            if not frozen:
-                self._failed_fenced_dispatch_owners += 1
-        if frozen:
-            # No response, thread, diagnostics or product callback after SEAL.
-            try:
-                request.close()
-            except OSError:
-                # BaseServer.handle_error must not emit a traceback for this
-                # never-admitted descriptor in the write-free exit tail.
-                pass
-            return
-        try:
-            self._process_request_open(request, client_address)
-        finally:
-            with self._request_capacity_change:
-                self._failed_fenced_dispatch_owners -= 1
-                self._request_capacity_change.notify_all()
-
-    def _process_request_open(self, request, client_address) -> None:
         """Admit a bounded number of request owners before creating threads."""
 
         trace = start_trace(self.request_diagnostics)
@@ -1067,103 +1399,20 @@ class KronosBrowserServer(ThreadingHTTPServer):
         trace = current_trace()
         try:
             super().finish_request(request, client_address)
-            if trace is not None and not self._failed_fenced_request_detached(request):
+            if trace is not None:
                 trace.emit("HANDLER_RETURNED")
         except BaseException as error:
-            if trace is not None and not self._failed_fenced_request_detached(request):
+            if trace is not None:
                 trace.failure(error)
             raise
 
     def _finish_request_owner(self, request) -> None:
         with self._request_capacity_lock:
-            if id(request) in self._failed_fenced_detached_requests:
-                # This transport owner's ordinary accounting/diagnostics ended
-                # before SEAL. No post-release completion callback is legal.
-                return
             self._active_request_count -= 1
             trace = self._diagnostic_requests.pop(id(request), None)
-            if trace is not None:
-                self._failed_fenced_diagnostic_owners += 1
         self._request_slots.release()
         if trace is not None:
-            try:
-                trace.finish()  # ordinary product ownership is already released
-            finally:
-                with self._request_capacity_change:
-                    self._failed_fenced_diagnostic_owners -= 1
-                    self._request_capacity_change.notify_all()
-        else:
-            with self._request_capacity_change:
-                self._request_capacity_change.notify_all()
-
-    def _failed_fenced_request_detached(self, request) -> bool:
-        with self._request_capacity_lock:
-            return id(request) in self._failed_fenced_detached_requests
-
-    def _detach_failed_fenced_request(self, request) -> None:
-        """Finish ordinary request bookkeeping BEFORE the reviewed SEAL tail."""
-        with self._request_capacity_lock:
-            if id(request) in self._failed_fenced_detached_requests:
-                raise ValueError("FAILED_FENCED_CONTROL_ALREADY_DETACHED")
-            if id(request) not in self._diagnostic_requests:
-                raise ValueError("FAILED_FENCED_CONTROL_OWNER_MISSING")
-            trace = self._diagnostic_requests.pop(id(request))
-            self._active_request_count -= 1
-            # Retain the actual descriptor object through process exit so a
-            # later allocation can never inherit its detached id by reuse.
-            self._failed_fenced_detached_requests[id(request)] = request
-        self._request_slots.release()
-        if trace is not None:
-            trace.finish()
-
-    def _freeze_failed_fenced_transport(self, budget, deadline_ns) -> None:
-        """Irreversible admission freeze before final BROWSER absence/SEAL."""
-        with self._request_capacity_change:
-            self._failed_fenced_transport_frozen = True
-            while (self._failed_fenced_dispatch_owners or self._active_request_count
-                    or self._failed_fenced_diagnostic_owners):
-                self._request_capacity_change.wait(budget.remaining_seconds(deadline_ns))
-            budget.check(deadline_ns)
-
-    def bind_failed_fenced_recovery(self, binding) -> None:
-        """Internal prepared-controller composition; never selected by HTTP."""
-        from kronos.browser.failed_fenced_control import RecoveryBrowserBinding
-        if (type(binding) is not RecoveryBrowserBinding
-                or self._failed_fenced_binding is not None
-                or binding.ledger is not self._failed_fenced_ledger
-                or binding.ledger.coordinator is not self.maintenance_admission):
-            raise ValueError("FAILED_FENCED_CONTROL_BINDING_INVALID")
-        binding.bind(self)
-        self._failed_fenced_binding = binding
-
-    def bind_failed_fenced_original(self, binding) -> None:
-        from kronos.browser.failed_fenced_control import OriginalBrowserBinding
-        if (type(binding) is not OriginalBrowserBinding
-                or self._failed_fenced_original_binding is not None
-                or binding.ledger is not self._failed_fenced_ledger
-                or self.maintenance_admission.snapshot()["state"] != "OPEN"):
-            raise ValueError("FAILED_FENCED_ORIGINAL_BINDING_INVALID")
-        self._failed_fenced_original_binding = binding
-
-    def failed_fenced_owner_status(self, owner: str) -> dict:
-        if owner != "BROWSER":
-            raise ValueError("FAILED_FENCED_NATIVE_OWNER_STATUS_UNSUPPORTED")
-        with self._request_capacity_lock:
-            # The sole authenticated recovery transport is detached BEFORE
-            # this proof. Every other Browser request remains a product owner.
-            active = (self._active_request_count + self._failed_fenced_dispatch_owners
-                      + self._failed_fenced_diagnostic_owners)
-        with self._shutdown_lock:
-            sponsor = self._active_sponsor_work
-        return {"owned_workers": active + sponsor, "queued_items": 0,
-                "durable_writes": 0}
-
-    def handle_error(self, request, client_address) -> None:
-        if self._failed_fenced_request_detached(request):
-            # The only remaining work is descriptor closure and process exit.
-            # ThreadingMixIn's default stderr traceback is not an allowed tail.
-            return
-        super().handle_error(request, client_address)
+            trace.finish()  # ownership released before best-effort diagnostics
 
     def request_capacity_status(self) -> dict[str, int | str]:
         """Return local admission facts without waiting on application work."""
@@ -1186,15 +1435,6 @@ class KronosBrowserServer(ThreadingHTTPServer):
             super().service_actions()
             return
         try:
-            if getattr(self, "_failed_fenced_ledger", None) is not None:
-                from kronos.common.failed_fenced_startup import complete_prospective_control
-                with ticket.activate():
-                    try:
-                        complete_prospective_control(self)
-                    except (ValueError, OSError, TypeError, KeyError):
-                        # The producer retains a permanent negative gate. Do
-                        # not repair custody or retry an unknown publication.
-                        self._failed_fenced_control_failure = "CONTROL_BINDING_UNAVAILABLE"
             self._service_actions_admitted()
         finally:
             ticket.release()
@@ -1230,6 +1470,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 housekeeping.trigger_periodic()
             except (ValueError, OSError, TypeError, RuntimeError):
                 housekeeping.record_trigger_failure()
+        checker = getattr(self, 'mcx_official_check', None)
+        if checker is not None:
+            checker.trigger_scheduled()
         lifecycle = getattr(self, "intraday_lifecycle", None)
         observed = monotonic()
         if lifecycle is not None and observed >= self._next_lifecycle_pulse:
@@ -1253,33 +1496,69 @@ class KronosBrowserServer(ThreadingHTTPServer):
             else:
                 self._swing_v2_reconciliation_failure = None
 
+    def _clear_startup_local_bindings(self):
+        failures = []
+        for owner in (self.application, self.native_intake):
+            try:
+                owner.clear_local_analysis(self.local_analysis)
+            except BaseException as error:
+                failures.append(error)
+        if failures:
+            raise BaseExceptionGroup("STARTUP_LOCAL_DETACH_FAILED", failures)
+        self._startup_local_bindings_cleared = True
+
+    def _clear_startup_research_bindings(self):
+        remaining = []
+        failures = []
+        for owner, callback in reversed(self._research_owner_bindings):
+            try:
+                owner.clear_research_capture(callback)
+            except BaseException as error:
+                remaining.append((owner, callback))
+                failures.append(error)
+        self._research_owner_bindings = list(reversed(remaining))
+        if failures:
+            raise BaseExceptionGroup("STARTUP_RESEARCH_DETACH_FAILED", failures)
+
     def server_close(self) -> None:
-        if getattr(self, "_failed_fenced_write_free", False):
-            # Native owners/control/listeners were durably completed before
-            # SEAL; invoking any ordinary finalizer would be a replay.
-            self.socket.close()
-            return
-        self._close_domain_owners()
-        research_close = getattr(self.swing_research_control, "close", None)
-        if callable(research_close):
-            research_close()
-        for owner, callback in reversed(getattr(self, "_research_owner_bindings", ())):
-            owner.clear_research_capture(callback)
         if self.restart_control is not None:
-            self.restart_control.remove()
-        super().server_close()
-        drain = self.maintenance_admission.snapshot()
-        if drain["state"] == "STOPPING":
-            self.maintenance_admission.closed(drain["generation"])
+            self._startup_cleanup.own("control", self.restart_control, "remove",
+                lambda o: not o.path.exists())
+        stop_context = getattr(self,'_ordinary_stop_context',None)
+        stop_deadline = None if stop_context is None else stop_context[1].budget.deadline_ns/1_000_000_000
+        complete = self._startup_cleanup.cleanup(deadline=stop_deadline)
+        if complete:
+            self._domain_closed = True
+            drain = self.maintenance_admission.snapshot()
+            if drain["state"] == "STOPPING":
+                self.maintenance_admission.closed(drain["generation"])
+        else:
+            # Closing a socket is not a cleanup acknowledgement. Preserve denial
+            # in the ledger/domain state even for callers performing teardown.
+            import sys
+            original = sys.exc_info()[1]
+            if original is not None:
+                for name, error in self._startup_cleanup.errors:
+                    original.add_note("Cleanup unresolved: " + name + ":" + type(error).__name__)
+            elif self._startup_cleanup.errors:
+                raise BaseExceptionGroup("STARTUP_RESOURCE_CLEANUP_UNRESOLVED",
+                    [error for _, error in self._startup_cleanup.errors])
 
     def _close_domain_owners(self, *, bulk_timeout_seconds: float = 30,
-                             require_proof: bool = False) -> None:
+                             require_proof: bool = False, _deadline=None) -> None:
         """Complete domain cleanup before a successful maintenance handoff."""
         with self._domain_close_lock:
             if self._domain_closed:
                 return
-            self._close_domain_owners_once(bulk_timeout_seconds, require_proof)
+            self._close_domain_owners_once(bulk_timeout_seconds, require_proof, _deadline=_deadline)
             self._domain_closed = True
+
+    def _startup_close(self, name, **kwargs):
+        if not self._startup_cleanup.close_one(name, **kwargs):
+            errors = [error for key, error in self._startup_cleanup.errors if key == name]
+            if errors:
+                raise errors[0]
+            raise RuntimeError("STARTUP_OWNER_CLEANUP_UNRESOLVED:" + name)
 
     def _quiesce_monitoring_producers(self) -> None:
         """Detach producers while accepted callbacks can still finish."""
@@ -1289,68 +1568,71 @@ class KronosBrowserServer(ThreadingHTTPServer):
             daily = getattr(getattr(self, "swing_research_control", None), "quiesce_daily", None)
             if callable(daily):
                 daily()
-            self.progression_watches.close_monitoring()
-            self.native_review.close()
-            self.trade_window.close_monitoring()
-            self.swing_monitoring_hub.close()
-            self.application.close()
+            # Application owns its registered progression close. The separate
+            # progression slot only proves that same resource, never closes twice.
+            for name in ("application", "progression", "native", "trade", "monitoring"):
+                self._startup_close(name)
             self._monitoring_quiesced = True
 
     def _close_domain_owners_once(self, bulk_timeout_seconds: float,
-                                  require_proof: bool) -> None:
-        research_close = getattr(getattr(self, "swing_research_control", None), "close", None)
-        if require_proof and callable(research_close):
-            research_close()
-        housekeeping = getattr(self, "housekeeping", None)
-        if housekeeping is not None:
-            result = (housekeeping.shutdown(timeout_seconds=bulk_timeout_seconds)
-                      if require_proof else housekeeping.shutdown())
-            if require_proof and (not isinstance(result, dict)
-                                  or result.get("lifecycle_state") != "STOPPED"):
-                raise RuntimeError("MAINTENANCE_HOUSEKEEPING_NOT_DRAINED")
-        bulk_import = getattr(self, "bulk_import", None)
-        if bulk_import is not None:
-            if require_proof:
-                bulk_import.close(timeout_seconds=bulk_timeout_seconds)
-            else:
-                bulk_import.close()
-        notifications = getattr(self, "intraday_notifications", None)
-        if notifications is not None:
-            if require_proof:
-                notifications.close(wait=False)
-            else:
-                notifications.close()
-        lifecycle = getattr(self, "intraday_lifecycle", None)
-        if lifecycle is not None:
-            lifecycle.shutdown()
-        experimental_watches = getattr(self, "intraday_experimental_watches", None)
-        if experimental_watches is not None:
-            experimental_watches.shutdown()
-        wo17_monitoring = getattr(self, "intraday_wo17_monitoring", None)
-        if wo17_monitoring is not None:
-            wo17_monitoring.shutdown()
-        # Governed maintenance quiesces these producers before its final drain.
-        if not self._monitoring_quiesced:
-            self.application.close()
-        local_analysis = getattr(self, "local_analysis", None)
-        if local_analysis is not None:
-            local_analysis.close()
-            self.application.clear_local_analysis(local_analysis)
-            self.native_intake.clear_local_analysis(local_analysis)
-        self.refresh_reminders.close()
-        self.ux10_notifications.close()
-        if not self._monitoring_quiesced:
-            self.progression_watches.close_monitoring()
-            self.native_review.close()
-            self.trade_window.close_monitoring()
-            self.swing_monitoring_hub.close()
-        self.step32_workflow.close()
-        mcx_control = getattr(self, "mcx_v1_control", None)
-        if mcx_control is not None:
-            mcx_control.close()
-        provider_runtime = getattr(self, "provider_runtime", None)
-        if require_proof and provider_runtime is not None:
-            provider_runtime.end_kronos_session()
+                                  require_proof: bool, *, _deadline=None) -> None:
+        deadline = (monotonic() + bulk_timeout_seconds if _deadline is None else _deadline)
+        late = (
+            ("housekeeping", "housekeeping", "shutdown", lambda o:
+                o.status_document()["lifecycle_state"] == "STOPPED"
+                and not o.status_document()["owned_workers"] and not o.status_document()["pass_active"]),
+            ("notifications", "intraday_notifications", "close", _startup_notifications_closed),
+            ("lifecycle", "intraday_lifecycle", "shutdown", _startup_work_stopped),
+            ("experimental", "intraday_experimental_watches", "shutdown", lambda o:
+                o._queue_closed and not o._queue and not o.registrations
+                and (o._worker_thread is None or not o._worker_thread.is_alive())),
+            ("wo17", "intraday_wo17_monitoring", "shutdown", _startup_work_stopped),
+        )
+        # These optional bindings may be installed by existing direct owning
+        # compositions. Missing bindings never replace the full-server proof.
+        for name, attr, method, proof in late:
+            owner = getattr(self, attr, None)
+            if owner is not None:
+                self._startup_cleanup.own(name, owner, method, proof)
+        if require_proof and getattr(self, "provider_runtime", None) is not None:
+            self._startup_cleanup.own("provider", self.provider_runtime,
+                "end_kronos_session", _startup_provider_closed)
+        failures = []
+        names = (("research",) if require_proof else ()) + (
+            "official_check", "housekeeping", "bulk", "notifications", "lifecycle", "experimental", "wo17",
+            "application", "local", "local_bindings", "reminders", "ux10", "progression", "native", "trade",
+            "monitoring", "step32", "mcx") + (("provider",) if require_proof else ())
+        for name in names:
+            try:
+                if require_proof and name == "notifications":
+                    completed = self._startup_cleanup.close_one(name,
+                        _deadline=deadline, wait=False)
+                    if completed or self._startup_cleanup._slots[name]["state"] == "CLEANUP_PENDING":
+                        continue
+                if require_proof and name == "ux10":
+                    completed = self._startup_cleanup.close_one(name, _deadline=deadline)
+                    if completed or self._startup_cleanup._slots[name]["state"] == "CLEANUP_PENDING":
+                        continue
+                    failures.append(RuntimeError("UX10_CLEANUP_UNRESOLVED"))
+                    continue
+                kwargs = ({"timeout_seconds": max(0.0, deadline - monotonic())}
+                    if require_proof and name in {"bulk", "housekeeping"} else {})
+                self._startup_close(name, _deadline=deadline, **kwargs)
+            except BaseException as error:
+                failures.append(error)
+        # Finish safe independent cleanup before observing the same asynchronous
+        # close. The caller's original absolute deadline is never renewed.
+        if require_proof and self._startup_cleanup._slots["notifications"]["state"] == "CLEANUP_PENDING":
+            if not self._startup_cleanup.observe_one("notifications", deadline):
+                try:
+                    self._startup_close("notifications")
+                except BaseException as error:
+                    failures.append(error)
+        if require_proof and self._startup_cleanup._slots["ux10"]["state"] == "CLEANUP_PENDING":
+            if not self._startup_cleanup.observe_one("ux10", deadline):
+                failures.append(RuntimeError("UX10_CLEANUP_UNRESOLVED"))
+        if failures:
+            raise BaseExceptionGroup("DOMAIN_CLEANUP_UNRESOLVED", failures)
 
     def _complete_bulk_import(self) -> None:
         """Publish projections only after the durable application work completes."""
@@ -2422,6 +2704,16 @@ class KronosBrowserServer(ThreadingHTTPServer):
                              or counted.get("HOUSEKEEPING", 0) == 0):
                     return False
             bulk_import = getattr(self, "bulk_import", None)
+            checker = getattr(self, 'mcx_official_check', None)
+            if checker is not None:
+                check = checker.status_document()
+                if (check['worker_launch_ownership'] == 'UNKNOWN'
+                        or check['durable_write_ownership'] == 'UNKNOWN'):
+                    return False
+                if ((check['owned_workers'] or check['entered_operations']
+                     or check['unfinished_durable_writes'])
+                        and (not allow_drainable or counted.get('HOUSEKEEPING', 0) == 0)):
+                    return False
             if bulk_import is not None and bulk_import.work_status().get("batch_active"):
                 if not allow_drainable or counted.get("BULK_IMPORT", 0) == 0:
                     return False
@@ -2432,6 +2724,9 @@ class KronosBrowserServer(ThreadingHTTPServer):
     def _maintenance_final_owner_proof(self) -> bool:
         """Fail closed on missing or incomplete final cleanup facts."""
         try:
+            checker = getattr(self, 'mcx_official_check', None)
+            if checker is not None and not checker.cleanup_complete():
+                return False
             if self.maintenance_admission.snapshot()["owners"]:
                 return False
             if self._active_sponsor_work or not self._domain_closed:
@@ -2547,26 +2842,17 @@ class KronosBrowserServer(ThreadingHTTPServer):
         """Drain without holding the coordinator or Browser shutdown lock."""
         admission = self.maintenance_admission
         deadline = monotonic() + drain_seconds
-        original = getattr(self, "_failed_fenced_original_binding", None)
-        if original is None:
-            remaining = lambda: max(0.0, deadline - monotonic())
-        else:
-            # Prospective R3 enrollment preserves the controller's original
-            # absolute deadline. A worker start can never reset its budget.
-            original_budget = original.budget
-            original_deadline = int(original.payload["original_drain_deadline_ns"])
-            # Observe exhaustion of the inner drain allowance without resetting
-            # or poisoning the original outer stop budget used for actual join
-            # and closure publication. No product cleanup is admitted after it.
-            remaining = lambda: max(0.0,
-                (original_deadline - original_budget.check()) / 1_000_000_000)
+        ordinary = getattr(self,'_ordinary_stop_context',None)
+        if ordinary is not None:
+            deadline = min(deadline,ordinary[1].budget.deadline_ns/1_000_000_000)
         try:
+            if ordinary is not None:ordinary[1].check()
             state = admission.snapshot()["state"]
             if state == "FENCED":
                 admission.draining(generation)
             elif state != "DRAINING":
                 raise ValueError("MAINTENANCE_STATE_CONFLICT")
-            if not admission.wait_for_zero(generation, remaining()):
+            if not admission.wait_for_zero(generation, max(0.0, deadline - monotonic())):
                 return
             if not self.maintenance_replacement_idle(allow_drainable=True):
                 admission.fail(generation, "OWNER_PROOF_UNAVAILABLE")
@@ -2577,26 +2863,32 @@ class KronosBrowserServer(ThreadingHTTPServer):
                     self._quiesce_monitoring_producers()
             finally:
                 finalizer.release()
-            if not admission.wait_for_zero(generation, remaining()):
+            if not admission.wait_for_zero(generation, max(0.0, deadline - monotonic())):
                 return
             finalizer = admission.finalizer(generation)
             try:
                 with finalizer.activate():
                     self._close_domain_owners(
-                        bulk_timeout_seconds=remaining(),
-                        require_proof=True,
+                        bulk_timeout_seconds=max(0.0, deadline - monotonic()),
+                        require_proof=True, _deadline=deadline,
                     )
             finally:
                 finalizer.release()
-            if not admission.wait_for_zero(generation, remaining()):
+            if not admission.wait_for_zero(generation, max(0.0, deadline - monotonic())):
                 return
-            if remaining() <= 0 or not self._maintenance_final_owner_proof():
+            if monotonic() >= deadline or not self._maintenance_final_owner_proof():
                 admission.fail(generation, "CLEANUP_UNRESOLVED")
                 return
             control = self.restart_control
             if control is None or not control.owns_current_process():
                 admission.fail(generation, "OWNER_PROOF_UNAVAILABLE")
                 return
+            if ordinary is not None:
+                ordinary[1].check()
+                admission.ready(generation)
+                admission.stopping(generation)
+                self.shutdown()
+                return  # No V2 handoff or restoration authority is created.
             governance = self.connection_governance
             loaded_revision = None if governance is None else governance.process.loaded_revision
             if (not callable(getattr(control, "maintenance_drain_handoff", None))
@@ -2614,39 +2906,23 @@ class KronosBrowserServer(ThreadingHTTPServer):
                 admission.fail(generation, "HANDOFF_FAILED")
                 return
             admission.stopping(generation)
-        except (OSError, RuntimeError, TypeError, ValueError) as error:
+        except BaseException as error:
+            # Aggregation preserves cancellation members too. Record the
+            # maintenance denial before propagating an unexpected/grouped
+            # failure; never leave the generation silently FINALIZING.
             if admission.snapshot()["state"] != "FAILED_FENCED":
-                admission.fail(generation, "DRAIN_TIMEOUT" if original is not None
-                    and getattr(error, "code", None) == "TIMEOUT" else "CLEANUP_UNRESOLVED")
-            return
-        if original is None:
-            self.shutdown()
-        # An enrolled original observer still owns its native closure and P
-        # termination publication. Its HTTP handler shuts down only after that
-        # actual join/publication completes; main teardown must not overtake it.
-
-    def _finish_original_shutdown_observation(self, generation, original) -> bool:
-        if (original is not self._failed_fenced_original_binding
-                or original.ledger.coordinator is not self.maintenance_admission):
-            raise ValueError("FAILED_FENCED_ORIGINAL_OBSERVER_CHANGED")
-        snapshot = self.maintenance_admission.snapshot()
-        if snapshot["generation"] != generation:
-            raise ValueError("FAILED_FENCED_ORIGINAL_GENERATION_CHANGED")
-        if snapshot["state"] == "FAILED_FENCED":
-            return False
-        publication = self.maintenance_admission.original_execution_snapshot()
-        if (snapshot["state"] != "STOPPING"
-                or publication != {"executor": original.executor, "state": "COMPLETE",
-                    "operational_owners": 0, "publisher_owners": 0}
-                or getattr(self, "_failed_fenced_original_completion", None) is None):
-            raise ValueError("FAILED_FENCED_ORIGINAL_PUBLICATION_INCOMPLETE")
-        original.budget.check()
+                admission.fail(generation, "CLEANUP_UNRESOLVED")
+            if isinstance(error, (OSError, RuntimeError, TypeError, ValueError)):
+                return
+            raise
         self.shutdown()
-        return True
 
     def begin_sponsor_shutdown(self) -> str:
         """Claim one bounded shutdown after proving this process owns the runtime."""
 
+        from kronos.common import legacy_bootstrap as adapter
+        if adapter.ORDINARY_RESTART_POLICY is not None:
+            return self._begin_ordinary_stop()
         with self._shutdown_lock:
             if self._shutdown_started:
                 return "ALREADY_SHUTTING_DOWN"
@@ -2683,24 +2959,40 @@ class KronosBrowserServer(ThreadingHTTPServer):
             return "SHUTDOWN_ACCEPTED"
 
 
+    def _begin_ordinary_stop(self):
+        from kronos.common import release_admission as admission
+        import subprocess
+        ticket=self.maintenance_admission.admit_root('BROWSER_POST')
+        if ticket is None:return 'MAINTENANCE_ADMISSION_DENIED'
+        with self._shutdown_lock:
+            if self._shutdown_started:
+                ticket.release();return 'ALREADY_SHUTTING_DOWN'
+            self._shutdown_started=True
+            self._ordinary_stop_ticket=ticket
+            self._ordinary_stop_process=None
+        # A failed or uncertain launch leaves the ticket/failure latch retained.
+        # Only the actual native custodian's verified request transfers ownership.
+        if (self.restart_control is None or not self.restart_control.owns_current_process()
+                or getattr(self,'_ordinary_composition',None) is None):
+            return 'RUNTIME_OWNERSHIP_UNVERIFIED'
+        environment={k:v for k,v in os.environ.items() if not k.startswith('KRONOS_')}
+        generation=sha256(uuid4().bytes).hexdigest()
+        if not self.maintenance_admission.claim(generation):return 'MAINTENANCE_ADMISSION_DENIED'
+        self._ordinary_stop_generation=generation
+        environment['KRONOS_LAUNCH_MODE']='ORDINARY_STOP'
+        environment['KRONOS_ORDINARY_STOP_GENERATION']=generation
+        environment['KRONOS_ORDINARY_STOP_DEADLINE_NS']=str(admission.monotonic_ns()+15_000_000_000)
+        environment['KRONOS_ORDINARY_STOP_BOOT_SESSION']=admission.kernel_boot_identity()
+        self._ordinary_stop_process=subprocess.Popen([admission.CANONICAL_PARENT],env=environment,close_fds=True)
+        return 'SHUTDOWN_ACCEPTED'
+
+
+
 class _BrowserHandler(BaseHTTPRequestHandler):
     server: KronosBrowserServer
 
     def setup(self) -> None:
         super().setup()
-        binding = getattr(self.server, "_failed_fenced_binding", None)
-        if binding is None and getattr(self.server, "_failed_fenced_ledger", None) is not None:
-            from kronos.common.failed_fenced_startup import prepare_recovery_binding
-            with self.server._failed_fenced_binding_lock:
-                binding = self.server._failed_fenced_binding
-                if binding is None:
-                    binding = prepare_recovery_binding(self.server)
-                    if binding is not None:
-                        self.server.bind_failed_fenced_recovery(binding)
-        if binding is not None:
-            # BaseHTTPRequestHandler reads its first line before parse_request.
-            # The already pinned CLAIM's absolute budget applies from this read.
-            binding.prepare_transport(self.connection)
         # Delegate the original stream operations and HTTP parser unchanged;
         # measure buffered/socket header reads without retaining their bytes.
         original = self.rfile
@@ -2708,17 +3000,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             def readline(wrapper, *args, **kwargs):
                 with diagnostic_stage("REQUEST_HEADERS", "WAIT"):
                     try:
-                        if binding is None:
-                            value = original.readline(*args, **kwargs)
-                        else:
-                            from kronos.browser.failed_fenced_control import read_budgeted_line
-                            # BaseHTTPRequestHandler supplies 65537; the R3
-                            # header parser supplies its remaining finite cap.
-                            # Keep ordinary streams unchanged when unenrolled.
-                            if kwargs or len(args) != 1:
-                                raise ValueError("FAILED_FENCED_CONTROL_READ_LIMIT_INVALID")
-                            value = read_budgeted_line(original, args[0],
-                                connection=self.connection, budget=binding.transaction.budget)
+                        value = original.readline(*args, **kwargs)
                     except BaseException as error:
                         trace = current_trace()
                         if trace is not None:
@@ -2733,19 +3015,6 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         self.rfile = TimedReader()
 
     def parse_request(self) -> bool:
-        request_parts = self.raw_requestline.split(b" ", 2)
-        if (len(request_parts) >= 2
-                and request_parts[1].startswith(b"/control/failed-fenced-recovery/")):
-            # R3 owns its exact raw framing. Do not pass its private control
-            # headers through the ordinary parser, business admission or logs.
-            self.close_connection = True
-            self.requestline = "FAILED_FENCED_RECOVERY_CONTROL"
-            self.command = "POST"
-            self.request_version = "HTTP/1.0"
-            binding = self.server._failed_fenced_binding
-            if binding is not None:
-                binding.handle(self)
-            return False
         result = super().parse_request()
         trace = current_trace()
         if trace is not None:
@@ -3689,8 +3958,14 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                     self.server.telegram.status(),
                     self.server.telegram.private_chat_candidates(),
                     self.server.active_live_monitoring_count(),
+                    mcx_check=(self.server.mcx_official_check.settings_status()
+                        if getattr(self.server, 'mcx_official_check', None) is not None else None),
                 )
             )
+            return
+        if path == '/settings/mcx-check/status':
+            checker = getattr(self.server, 'mcx_official_check', None)
+            self._json(checker.settings_status() if checker is not None else {})
             return
         match = _WORKSPACE_ROUTE.fullmatch(path)
         if match:
@@ -3942,6 +4217,38 @@ class _BrowserHandler(BaseHTTPRequestHandler):
             active_tab="Opportunities", body=body,
             back_link='<a href="/swing/opportunities">← Opportunities</a>'))
 
+    def _mcx_check_post(self, path: str) -> None:
+        from kronos.application.mcx_official_check import CheckFrequency
+        checker = getattr(self.server, 'mcx_official_check', None)
+        if checker is None:
+            self._text(HTTPStatus.SERVICE_UNAVAILABLE, 'Official checking is unavailable.')
+            return
+        try:
+            length = int(self.headers.get('Content-Length', '0'))
+            if urlsplit(self.path).query:
+                raise ValueError('QUERY_DENIED')
+            if path.endswith('/now'):
+                if length != 0:
+                    raise ValueError('BODY_DENIED')
+                result = checker.check_now()
+                if result not in {'SCHEDULED', 'PENDING'}:
+                    raise ValueError('CHECK_DENIED')
+            else:
+                if (not 0 < length <= 128 or self.headers.get('Content-Type', '').split(';', 1)[0]
+                        != 'application/x-www-form-urlencoded'):
+                    raise ValueError('CONFIGURATION_INVALID')
+                values = parse_qs(self.rfile.read(length).decode('ascii'), strict_parsing=True)
+                if (set(values) != {'enabled', 'frequency'}
+                        or any(len(v) != 1 for v in values.values())
+                        or values['enabled'][0] not in {'on', 'off'}):
+                    raise ValueError('CONFIGURATION_INVALID')
+                checker.configure(automatic_check_enabled=values['enabled'][0] == 'on',
+                                  frequency=CheckFrequency(values['frequency'][0]))
+        except (ValueError, OSError, UnicodeError, RuntimeError):
+            self._text(HTTPStatus.CONFLICT, 'Official check request rejected; retained evidence is preserved.')
+            return
+        self._redirect('/settings#market-calendar')
+
     def _swing_research_update(self, *, retained_only=False) -> None:
         try:
             length = int(self.headers.get("Content-Length", ""))
@@ -4013,6 +4320,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         self._json(result)
 
     def _dispatch_post(self, path: str) -> None:
+        if path in {'/settings/mcx-check/configure', '/settings/mcx-check/now'}:
+            self._mcx_check_post(path)
+            return
         if path in {"/control/swing-research/commission", "/control/swing-research/corporate-actions/import"}:
             self._swing_research_authority(path)
             return
@@ -4766,7 +5076,7 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
         self.wfile.flush()
-        if result == "SHUTDOWN_ACCEPTED":
+        if result == "SHUTDOWN_ACCEPTED" and getattr(self.server,'_ordinary_stop_process',None) is None:
             Thread(
                 target=self.server.shutdown,
                 name="kronos-sponsor-exit",
@@ -5447,32 +5757,36 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 return
             claimed = False
             try:
+                ordinary_id=self.headers.get('X-Kronos-Ordinary-Stop')
+                launched=getattr(self.server,'_ordinary_stop_process',None)
+                if ordinary_id is not None:
+                    from kronos.common.legacy_bootstrap import ordinary_stop_context
+                    context=ordinary_stop_context(self.server,generation,ordinary_id)
+                    if (launched is None or launched.pid!=context[0]['parent']['pid']
+                            or launched.poll() is not None
+                            or getattr(self.server,'_ordinary_stop_context',None) is not None):
+                        raise ValueError('ORDINARY_STOP_CUSTODIAN_MISMATCH')
+                    self.server._ordinary_stop_context=context
+                    self.server._ordinary_stop_transfer=dict(pid=launched.pid,
+                        kernel_birth=context[0]['parent']['kernel_birth'],identity=ordinary_id,
+                        role='ACTUAL_NATIVE_CUSTODIAN; BACKEND_WILL_EXIT_WITHOUT_WAIT_CYCLE')
+                    self.server._ordinary_stop_ticket.release()
+                elif launched is not None:
+                    raise ValueError('ORDINARY_STOP_NO_FALLBACK')
                 if (not control.owns_current_process()
                         or not self.server.maintenance_replacement_idle(
                             allow_drainable=True)):
                     raise ValueError("MAINTENANCE_WORK_IN_PROGRESS")
-                original = self.server._failed_fenced_original_binding
-                if original is None and self.server._failed_fenced_ledger is not None:
-                    from time import monotonic_ns
-                    from kronos.common.failed_fenced_startup import prepare_original_binding
-                    with self.server._failed_fenced_binding_lock:
-                        original = self.server._failed_fenced_original_binding
-                        if original is None:
-                            original = prepare_original_binding(self.server, generation,
-                                monotonic_ns() + 10_000_000_000)
-                            if original is not None:
-                                self.server.bind_failed_fenced_original(original)
-                if original is not None:
-                    original.prepare(generation, control)
-                if not self.server.maintenance_admission.claim(generation):
+                if ordinary_id is not None:
+                    existing=self.server.maintenance_admission.snapshot()
+                    if (existing['state']!='FENCED' or existing['generation']!=generation
+                            or generation!=self.server._ordinary_stop_generation):
+                        raise ValueError('ORDINARY_STOP_GENERATION_CONFLICT')
+                elif not self.server.maintenance_admission.claim(generation):
                     raise ValueError("MAINTENANCE_GENERATION_CONFLICT")
                 claimed = True
-                if original is not None:
-                    # All original custody, scope, accepted-work roots and
-                    # cleanup applicability are durable before owner effects.
-                    original.fenced(generation)
                 with self.server._shutdown_lock:
-                    if self.server._shutdown_started:
+                    if self.server._shutdown_started and ordinary_id is None:
                         raise ValueError("MAINTENANCE_ALREADY_SHUTTING_DOWN")
                     self.server._shutdown_started = True
                 self.server.application.enter_controlled_maintenance(generation)
@@ -5482,8 +5796,6 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                     self.server.maintenance_admission.fail(
                         generation, "OWNER_PROOF_UNAVAILABLE"
                     )
-                    if original is not None:
-                        original.retain_first_failure()
                 self._text(HTTPStatus.CONFLICT, "Maintenance validation failed.")
                 return
         self.send_response(HTTPStatus.ACCEPTED)
@@ -5495,32 +5807,14 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
         self.wfile.flush()
-        target = (self.server.shutdown if governance is None else
-                  lambda: self.server._complete_governed_shutdown(
-                      generation, governance.process.runtime_identity))
-        original = self.server._failed_fenced_original_binding
-        thread = Thread(
-            target=(target if original is None else lambda: original.run(target)),
+        Thread(
+            target=(self.server.shutdown if governance is None else
+                    lambda: self.server._complete_governed_shutdown(
+                        generation, governance.process.runtime_identity
+                    )),
             name="kronos-browser-maintenance-drain",
             daemon=True,
-        )
-        if original is not None:
-            original.attach_thread(thread)
-        thread.start()
-        if original is not None:
-            limits = original.payload["original_limits"]
-            budget = original.budget
-            try:
-                self.server._failed_fenced_original_completion = original.join_executor(
-                    budget, deadline_ns=int(limits["stop_deadline_ns"]))
-                self.server._finish_original_shutdown_observation(generation, original)
-            except (OSError, RuntimeError, TypeError, ValueError):
-                # Preserve any completed immutable closure. An incomplete/late
-                # observer never permits main teardown or timeout-as-zero.
-                if not hasattr(self.server, "_failed_fenced_original_completion"):
-                    self.server._failed_fenced_original_completion = None
-                if self.server.maintenance_admission.snapshot()["state"] == "STOPPING":
-                    self.server.maintenance_admission.fail(generation, "OWNER_PROOF_UNAVAILABLE")
+        ).start()
 
     def _receive_chart_analyst_credential(self) -> None:
         content_type = self.headers.get("Content-Type", "").split(";", 1)[0]
@@ -7135,42 +7429,63 @@ def create_browser_server(
     mcx_v1_composition_factory: Callable | None = None,
     swing_research_control: SwingResearchControl | None = None,
     intraday_dashboard_summary: Callable | None = None,
+    _startup_cleanup=None,
+    _defer_k5_execution: bool = False,
+    _defer_ux10_delivery: bool = False,
 ) -> KronosBrowserServer:
     if type(port) is not int or not 0 <= port <= 65535:
         raise ValueError("BROWSER_SERVER_PORT_INVALID")
-    return KronosBrowserServer(
-        (_LOOPBACK_HOST, port),
-        application,
-        v1_review,
-        chart_analyst_credentials,
-        chart_analyst_activation,
-        restart_control,
-        intraday_workstation,
-        step32_workflow,
-        native_review,
-        product_routes,
-        progression_watches,
-        visual_v3,
-        visual_v3_live,
-        trade_window,
-        telegram,
-        ux10_notifications,
-        refresh_reminders,
-        notification_centre,
-        provider_instrument_master_operation,
-        intraday_discovery_control,
-        intraday_historical_control,
-        mcx_supporting_context,
-        intraday_wo09_notification_sources,
-        provider_login_navigation,
-        bulk_import_root,
-        mcx_slice3,
-        mcx_v1_control,
-        native_intake,
-        mcx_v1_composition_factory,
-        swing_research_control,
-        intraday_dashboard_summary,
-    )
+    cleanup = _startup_cleanup if _startup_cleanup is not None else _StartupCleanup()
+    if cleanup._slots["server"]["state"] == "NOT_CREATED":
+        cleanup.begin("server")
+    try:
+        return KronosBrowserServer(
+            (_LOOPBACK_HOST, port),
+            application,
+            v1_review,
+            chart_analyst_credentials,
+            chart_analyst_activation,
+            restart_control,
+            intraday_workstation,
+            step32_workflow,
+            native_review,
+            product_routes,
+            progression_watches,
+            visual_v3,
+            visual_v3_live,
+            trade_window,
+            telegram,
+            ux10_notifications,
+            refresh_reminders,
+            notification_centre,
+            provider_instrument_master_operation,
+            intraday_discovery_control,
+            intraday_historical_control,
+            mcx_supporting_context,
+            intraday_wo09_notification_sources,
+            provider_login_navigation,
+            bulk_import_root,
+            mcx_slice3,
+            mcx_v1_control,
+            native_intake,
+            mcx_v1_composition_factory,
+            swing_research_control,
+            intraday_dashboard_summary,
+            cleanup,
+            _defer_k5_execution,
+            _defer_ux10_delivery,
+        )
+    except BaseException as error:
+        # A partial server is retained in the source-owned ledger even though
+        # the constructor did not return it. Never manufacture a replacement.
+        cleanup.original_failure = error
+        complete = cleanup.cleanup()
+        if complete and cleanup.server is not None:
+            cleanup.server._domain_closed = True
+        for name, failure in cleanup.errors:
+            error.add_note("Cleanup unresolved: " + name + ":" + type(failure).__name__)
+        raise
+
 
 
 def _openai_chart_analyst_security(

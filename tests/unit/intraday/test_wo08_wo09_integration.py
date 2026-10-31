@@ -121,9 +121,27 @@ def test_machine_unavailable_has_no_notification_even_without_opportunity(tmp_pa
     run, records, _, app = graph(tmp_path, all_unavailable=True)
     readiness, _ = app.evaluate_wo08(records[0], created_at=run.analysis_boundary)
     assert ready(None,readiness) is None and project_notification(readiness) is None
-    service = object.__new__(IntradayNotifications)
-    service._origins = {}; service.wo09 = app.store
-    service._consume('READINESS',readiness.readiness_identity)
+    from kronos.application.intraday_research import IntradayResearchApplication
+    from kronos.application.notification_centre import SponsorNotificationCentre, SponsorNotificationLifecycleStore
+    from kronos.intraday.wo10_futures_store import FuturesStore
+    from kronos.intraday.wo11_lifecycle_store import LifecycleStore
+    from kronos.intraday.wo12_research_store import ResearchStore
+    futures=FuturesStore(tmp_path/'empty-futures')
+    lifecycle=LifecycleStore(tmp_path/'empty-lifecycle')
+    research=IntradayResearchApplication(probables=ProbablesV2Store(tmp_path/'empty-probables'),
+        wo09=app.store,futures=futures,lifecycle=lifecycle,
+        store=ResearchStore(tmp_path/'empty-research'),publication_root=tmp_path/'unused-publication')
+    centre=SponsorNotificationCentre(SponsorNotificationLifecycleStore(tmp_path/'notification-centre'))
+    service=IntradayNotifications(centre=centre,research=research,wo09=app.store,
+        futures=futures,lifecycle=lifecycle,background=False)
+    try:
+        assert service._origins == {}
+        before=service.checkpoint(certify_durable=True)
+        service._consume('READINESS',readiness.readiness_identity)
+        assert centre.snapshot(product='INTRADAY').records == ()
+        assert service.checkpoint(certify_durable=True) == before
+    finally:
+        service.close()
 
 
 def test_composed_successor_refuses_new_historical_visual_authority_before_visual_access(tmp_path):

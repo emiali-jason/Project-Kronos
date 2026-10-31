@@ -2,10 +2,6 @@
 
 from __future__ import annotations
 
-from kronos.application.failed_fenced_owners import (record_binding, binding_activated, binding_cleared, recorded_binding_clear)
-
-from kronos.application.failed_fenced_owners import recorded_cleanup
-
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -444,8 +440,6 @@ class NativeReviewWorkflow:
         trade_journal_service: TradeJournalService | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ) -> None:
-        from kronos.application.failed_fenced_owners import register_owner
-        register_owner('NATIVE', self, __file__)
         if (
             type(store) is not NativeReviewEvidenceStore
             or (
@@ -1027,19 +1021,14 @@ class NativeReviewWorkflow:
         self._emit_research("SPONSOR", retained)
         return retained
 
-    def register_research_capture(self, capture, *, capture_owner=None) -> None:
+    def register_research_capture(self, capture) -> None:
         if not callable(capture) or self._research_capture is not None:
             raise ValueError("SWING_RESEARCH_CAPTURE_INVALID")
-        binding = record_binding("RESEARCH_CAPTURE_BINDING", self, capture,
-            self.clear_research_capture, lambda: self._research_capture, __file__, capture_owner)
         self._research_capture = capture
-        binding_activated(binding)
 
-    @recorded_binding_clear("RESEARCH_CAPTURE_BINDING")
     def clear_research_capture(self, capture) -> None:
         if self._research_capture is capture:
             self._research_capture = None
-            binding_cleared(self, "RESEARCH_CAPTURE_BINDING", capture)
 
     def retained_research_events(self):
         """Read verified Sponsor and lifecycle evidence for explicit replay."""
@@ -1103,7 +1092,6 @@ class NativeReviewWorkflow:
     def active_lifecycle_monitoring_ids(self) -> tuple[str, ...]:
         return self._active_lifecycle_monitoring.active_position_ids
 
-    @recorded_cleanup('CLOSE_NATIVE')
     def close(self) -> None:
         """Release process-owned monitoring without mutating retained evidence."""
 

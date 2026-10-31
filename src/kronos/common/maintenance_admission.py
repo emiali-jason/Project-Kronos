@@ -11,7 +11,6 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from threading import Condition, Lock
 from time import monotonic
-from time import clock_gettime_ns, CLOCK_MONOTONIC
 import re
 
 
@@ -34,8 +33,6 @@ class AdmissionTicket:
     kind: str
     generation: str
     _released: bool = False
-    identity: str = ""
-    parent_identity: str | None = None
 
     def fork(self, kind: str) -> AdmissionTicket:
         """Transfer ownership to an accepted child, even after the fence."""
@@ -47,7 +44,7 @@ class AdmissionTicket:
 
     @contextmanager
     def activate(self):
-        if not self._owner.is_live(self):
+        if self._released:
             raise ValueError("MAINTENANCE_PARENT_TICKET_INVALID")
         token = _current_ticket.set(self)
         try:
@@ -76,17 +73,6 @@ class MaintenanceAdmissionCoordinator:
         self._generation: str | None = None
         self._owners: dict[str, int] = {}
         self._failure: str | None = None
-        self._failed_ns: int | None = None
-        # Object identity, not a caller-created dataclass or a kind counter,
-        # establishes issued ownership. Released identities are never reused.
-        self._tickets: dict[str, AdmissionTicket] = {}
-        self._ticket_sequence = 0
-        self._ticket_history: dict[str, dict[str, object]] = {}
-        self._recovery: dict[str, object] | None = None
-        self._completion_rights: dict[str, tuple[str, str]] = {}
-        self._fence_tickets: tuple[str, ...] = ()
-        self._original_execution: dict[str, object] | None = None
-        self._prospective_ledger = None
 
     def admit(self, kind: str) -> AdmissionTicket | None:
         self._require_kind(kind)
@@ -94,13 +80,11 @@ class MaintenanceAdmissionCoordinator:
             if self._state != "OPEN":
                 parent = _current_ticket.get()
                 if (self._state not in {"FENCED", "DRAINING"}
-                    or not self._live_locked(parent)):
+                    or parent is None or parent._owner is not self
+                    or parent._released):
                     return None
-            else:
-                parent = _current_ticket.get()
-                if not self._live_locked(parent):
-                    parent = None
-            return self._issue_locked(kind, self._generation or "OPEN", parent)
+            self._owners[kind] = self._owners.get(kind, 0) + 1
+            return AdmissionTicket(self, kind, self._generation or "OPEN")
 
     def admit_root(self, kind: str) -> AdmissionTicket | None:
         """OPEN-only independent work; never inherit an accepted parent at fence."""
@@ -108,7 +92,8 @@ class MaintenanceAdmissionCoordinator:
         with self._condition:
             if self._state != "OPEN":
                 return None
-            return self._issue_locked(kind, "OPEN")
+            self._owners[kind] = self._owners.get(kind, 0) + 1
+            return AdmissionTicket(self, kind, "OPEN")
 
     def claim(self, generation: str) -> bool:
         if type(generation) is not str or _GENERATION.fullmatch(generation) is None:
@@ -117,7 +102,6 @@ class MaintenanceAdmissionCoordinator:
             if self._state != "OPEN":
                 return False
             self._generation = generation
-            self._fence_tickets = tuple(sorted(self._tickets))
             self._state = "FENCED"
             self._condition.notify_all()
             return True
@@ -137,7 +121,8 @@ class MaintenanceAdmissionCoordinator:
             if self._state not in {"DRAINING", "FINALIZING"} or self._owners:
                 raise ValueError("MAINTENANCE_OWNER_PROOF_UNAVAILABLE")
             self._state = "FINALIZING"
-            return self._issue_locked("FINALIZER", generation)
+            self._owners["FINALIZER"] = 1
+            return AdmissionTicket(self, "FINALIZER", generation)
 
     def wait_for_zero(self, generation: str, timeout_seconds: float) -> bool:
         if type(timeout_seconds) not in {int, float} or not 0 <= timeout_seconds <= 15:
@@ -195,23 +180,19 @@ class MaintenanceAdmissionCoordinator:
     def _fork(self, parent: AdmissionTicket, kind: str) -> AdmissionTicket:
         self._require_kind(kind)
         with self._condition:
-            if not self._live_locked(parent):
+            if parent._owner is not self or parent._released:
                 self._fail_locked("OWNER_PROOF_UNAVAILABLE")
                 raise ValueError("MAINTENANCE_PARENT_TICKET_INVALID")
-            if self._state not in {"OPEN", "FENCED", "DRAINING", "FINALIZING"}:
-                self._recovery_fail_locked("ACCOUNTING")
-                raise ValueError("MAINTENANCE_COMPLETION_RIGHT_REQUIRED")
-            return self._issue_locked(kind, parent.generation, parent)
+            self._owners[kind] = self._owners.get(kind, 0) + 1
+            return AdmissionTicket(self, kind, parent.generation)
 
     def _release(self, ticket: AdmissionTicket) -> None:
         with self._condition:
             count = self._owners.get(ticket.kind, 0)
-            if not self._live_locked(ticket) or count <= 0:
+            if ticket._owner is not self or ticket._released or count <= 0:
                 self._fail_locked("OWNER_PROOF_UNAVAILABLE")
                 raise ValueError("MAINTENANCE_OWNER_UNDERFLOW")
             ticket._released = True
-            del self._tickets[ticket.identity]
-            self._ticket_history[ticket.identity]["released_ns"] = clock_gettime_ns(CLOCK_MONOTONIC)
             if count == 1:
                 del self._owners[ticket.kind]
             else:
@@ -223,192 +204,9 @@ class MaintenanceAdmissionCoordinator:
             raise ValueError("MAINTENANCE_GENERATION_CONFLICT")
 
     def _fail_locked(self, reason: str) -> None:
-        # The first ordinary failure is terminal. A later recovery failure is
-        # recorded on the distinct transaction and cannot rewrite this fact.
         self._state = "FAILED_FENCED"
-        if self._failure is None:
-            self._failure = reason
-            self._failed_ns = clock_gettime_ns(CLOCK_MONOTONIC)
+        self._failure = reason
         self._condition.notify_all()
-
-    def _issue_locked(self, kind: str, generation: str,
-                      parent: AdmissionTicket | None = None) -> AdmissionTicket:
-        self._ticket_sequence += 1
-        identity = f"ticket:{self._ticket_sequence}"
-        ticket = AdmissionTicket(self, kind, generation, False, identity,
-                                 parent.identity if parent else None)
-        self._tickets[identity] = ticket
-        self._owners[kind] = self._owners.get(kind, 0) + 1
-        self._ticket_history[identity] = {
-            "identity": identity, "kind": kind, "generation": generation,
-            "parent": ticket.parent_identity,
-            "accepted_ns": clock_gettime_ns(CLOCK_MONOTONIC),
-            "released_ns": None, "operation": None,
-        }
-        return ticket
-
-    def _live_locked(self, ticket: AdmissionTicket | None) -> bool:
-        return (isinstance(ticket, AdmissionTicket) and ticket._owner is self
-                and not ticket._released and self._tickets.get(ticket.identity) is ticket)
-
-    def is_live(self, ticket: AdmissionTicket) -> bool:
-        with self._condition:
-            return self._live_locked(ticket)
-
-    def current_ticket(self) -> AdmissionTicket | None:
-        ticket = _current_ticket.get()
-        return ticket if self.is_live(ticket) else None
-
-    def bind_operation(self, ticket: AdmissionTicket, operation: str) -> None:
-        with self._condition:
-            if not self._live_locked(ticket):
-                raise ValueError("MAINTENANCE_PARENT_TICKET_INVALID")
-            old = self._ticket_history[ticket.identity]["operation"]
-            if old is not None and old != operation:
-                raise ValueError("MAINTENANCE_OPERATION_CONFLICT")
-            self._ticket_history[ticket.identity]["operation"] = operation
-
-    def ticket_snapshot(self) -> dict[str, object]:
-        with self._condition:
-            return {"live": tuple(sorted(self._tickets)),
-                    "fence": self._fence_tickets,
-                    "history": {k: dict(v) for k, v in self._ticket_history.items()}}
-
-    def register_completion(self, parent: AdmissionTicket, obligation: str, kind: str) -> None:
-        self._require_kind(kind)
-        with self._condition:
-            if (self._state != "OPEN" or not self._live_locked(parent)
-                    or obligation in self._completion_rights):
-                raise ValueError("MAINTENANCE_COMPLETION_REGISTRATION_INVALID")
-            self._completion_rights[obligation] = (parent.identity, kind)
-
-    def fork_completion(self, parent: AdmissionTicket, obligation: str) -> AdmissionTicket:
-        with self._condition:
-            right = self._completion_rights.get(obligation)
-            if (not self._live_locked(parent) or right is None or right[0] != parent.identity
-                    or (self._recovery and self._recovery["state"] not in {"ACCEPTED"})
-                    or self._state not in {"OPEN", "FENCED", "DRAINING", "FAILED_FENCED"}):
-                self._recovery_fail_locked("ACCOUNTING")
-                raise ValueError("MAINTENANCE_COMPLETION_RIGHT_INVALID")
-            del self._completion_rights[obligation]
-            return self._issue_locked(right[1], parent.generation, parent)
-
-    def claim_recovery(self, transaction: str, known_tickets: set[str]) -> None:
-        with self._condition:
-            if (self._state != "FAILED_FENCED" or self._recovery is not None
-                    or set(self._tickets) != known_tickets
-                    or self._original_execution is None
-                    or self._original_execution["state"] != "COMPLETE"
-                    or self._original_execution["operational_owners"] != 0
-                    or self._original_execution["publisher_owners"] != 0):
-                raise ValueError("MAINTENANCE_RECOVERY_CLAIM_INVALID")
-            self._recovery = {"transaction": transaction, "state": "ACCEPTED",
-                              "owners": 1, "failure": None}
-
-    def failure_snapshot(self) -> dict[str, object]:
-        with self._condition:
-            return {"state": self._state, "generation": self._generation,
-                    "failure": self._failure, "failed_ns": self._failed_ns}
-
-    def begin_original_execution(self, generation: str, executor: str) -> None:
-        with self._condition:
-            self._require_generation(generation)
-            if self._state != "FENCED" or self._original_execution is not None:
-                raise ValueError("MAINTENANCE_ORIGINAL_EXECUTOR_INVALID")
-            self._original_execution = {"executor": executor, "state": "OWNED",
-                                        "operational_owners": 1, "publisher_owners": 0}
-
-    def complete_original_execution(self, executor: str) -> None:
-        """Actual original executor return transfers ownership to its publisher."""
-        with self._condition:
-            e = self._original_execution
-            if e is None or e["executor"] != executor or e["state"] != "OWNED":
-                raise ValueError("MAINTENANCE_ORIGINAL_EXECUTOR_INVALID")
-            e.update(state="PUBLISHING", operational_owners=0, publisher_owners=1)
-
-    def finish_original_publication(self, executor: str) -> None:
-        """Called after every actual original closure fsync and exact readback."""
-        with self._condition:
-            e = self._original_execution
-            if e is None or e["executor"] != executor or e["state"] != "PUBLISHING":
-                raise ValueError("MAINTENANCE_ORIGINAL_PUBLISHER_INVALID")
-            e.update(state="COMPLETE", publisher_owners=0)
-            self._condition.notify_all()
-
-    def original_execution_snapshot(self) -> dict[str, object]:
-        with self._condition:
-            return dict(self._original_execution) if self._original_execution else {
-                "state": "NOT_REGISTERED", "operational_owners": None, "publisher_owners": None}
-
-    def wait_recovery_zero(self, transaction: str, deadline_ns: int) -> bool:
-        with self._condition:
-            self._require_recovery_locked(transaction, "ACCEPTED")
-            while self._tickets:
-                remaining = deadline_ns - clock_gettime_ns(CLOCK_MONOTONIC)
-                if remaining <= 0:
-                    self._recovery_fail_locked("TIMEOUT")
-                    return False
-                self._condition.wait(remaining / 1_000_000_000)
-                self._require_recovery_locked(transaction, "ACCEPTED")
-            if clock_gettime_ns(CLOCK_MONOTONIC) >= deadline_ns:
-                self._recovery_fail_locked("TIMEOUT")
-                return False
-            return True
-
-    def seal_recovery(self, transaction: str, deadline_ns: int) -> int:
-        with self._condition:
-            self._require_recovery_locked(transaction, "ACCEPTED")
-            now = clock_gettime_ns(CLOCK_MONOTONIC)
-            if self._tickets or self._owners or now >= deadline_ns:
-                self._recovery_fail_locked("TIMEOUT" if now >= deadline_ns else "ACCOUNTING")
-                raise ValueError("MAINTENANCE_RECOVERY_SEAL_INVALID")
-            self._recovery["state"] = "SEALED"
-            # The sole execution owner transfers, rather than temporarily
-            # disappearing, into the commit publisher.
-            return now
-
-    def release_recovery(self, transaction: str, deadline_ns: int) -> int:
-        with self._condition:
-            self._require_recovery_locked(transaction, "SEALED")
-            now = clock_gettime_ns(CLOCK_MONOTONIC)
-            if self._tickets or self._owners or now >= deadline_ns:
-                self._recovery_fail_locked("TIMEOUT" if now >= deadline_ns else "ACCOUNTING")
-                raise ValueError("MAINTENANCE_RECOVERY_RELEASE_INVALID")
-            self._recovery["owners"] = 0
-            self._recovery["state"] = "RELEASED"
-            self._condition.notify_all()
-            return now
-
-    def fail_recovery(self, code: str) -> None:
-        with self._condition:
-            self._recovery_fail_locked(code)
-
-    def finish_failed_recovery_execution(self, transaction: str) -> None:
-        """Release only the returned failed executor, never product ownership.
-
-        The source-owned transaction execution context calls this on its actual
-        return. This cannot produce a success proof or reopen the spent slot.
-        """
-        with self._condition:
-            self._require_recovery_locked(transaction, "SPENT_FAILED")
-            self._recovery["owners"] = 0
-            self._condition.notify_all()
-
-    def recovery_snapshot(self) -> dict[str, object] | None:
-        with self._condition:
-            return dict(self._recovery) if self._recovery else None
-
-    def _recovery_fail_locked(self, code: str) -> None:
-        if self._recovery is not None:
-            self._recovery["state"] = "SPENT_FAILED"
-            if self._recovery["failure"] is None:
-                self._recovery["failure"] = code
-        self._condition.notify_all()
-
-    def _require_recovery_locked(self, transaction: str, state: str) -> None:
-        if (self._recovery is None or self._recovery["transaction"] != transaction
-                or self._recovery["state"] != state or self._recovery["owners"] != 1):
-            raise ValueError("MAINTENANCE_RECOVERY_STATE_CONFLICT")
 
     @staticmethod
     def _require_kind(kind: str) -> None:

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from kronos.application.failed_fenced_owners import recorded_cleanup
-
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -207,8 +205,6 @@ class SwingV1BrowserOperationalization:
         step32_store: LocalStep32Store | None = None,
         recovered_records: Iterable[BrowserCandidateRecord] = (),
     ) -> None:
-        from kronos.application.failed_fenced_owners import register_owner
-        register_owner('STEP32', self, __file__)
         records = tuple(recovered_records)
         if any(type(item) is not BrowserCandidateRecord for item in records):
             raise TypeError("BROWSER_STEP32_DEPENDENCY_INVALID")
@@ -386,7 +382,6 @@ class SwingV1BrowserOperationalization:
             "",
         )
 
-    @recorded_cleanup('CLOSE_STEP32')
     def close(self) -> None:
         """Release owned monitoring sessions without changing lifecycle records."""
 

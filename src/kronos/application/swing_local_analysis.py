@@ -6,8 +6,6 @@ prepared projection. WO-12 originals and commissioning remain owned by its store
 """
 from __future__ import annotations
 
-from kronos.application.failed_fenced_owners import recorded_cleanup
-
 from collections.abc import Mapping
 from copy import deepcopy
 from datetime import UTC, datetime
@@ -101,8 +99,6 @@ class SwingLocalAnalysisWorkflow:
     """One synchronous retained-only operation; no startup/GET evaluation."""
 
     def __init__(self, application, intake, research, *, clock=None, capture=None):
-        from kronos.application.failed_fenced_owners import register_owner
-        register_owner('LOCAL_ANALYSIS', self, __file__)
         self.application, self.intake, self.research = application, intake, research
         self.store = research.store
         self.clock = clock or (lambda: datetime.now(UTC))
@@ -463,7 +459,6 @@ class SwingLocalAnalysisWorkflow:
         return self.refresh(run_identity=bundle.native.run_identity,
             publication_sha256=bundle.reference["sha256"], trigger="AUTOMATIC")
 
-    @recorded_cleanup('CLOSE_LOCAL')
     def close(self):
         with self._lock:
             self._closed = True
