@@ -821,3 +821,174 @@ def test_legacy_unfinished_write_retains_actual_custody(case,monkeypatch):
 def test_legacy_unresolved_helper_keeps_actual_exclusion(case,monkeypatch):
     _legacy_control(case,monkeypatch)
     test_actual_unresolved_helper_retains_exclusion_and_spent_intent(case,monkeypatch,'PREPARATORY')
+
+
+# Sponsor-approved 83564 lock amendment: the legacy metadata exception never
+# changes selected-release mode validation or startup/admission authority.
+def _lock_row():
+    return dict(path='.venv/.lock',mode=0o666,type='file',bytes=0,sha256=sha256(b'').hexdigest())
+
+
+def _install_legacy_lock(c,monkeypatch):
+    _legacy_control(c,monkeypatch)
+    value=json.loads(Path(c['old']['path']).read_bytes())
+    rows=c['owner']._roster(c['repo'])
+    lock=c['repo']/'.venv/.lock'
+    fd=os.open(lock,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o666)
+    try:os.fchmod(fd,0o666);os.fsync(fd)
+    finally:os.close(fd)
+    rows.append(_lock_row());rows.sort(key=lambda x:x['path'])
+    value['roster']=private(Path(value['roster']['path']),rows)
+    c['old']=private(Path(c['old']['path']),value);c['order']['current']=c['old']
+    return lock,rows
+
+
+def test_legacy_tool_lock_exact_checkpoint_and_rollback(case,monkeypatch):
+    c=case;lock,rows=_install_legacy_lock(c,monkeypatch)
+    original_budget=c['owner'].budget;deadline=c['owner'].original_deadline
+    test_actual_placement_and_separately_ordered_rollback(c)
+    assert lock.read_bytes()==b'' and lock.stat().st_mode&0o777==0o666
+    checkpoint=c['anchor'].parent/p.JOURNAL_NAME/'placement.checkpoint.backend/.venv/.lock'
+    assert checkpoint.read_bytes()==b'' and checkpoint.stat().st_mode&0o777==0o666
+    assert original_budget.deadline_ns==deadline
+    assert c['owner']._roster(c['repo'],legacy_roster=rows)==rows
+    (c['evidence']/'exact-legacy-lock-copy.json').write_text(json.dumps(dict(original_mode='0666',checkpoint_mode='0666',rollback_mode='0666',bytes=0,source_build_correspondence='UNAVAILABLE',production_mutation=False),indent=2)+'\n')
+
+
+@pytest.mark.parametrize('fault',('nonempty','symlink','hardlink','unsafe-mode','foreign-owner','other-path','missing-binding','coherent-symlink','change-during-read'))
+def test_legacy_tool_lock_rejected_variants(case,monkeypatch,fault):
+    from types import SimpleNamespace
+    c=case;lock,rows=_install_legacy_lock(c,monkeypatch);original=lock.stat();fired=[False]
+    if fault=='nonempty':lock.write_bytes(b'X')
+    elif fault in ('symlink','coherent-symlink'):
+        lock.unlink();target=c['order_path'].with_name('alias-empty');target.write_bytes(b'');lock.symlink_to(target)
+        if fault=='coherent-symlink':
+            rows=[x for x in rows if x['path']!='.venv/.lock']+[dict(path='.venv/.lock',mode=lock.lstat().st_mode&0o777,type='symlink',target=str(target),sha256=sha256(str(target).encode()).hexdigest())]
+    elif fault=='hardlink':os.link(lock,c['order_path'].with_name('lock-hardlink'))
+    elif fault=='unsafe-mode':lock.chmod(0o664)
+    elif fault=='other-path':
+        other=lock.with_name('other.lock');other.write_bytes(b'');other.chmod(0o666)
+        rows.append(dict(_lock_row(),path='.venv/other.lock'))
+    elif fault=='missing-binding':rows=[x for x in rows if x['path']!='.venv/.lock']
+    if fault in ('coherent-symlink','other-path','missing-binding'):
+        value=json.loads(Path(c['old']['path']).read_bytes());value['roster']=private(Path(value['roster']['path']),sorted(rows,key=lambda x:x['path']));c['old']=private(Path(c['old']['path']),value);c['order']['current']=c['old']
+    if fault=='foreign-owner':
+        actual=os.fstat
+        def observed(fd):
+            value=actual(fd)
+            if (value.st_dev,value.st_ino)==(original.st_dev,original.st_ino):
+                data={n:getattr(value,n) for n in dir(value) if n.startswith('st_')};data['st_uid']=os.getuid()+1;fired[0]=True
+                return SimpleNamespace(**data)
+            return value
+        monkeypatch.setattr(os,'fstat',observed)
+    elif fault=='change-during-read':
+        actual=os.read
+        def changing(fd,count):
+            raw=actual(fd,count)
+            s=os.fstat(fd)
+            if (s.st_dev,s.st_ino)==(original.st_dev,original.st_ino) and not fired[0]:
+                fired[0]=True;lock.write_bytes(b'CHANGED DURING ACTUAL READ')
+            return raw
+        monkeypatch.setattr(os,'read',changing)
+    app=package.identity(c['bundle'])
+    with pytest.raises((ValueError,OSError)):invoke(c)
+    assert package.identity(c['bundle'])==app
+    assert not (c['anchor'].parent/p.JOURNAL_NAME/'placement.backend-swapped.json').exists()
+    if fault in ('foreign-owner','change-during-read'):assert fired[0]
+    if fault=='change-during-read':assert lock.read_bytes()==b'CHANGED DURING ACTUAL READ'
+    (c['evidence']/'lock-negative-seams.json').write_text(json.dumps(dict(fault=fault,foreign_owner_metadata_simulated=(fault=='foreign-owner'),all_other_file_operations_actual=True),indent=2)+'\n')
+
+
+@pytest.mark.parametrize('mode',(0o666,0o600))
+def test_selected_tool_lock_preserves_strict_release_mode_checks(case,monkeypatch,mode):
+    c=case;_install_legacy_lock(c,monkeypatch)
+    value=json.loads(Path(c['new']['path']).read_bytes());rows=c['owner']._roster(c['newrepo'])
+    lock=c['newrepo']/'.venv/.lock';lock.write_bytes(b'');lock.chmod(mode)
+    rows.append(dict(_lock_row(),mode=mode));value['roster']=private(Path(value['roster']['path']),sorted(rows,key=lambda x:x['path']));c['new']=private(Path(c['new']['path']),value);c['order']['selected']=c['new']
+    if mode==0o666:
+        with pytest.raises(p.PlacementError,match='TREE_OWNER_MODE'):invoke(c)
+        assert not (c['anchor'].parent/p.JOURNAL_NAME/'placement.backend-swapped.json').exists()
+    else:
+        assert invoke(c)['original_outcome']=='UNPROVED'
+        assert (c['repo']/'.venv/.lock').stat().st_mode&0o777==0o600
+    assert lock.stat().st_mode&0o777==mode
+
+
+@pytest.mark.parametrize('fault',('fchmod','fsync','readback','exact-expiry'))
+def test_legacy_tool_lock_copy_uncertainty_is_permanent(case,monkeypatch,fault):
+    c=case;_install_legacy_lock(c,monkeypatch);created=[];fired=[False]
+    original_budget=c['owner'].budget;deadline=c['owner'].original_deadline
+    real_open=os.open;real_chmod=os.fchmod;real_sync=os.fsync
+    def opening(name,flags,*args,**kwargs):
+        fd=real_open(name,flags,*args,**kwargs)
+        if str(name)=='.lock' and flags&os.O_CREAT:created.append(fd)
+        return fd
+    def chmod(fd,mode):
+        if created and fd==created[-1] and fault=='fchmod':fired[0]=True;raise OSError('ACTUAL LEGACY LOCK MODE PUBLICATION FAILED')
+        return real_chmod(fd,mode)
+    def sync(fd):
+        result=real_sync(fd)
+        if created and fd==created[-1] and not fired[0]:
+            fired[0]=True
+            if fault=='fsync':raise OSError('ACTUAL LEGACY LOCK FSYNC UNCERTAIN')
+            if fault=='readback':os.write(fd,b'BAD READBACK')
+            if fault=='exact-expiry':monkeypatch.setattr(a,'monotonic_ns',lambda:deadline)
+        return result
+    with monkeypatch.context() as patch:
+        patch.setattr(os,'open',opening);patch.setattr(os,'fchmod',chmod);patch.setattr(os,'fsync',sync)
+        with pytest.raises((ValueError,OSError)):invoke(c)
+    assert fired[0] and c['owner'].budget is original_budget and original_budget.deadline_ns==deadline
+    history=c['anchor'].parent/p.JOURNAL_NAME
+    assert (history/'placement.intent.json').is_file() and not (history/'placement.prepared.json').exists()
+    disposition=c['owner'].close()
+    if fault!='readback':assert disposition['state']=='UNRESOLVED' and disposition['custody_retained']
+    (c['evidence']/'lock-copy-application-outcome.json').write_text(json.dumps(dict(fault=fault,resources=disposition,original_deadline=deadline,spent_intent=True,source_mode_unchanged='0666'),indent=2)+'\n')
+    if disposition['custody_retained']:
+        blocked=p.Placement(a.ValidationBudget(a.monotonic_ns()+120_000_000_000))
+        try:
+            with pytest.raises(BlockingIOError):blocked.execute(private(c['order_path'],c['order']))
+        finally:assert blocked.close()['state']=='CLOSED'
+        # Separate defensive test teardown represents loss of the original
+        # holder. It never certifies its unresolved application cleanup.
+        os.close(c['owner'].descriptor);c['owner'].descriptor=None
+        (c['evidence']/'lock-copy-defensive-fixture-teardown.json').write_text(json.dumps(dict(original_application_outcome=disposition,independent_exclusion_observed=True,forced_fixture_fd_close=True,application_cleanup_success=False),indent=2)+'\n')
+        assert c['owner'].unresolved
+    other=p.Placement(a.ValidationBudget(a.monotonic_ns()+120_000_000_000))
+    try:
+        with pytest.raises(p.PlacementError,match='PRIOR_OR_REPLAY'):other.execute(private(c['order_path'],c['order']))
+    finally:other.close()
+
+
+def test_actual_retained_legacy_and_preparatory_pair_readers(case,monkeypatch):
+    """Exact retained source/artifacts/dependencies; disposable custody/locators.
+
+    No source pin edit, content/signature acceptance stub or operational
+    transition. The temporary actual P binding is used only to compare the real
+    selected source; already adopted disposable custody and its budget persist.
+    """
+    c=case;inputs=json.loads((ROOT.parent/'prepared-pair-inputs/CONTROL.json').read_bytes())
+    assert p.LEGACY_IDENTITY==LEGACY_APPROVED
+    original_budget=c['owner'].budget;deadline=c['owner'].original_deadline
+    from tools import runtime_source_gate as source_gate
+    actual_validation=a.validation_output;observations=[]
+    def observed_validation(arguments,**kwargs):
+        row=dict(argv=list(map(str,arguments)),phase=kwargs.get('phase'),same_original_budget=kwargs.get('budget') is original_budget,original_deadline=deadline)
+        observations.append(row)
+        try:
+            raw=actual_validation(arguments,**kwargs);row.update(actual_exit=0,output_bytes=len(raw),output_sha256=sha256(raw).hexdigest());return raw
+        except BaseException as error:
+            row.update(exception=type(error).__name__,actual_exit=getattr(error,'returncode',None),unresolved=a.validation_unresolved());raise
+        finally:(c['evidence']/'actual-pair-validation-commands.json').write_text(json.dumps(observations,indent=2)+'\n')
+    monkeypatch.setattr(a,'validation_output',observed_validation);monkeypatch.setattr(source_gate,'validation_output',observed_validation)
+    c['owner'].owner=threading.current_thread();c['owner']._acquire(c['order']['enrollment']);fd=c['owner'].descriptor
+    for label,selected in [('legacy',False),('selected',True)]:
+        original=json.loads(Path(inputs[label]['path']).read_bytes());original['repository']=c['policy']['repository_path'];original['bundle']=c['policy']['bundle_path']
+        ref=private(c['order_path'].with_name(label+'-actual-bytes-pair.json'),original)
+        if not selected:c['order']['current']=ref;c['owner'].order=c['order']
+        else:monkeypatch.setattr(a,'PERSISTENT_ANCHOR_BINDING',assert_actual_preparatory_source())
+        result=c['owner']._pair(ref,Path(inputs[label+'_backend']),Path(inputs[label+'_bundle']),selected=selected)
+        assert result==original and c['owner'].descriptor==fd and c['owner'].budget is original_budget and original_budget.deadline_ns==deadline
+    assert observations and all(x['same_original_budget'] and x.get('actual_exit')==0 for x in observations)
+    assert not (c['anchor'].parent/p.JOURNAL_NAME).exists()
+    assert c['owner'].close()['state']=='CLOSED'
+    (c['evidence']/'actual-pair-component-proof.json').write_text(json.dumps(dict(real_source_legacy_anchors=LEGACY_APPROVED,source_build_correspondence='UNAVAILABLE',selected_revision=original['revision'],same_budget_and_custody=True,canonical_destination_locators_disposable=True,selected_pin_matches_actual_production_bytes=True,claims_or_product_children_or_placement_created=False,ready_or_native_integration_claimed=False),indent=2)+'\n')

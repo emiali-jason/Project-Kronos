@@ -358,8 +358,59 @@ class Placement:
             finally:os.close(directory)
         self.check()
 
-    def _roster(self, root, *, git_entries=None, object_format=None):
+
+    def _legacy_lock_expected(self, roster):
+        if roster is None:return False
+        rows=[row for row in roster if type(row) is dict and row.get('path')=='.venv/.lock']
+        if not rows:return False
+        exact=dict(path='.venv/.lock',mode=0o666,type='file',bytes=0,sha256=sha256(b'').hexdigest())
+        if rows!=[exact]:deny('LEGACY_TOOL_LOCK_ROSTER')
+        return True
+
+    def _read_legacy_tool_lock(self, value):
+        """The one approved inert tool lock: no-follow, owned, zero, unaliased.
+
+        Called only for a full explicitly selected legacy roster, never as a
+        generic file reader or as permission to select a new release.
+        """
+        self.check();p=path(value)
+        if p.name!='.lock' or p.parent.name!='.venv':deny('LEGACY_TOOL_LOCK_PATH')
+        directory=_directory_fd(p.parent)
+        try:fd=os.open(p.name,os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK|os.O_CLOEXEC,dir_fd=directory)
+        except BaseException:os.close(directory);raise
+        try:
+            before=os.fstat(fd)
+            if (not stat.S_ISREG(before.st_mode) or before.st_uid!=os.getuid()
+                    or stat.S_IMODE(before.st_mode)!=0o666 or before.st_size!=0 or before.st_nlink!=1):deny('LEGACY_TOOL_LOCK')
+            if os.read(fd,1)!=b'':deny('LEGACY_TOOL_LOCK')
+            after=os.fstat(fd);named=os.stat(p.name,dir_fd=directory,follow_symlinks=False)
+            if (_signature(before)!=_signature(after) or _signature(after)!=_signature(named)
+                    or after.st_nlink!=1 or named.st_nlink!=1):deny('LEGACY_TOOL_LOCK_CHANGED')
+            self.check();return b'',after
+        finally:
+            try:os.close(fd)
+            finally:os.close(directory)
+
+    def _write_legacy_tool_lock(self, value, roster):
+        if not self._legacy_lock_expected(roster):deny('LEGACY_TOOL_LOCK_ROSTER')
+        p=path(value)
+        if p.name!='.lock' or p.parent.name!='.venv':deny('LEGACY_TOOL_LOCK_PATH')
+        # Exclusive zero-byte creation, exact original mode, durable readback.
+        # Any partial/late result stays in the original attempt and budget.
+        with self.io():
+            directory=_directory_fd(p.parent)
+            try:fd=os.open(p.name,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW|os.O_CLOEXEC,0o666,dir_fd=directory)
+            except BaseException:os.close(directory);raise
+            try:os.fchmod(fd,0o666);os.fsync(fd)
+            finally:
+                try:os.close(fd)
+                finally:os.close(directory)
+        self._sync_dir(p.parent)
+        self._read_legacy_tool_lock(p);self.check()
+
+    def _roster(self, root, *, git_entries=None, object_format=None, legacy_roster=None):
         root = path(root);rows=[];total=0;seen=set()
+        legacy_lock=self._legacy_lock_expected(legacy_roster)
         if not root.is_dir() or root.stat().st_uid != os.getuid(): deny('TREE_ROOT')
         for directory, names, files in os.walk(root, followlinks=False):
             names.sort();files.sort()
@@ -368,13 +419,15 @@ class Placement:
                 if relative in seen: continue
                 seen.add(relative)
                 self.check();info=p.lstat();mode=stat.S_IMODE(info.st_mode)
-                if info.st_uid != os.getuid() or mode & 0o022: deny('TREE_OWNER_MODE')
+                approved_lock=legacy_lock and relative=='.venv/.lock'
+                if info.st_uid != os.getuid() or (mode & 0o022 and not approved_lock): deny('TREE_OWNER_MODE')
+                if approved_lock:self._read_legacy_tool_lock(p)
                 row=dict(path=relative,mode=mode)
                 if stat.S_ISDIR(info.st_mode): row['type']='directory'
                 elif stat.S_ISLNK(info.st_mode):
                     target=os.readlink(p);row.update(type='symlink',target=target,sha256=sha256(target.encode()).hexdigest())
                 elif stat.S_ISREG(info.st_mode):
-                    raw,_=_read_regular(p,limit=1024**3,check=self.check)
+                    raw,_=self._read_legacy_tool_lock(p) if approved_lock else _read_regular(p,limit=1024**3,check=self.check)
                     total+=len(raw);row.update(type='file',bytes=len(raw),sha256=sha256(raw).hexdigest())
                     if git_entries is not None and relative in git_entries:
                         expected_mode,expected_blob=git_entries[relative]
@@ -425,7 +478,7 @@ class Placement:
         if not recorded or len(recorded)>MAX_FILES:deny('LEGACY_INVENTORY')
         repository=path(repository);bundle=path(bundle)
         expected=document(read_reference(value['roster'],self.check))
-        if self._roster(repository)!=expected:deny('BACKEND_ROSTER')
+        if self._roster(repository,legacy_roster=expected)!=expected:deny('BACKEND_ROSTER')
         if not (repository/'.git').is_dir() or (repository/'.git').is_symlink():deny('GIT_DIRECTORY')
         # Reuse the existing exact destination/configuration/SSH safety reader
         # under its existing serialized foreground binding. The ONLY legacy
@@ -456,7 +509,7 @@ class Placement:
                     or not re.fullmatch('[0-9a-f]{40}',blob)):deny('LEGACY_GIT_ROSTER')
             git_entries[name]=(int(row['mode'],8),blob)
         if set(git_entries)!=set(recorded):deny('LEGACY_GIT_ROSTER')
-        actual=self._roster(repository,git_entries=git_entries,object_format='sha1')
+        actual=self._roster(repository,git_entries=git_entries,object_format='sha1',legacy_roster=expected)
         if actual!=expected:deny('BACKEND_GIT_ROSTER')
         files={row['path']:row for row in actual if row['type']=='file'}
         for name,row in recorded.items():
@@ -484,7 +537,7 @@ class Placement:
         probe=self.helper([str(executable),'-I','-S','-B','-c',
             'import sys,json;print(json.dumps(dict(version=sys.version,implementation=sys.implementation.name,base_prefix=sys.base_prefix),sort_keys=True))'],repository,'PLACEMENT_INTERPRETER')
         if json.loads(probe)!={k:interpreter[k] for k in ('version','implementation','base_prefix')}:deny('INTERPRETER_OBSERVATION')
-        if self._roster(repository)!=expected:deny('BACKEND_CHANGED')
+        if self._roster(repository,legacy_roster=expected)!=expected:deny('BACKEND_CHANGED')
         self.events.append(dict(event='EXACT_OBSERVED_LEGACY_PAIR',revision=LEGACY_IDENTITY[0],
             tracked_inventory_sha256=LEGACY_IDENTITY[1],bundle_identity=LEGACY_IDENTITY[2],
             source_build_correspondence='UNAVAILABLE',startup_authority=False))
@@ -621,14 +674,17 @@ class Placement:
         observed,_=_read_regular(p,limit=max(MAX_DOCUMENT,len(raw)),check=self.check,private=mode==0o600)
         if observed!=raw: deny('WRITE_READBACK')
 
-    def _copy_tree(self,source,destination):
-        rows=self._roster(source);destination=path(destination)
+    def _copy_tree(self,source,destination,*,legacy_roster=None):
+        rows=self._roster(source,legacy_roster=legacy_roster);destination=path(destination)
+        if legacy_roster is not None and rows!=legacy_roster:deny('LEGACY_COPY_ROSTER')
         for row in rows:
             self.check();src=Path(source)/row['path'];dst=destination/row['path']
             if row['type']=='directory':
                 with self.io():dst.mkdir(mode=row['mode'])
             elif row['type']=='symlink':
                 with self.io():os.symlink(row['target'],dst)
+            elif row['path']=='.venv/.lock' and self._legacy_lock_expected(legacy_roster):
+                self._read_legacy_tool_lock(src);self._write_legacy_tool_lock(dst,legacy_roster)
             else:
                 raw,_=_read_regular(src,limit=1024**3,check=self.check)
                 self._write(dst,raw,mode=row['mode'])
@@ -636,7 +692,7 @@ class Placement:
         for row in reversed(rows):
             if row['type']=='directory':self._sync_dir(destination/row['path'])
         self._sync_dir(destination.parent)
-        if self._roster(destination)!=rows or self._roster(source)!=rows: deny('COPY_CHANGED')
+        if self._roster(destination,legacy_roster=legacy_roster)!=rows or self._roster(source,legacy_roster=legacy_roster)!=rows: deny('COPY_CHANGED')
 
     def _admission_state(self,stage,installation):
         anchor=Path(installation['anchor_path']);journal=anchor/'failed-successor-restore-v1'
@@ -718,7 +774,9 @@ class Placement:
     def _verify_retained_checkpoint(self,directory,original,result):
         # These helpers run only after the NEW exclusive intent is durable.
         value=self._pair(original['current'],directory/'placement.checkpoint.backend',directory/'placement.checkpoint.app',selected=False,checkpoint_order=original)
-        if self._roster(directory/'placement.staged.backend')!=document(read_reference(value['roster'],self.check)):deny('PLACEMENT_CHECKPOINT')
+        expected=document(read_reference(value['roster'],self.check))
+        legacy=expected if value['schema']==LEGACY_PAIR_SCHEMA else None
+        if self._roster(directory/'placement.staged.backend',legacy_roster=legacy)!=expected:deny('PLACEMENT_CHECKPOINT')
         artifact=document(read_reference(value['artifact'],self.check),final_lf=True)
         self._verify_bundle(directory/'placement.app-installer.rollback',artifact['bundle_identity'])
         self._verify_bundle(result['exchanged_original'],artifact['bundle_identity'])
@@ -787,7 +845,9 @@ class Placement:
             if selected['identity']==current['identity']: deny('NO_PAIR_CHANGE')
 
             checkpoint=directory/(stem+'.checkpoint.backend');staged=directory/(stem+'.staged.backend')
-            self._copy_tree(repo,checkpoint);self._copy_tree(selected_repo,staged)
+            current_legacy=document(read_reference(current['roster'],self.check)) if current['schema']==LEGACY_PAIR_SCHEMA else None
+            selected_legacy=document(read_reference(selected['roster'],self.check)) if selected['schema']==LEGACY_PAIR_SCHEMA else None
+            self._copy_tree(repo,checkpoint,legacy_roster=current_legacy);self._copy_tree(selected_repo,staged,legacy_roster=selected_legacy)
             self._copy_tree(bundle,directory/(stem+'.checkpoint.app'))
             old_artifact=document(read_reference(current['artifact'],self.check),final_lf=True)
             self._verify_bundle(directory/(stem+'.checkpoint.app'),old_artifact['bundle_identity'])
