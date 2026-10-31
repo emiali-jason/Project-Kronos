@@ -758,7 +758,7 @@ def _legacy_control(c,monkeypatch):
     value['roster']=private(Path(value['roster']['path']),c['owner']._roster(repo))
     c['old']=private(Path(c['old']['path']),value);c['order']['current']=c['old']
     (c['evidence']/'legacy-fixture-seams.json').write_text(json.dumps(dict(production_approved_anchors=LEGACY_APPROVED,synthetic_disposable_anchors=p.LEGACY_IDENTITY,source_build_correspondence='UNAVAILABLE',real_comparisons=True,actual_signature_checks=True,actual_Git=True,actual_custody=True,product_startup=False),indent=2)+'\n')
-    assert command('/usr/bin/git','-C',repo,'status','--porcelain')==''
+    assert command('/usr/bin/git','--no-optional-locks','-C',repo,'status','--porcelain')==''
     return value
 
 
@@ -992,3 +992,39 @@ def test_actual_retained_legacy_and_preparatory_pair_readers(case,monkeypatch):
     assert not (c['anchor'].parent/p.JOURNAL_NAME).exists()
     assert c['owner'].close()['state']=='CLOSED'
     (c['evidence']/'actual-pair-component-proof.json').write_text(json.dumps(dict(real_source_legacy_anchors=LEGACY_APPROVED,source_build_correspondence='UNAVAILABLE',selected_revision=original['revision'],same_budget_and_custody=True,canonical_destination_locators_disposable=True,selected_pin_matches_actual_production_bytes=True,claims_or_product_children_or_placement_created=False,ready_or_native_integration_claimed=False),indent=2)+'\n')
+
+
+
+def test_actual_canonical_applications_parent_descriptor(record_property):
+    """Actual read-only system-parent FD; no app contents or custody acquired."""
+    fd=p._directory_fd('/Applications')
+    try:
+        s=os.fstat(fd);assert s.st_uid==0 and s.st_gid==80 and s.st_mode&0o7777==0o775
+        record_property('actual_system_parent',json.dumps(dict(path='/Applications',uid=s.st_uid,gid=s.st_gid,mode='0775',device=s.st_dev,inode=s.st_ino,app_contents_read=False,production_permission_change=False)))
+    finally:os.close(fd)
+
+
+@pytest.mark.parametrize('fault',('wrong-owner','wrong-admin-group','world-writable','other-group-write','setgid'))
+def test_canonical_applications_parent_exact_metadata_denials(monkeypatch,record_property,fault):
+    from types import SimpleNamespace
+    original=Path('/Applications').lstat();actual=os.fstat
+    def observed(fd):
+        s=actual(fd)
+        if (s.st_dev,s.st_ino)==(original.st_dev,original.st_ino):
+            values={k:getattr(s,k) for k in dir(s) if k.startswith('st_')}
+            if fault=='wrong-owner':values['st_uid']=os.getuid()
+            elif fault=='wrong-admin-group':values['st_gid']=81
+            else:values['st_mode']=(s.st_mode&~0o7777)|{'world-writable':0o777,'other-group-write':0o770,'setgid':0o2775}[fault]
+            return SimpleNamespace(**values)
+        return s
+    monkeypatch.setattr(os,'fstat',observed)
+    with pytest.raises(p.PlacementError,match='UNSAFE_DIRECTORY'):p._directory_fd('/Applications')
+    record_property('negative_metadata_seam',fault+'; actual no-follow directory open; controlled fstat negative; no OS metadata change')
+
+
+@pytest.mark.parametrize('fault',('group-writable-lookalike','symlink-alias'))
+def test_canonical_parent_exception_never_matches_private_lookalikes(tmp_path,fault):
+    directory=tmp_path/'Applications'
+    if fault=='group-writable-lookalike':directory.mkdir(mode=0o775);directory.chmod(0o775)
+    else:directory.symlink_to('/Applications',target_is_directory=True)
+    with pytest.raises((ValueError,OSError)):p._directory_fd(directory)

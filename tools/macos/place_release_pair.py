@@ -94,10 +94,14 @@ def _signature(info):
 def _directory_fd(value):
     p=path(value);fd=os.open('/',os.O_RDONLY|os.O_DIRECTORY|os.O_CLOEXEC)
     try:
-        for part in p.parts[1:]:
+        for depth,part in enumerate(p.parts[1:],1):
             child=os.open(part,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW|os.O_CLOEXEC,dir_fd=fd)
             os.close(fd);fd=child;info=os.fstat(fd)
-            if info.st_uid not in {0,os.getuid()} or info.st_mode&0o022:deny('UNSAFE_DIRECTORY')
+            # Sponsor-approved canonical system container only. No basename,
+            # environment or caller Boolean can grant this exception.
+            canonical_applications=(depth==1 and part=='Applications' and stat.S_ISDIR(info.st_mode)
+                and info.st_uid==0 and info.st_gid==80 and stat.S_IMODE(info.st_mode)==0o775)
+            if info.st_uid not in {0,os.getuid()} or (info.st_mode&0o022 and not canonical_applications):deny('UNSAFE_DIRECTORY')
         return fd
     except BaseException:
         os.close(fd);raise
