@@ -36,7 +36,7 @@ def complete_startup(server, shadow, *, swing_outcomes=None, wo11=None, wo17=Non
             and status.get("enabled") is False and status["runtime_accepted"] is False)
         if status["failure"] or (status["window"] is not None and not status["runtime_accepted"] and not historical):
             failure = "ACCEPTANCE_RESTORATION_NOT_ESTABLISHED"
-        elif _swing_restoration_failure(swing_outcomes):
+        elif _swing_restoration_failure(_visual_review_non_blocking(swing_outcomes)):
             failure = "SWING_RESTORATION_NOT_ESTABLISHED"
         elif wo11 is None or wo17 is None:
             failure = "RUNTIME_RESTORATION_PROOF_UNAVAILABLE"
@@ -61,6 +61,17 @@ def complete_startup(server, shadow, *, swing_outcomes=None, wo11=None, wo17=Non
         governance.complete_startup(failure)
     except (ValueError, OSError):
         governance.complete_startup("STARTUP_COMPLETION_RECORD_UNAVAILABLE")
+
+
+def _visual_review_non_blocking(outcomes):
+    """WO-8b (Nov 2026, Sponsor-approved): the retired chart-review pack (V3
+    visual records) no longer blocks startup. Its failure stays visible in the
+    status document and the Review stays unavailable; every other owner is
+    still required. Malformed input is passed through unchanged (still fails)."""
+    if type(outcomes) is not tuple:
+        return outcomes
+    return tuple(("V3_RECORDS", "SUCCESS") if type(row) is tuple and row == ("V3_RECORDS", "FAILED")
+                 else row for row in outcomes)
 
 
 def _swing_restoration_failure(outcomes):

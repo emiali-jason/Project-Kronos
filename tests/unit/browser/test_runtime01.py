@@ -80,7 +80,7 @@ def test_material_capability_change_never_exits_maintenance(tmp_path):
     assert not list((tmp_path/'audit').rglob('*.json'))
 
 
-@pytest.mark.parametrize('fault',['shadow','swing','provider','transport','write'])
+@pytest.mark.parametrize('fault',['shadow','provider','transport','write'])
 def test_health_gate_failures_remain_visible(tmp_path,fault,monkeypatch):
     s=server_for(governance(tmp_path,maintenance=GENERATION))
     shadow=SimpleNamespace(status=lambda:dict(failure=None,window=None,runtime_accepted=False))
@@ -91,6 +91,26 @@ def test_health_gate_failures_remain_visible(tmp_path,fault,monkeypatch):
     if fault=='write': monkeypatch.setattr('kronos.common.connection_governance.immutable_write',Mock(side_effect=OSError()))
     complete_startup(s,shadow)
     assert s.connection_governance.maintenance_status()['state']=='FAILED_ACTIVE'
+
+
+def test_wo8b_unavailable_visual_review_does_not_block_startup(tmp_path):
+    s=server_for(governance(tmp_path,maintenance=GENERATION))
+    shadow=SimpleNamespace(status=lambda:dict(failure=None,window=None,runtime_accepted=False))
+    s.visual_v3_live.restoration_error='VISUAL_V3_RESTORATION_UNAVAILABLE'
+    complete_startup(s,shadow)
+    assert s.connection_governance.maintenance_status()['state']=='INACTIVE'
+
+
+@pytest.mark.parametrize('owner',['LEGACY_MTF','LEGACY_NATIVE','V3_RESTORE','TRADE_WINDOW'])
+def test_wo8b_other_swing_owner_failures_still_block(tmp_path,owner):
+    s=server_for(governance(tmp_path,maintenance=GENERATION))
+    shadow=SimpleNamespace(status=lambda:dict(failure=None,window=None,runtime_accepted=False))
+    actual_complete_startup(s,shadow,
+        swing_outcomes=tuple((k,'FAILED' if k in (owner,'V3_RECORDS') else 'SUCCESS')
+            for k in ('LEGACY_MTF','LEGACY_NATIVE','NATIVE_REVIEW','V3_RECORDS','V3_RESTORE','TRADE_WINDOW')),
+        wo11=SimpleNamespace(last_failure=None),
+        wo17=dict(restoration_state="NOT_YET_RUN",failure_stage=None,failure_reason=None,current_positions=[]))
+    assert s.connection_governance.maintenance_status()['failure']=='SWING_RESTORATION_NOT_ESTABLISHED'
 
 
 @pytest.mark.parametrize('product',['Swing','Intraday','Settings','Notifications','Trading Journal','Portfolio','Reports'])
