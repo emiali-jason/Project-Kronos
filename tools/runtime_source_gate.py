@@ -15,25 +15,16 @@ EXECUTABLE = CANONICAL / "Contents/MacOS/KRONOS"
 
 
 def canonical_parent():
-    """Kernel parent image plus strict bundle seal; no environment authority."""
-    if sys.platform != "darwin":
-        raise ValueError("CANONICAL_LAUNCHER_REQUIRED")
-    try:
-        buffer = ctypes.create_string_buffer(4096)
-        library = ctypes.CDLL("/usr/lib/libproc.dylib")
-        if (library.proc_pidpath(os.getppid(), buffer, len(buffer)) <= 0
-                or Path(os.fsdecode(buffer.value)) != EXECUTABLE
-                or EXECUTABLE.resolve() != EXECUTABLE):
-            raise ValueError("CANONICAL_LAUNCHER_REQUIRED")
-        subprocess.run(["/usr/bin/codesign", "--verify", "--deep", "--strict",
-            "-R", '=identifier "com.project-kronos.browser-v1"', str(CANONICAL)],
-            check=True, capture_output=True, timeout=10)
-    except (OSError, subprocess.SubprocessError):
-        raise ValueError("CANONICAL_SIGNATURE_INVALID") from None
+    """Local personal install: any local launcher may start KRONOS.
+
+    The signed-bundle parent check is retired (WO-7, Nov 2026). Source integrity
+    is still enforced by qualify_repository/qualify_startup below.
+    """
+    return None
 
 
 def qualify_repository(root):
-    """Exact develop publication, including staged and untracked source policy."""
+    """Clean committed checkout, including staged and untracked source policy."""
     root = Path(root).resolve()
     def git(*args):
         return subprocess.check_output(["git", *args], cwd=root,
@@ -44,11 +35,9 @@ def qualify_repository(root):
         if git("status", "--porcelain=v1", "--untracked-files=all"):
             raise ValueError("SOURCE_NOT_CLEAN")
         revision = git("rev-parse", "HEAD")
-        if (not re.fullmatch(r"[a-f0-9]{40}", revision)
-                or git("branch", "--show-current") != "develop"
-                or git("rev-parse", "origin/develop") != revision
-                or git("ls-remote", "--exit-code", "origin", "refs/heads/develop").split()
-                    != [revision, "refs/heads/develop"]):
+        # WO-7: no branch/remote/network requirement. Any clean, committed
+        # local revision may run; the exact revision is recorded as before.
+        if not re.fullmatch(r"[a-f0-9]{40}", revision):
             raise ValueError("SOURCE_REVISION_NOT_AUTHORIZED")
         # Do not trust index stat caches, assume-unchanged or ignored Python files.
         tree = git("ls-tree", "-r", revision, "--", "src/kronos", "tools")
