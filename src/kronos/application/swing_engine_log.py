@@ -221,7 +221,13 @@ class SwingEngineLog:
             lp = s["last_processed"]
             first_i = next((k for k, d in enumerate(m.dates) if d > lp), None)
             if first_i is None:
-                return {"processed_days": 0, "through": lp, "missing_symbols": list(missing)}
+                # Nothing new: refresh the latest day's verdict view only (paper trades untouched).
+                k = last_i if m.dates[last_i] == lp else None
+                if k is not None:
+                    self._write_day_log(m, k, self._verdict_rows(m, k), None)
+                    self.write_workbook(m.dates[k][:7])
+                return {"processed_days": 0, "refreshed": k is not None, "through": lp,
+                        "missing_symbols": list(missing)}
         days = 0
         for k in range(first_i, last_i + 1):
             self._process_day(m, k, lot_size)
@@ -288,21 +294,9 @@ class SwingEngineLog:
                                  "signal_close": v.facts["close"], "atr": v.facts["atr"],
                                  "priority": round(v.priority, 2)})
             events.append(f"SIGNAL {v.symbol} BUY NOW (paper entry at next open)")
-        skipped_syms = {v.symbol for v in skipped}
-        rows = []
-        for v in verdicts:
-            f = v.facts
-            rows.append({"date": day, "symbol": v.symbol, "verdict": v.verdict,
-                         "selected": v.symbol in {x.symbol for x in selected},
-                         "note": ("monthly limit reached" if v.symbol in skipped_syms else
-                                  "already in a paper trade" if v.state == "NOW" and v.symbol in busy else ""),
-                         "reasons": " | ".join(v.reasons), "waiting_for": " | ".join(v.waiting_for),
-                         "close": f.get("close"), "momentum_rank": f.get("momentum_rank"),
-                         "ext_atr": f.get("ext_atr"), "high_50d": f.get("high_50d_prior"),
-                         "sma50": f.get("sma50"), "stop": v.plan.get("stop"), "risk_pct": v.plan.get("risk_pct"),
-                         "trend_trigger": f.get("trend_trigger"), "pct_to_trigger": f.get("pct_to_trigger"),
-                         "strength_ok": (f.get("momentum_rank") is not None
-                                         and f.get("momentum_rank") <= f.get("momentum_cutoff", 0))})
+        notes = {v.symbol: "monthly limit reached" for v in skipped}
+        notes.update({v.symbol: "already in a paper trade" for v in verdicts if v.state == "NOW" and v.symbol in busy})
+        rows = self._verdict_rows(m, k, verdicts, {v.symbol for v in selected}, notes)
         nifty_ok = m.nc[k] > m.nsma[k]
         summary = {"date": day, "nifty": round(m.nc[k], 2), "nifty_200d": round(m.nsma[k], 2),
                    "market_gate": "OPEN" if nifty_ok else "CLOSED",
@@ -311,12 +305,38 @@ class SwingEngineLog:
                    "no_trade": sum(v.state == "NO TRADE" for v in verdicts),
                    "selected": len(selected), "taken_this_month": s["taken"].get(month, 0),
                    "open_positions": len(s["open"]), "events": " ; ".join(events)}
-        path = self._month_log_path(month)
+        self._write_day_log(m, k, rows, summary)
+
+    def _verdict_rows(self, m, k, verdicts=None, selected=None, notes=None):
+        day = m.dates[k]
+        if verdicts is None:
+            verdicts = [evaluate(m, sym, LONG, k) for sym in m.syms]
+            selected = {p["symbol"] for p in self.state.get("pending", []) + self.state.get("open", []) + self.state.get("closed", [])
+                        if p.get("signal_date") == day}
+            notes = {}
+        rows = []
+        for v in verdicts:
+            f = v.facts
+            rows.append({"date": day, "symbol": v.symbol, "verdict": v.verdict,
+                         "selected": v.symbol in selected, "note": notes.get(v.symbol, ""),
+                         "reasons": " | ".join(v.reasons), "waiting_for": " | ".join(v.waiting_for),
+                         "close": f.get("close"), "momentum_rank": f.get("momentum_rank"),
+                         "ext_atr": f.get("ext_atr"), "high_50d": f.get("high_50d_prior"),
+                         "sma50": f.get("sma50"), "stop": v.plan.get("stop"), "risk_pct": v.plan.get("risk_pct"),
+                         "trend_trigger": f.get("trend_trigger"), "pct_to_trigger": f.get("pct_to_trigger"),
+                         "strength_ok": (f.get("momentum_rank") is not None
+                                         and f.get("momentum_rank") <= f.get("momentum_cutoff", 0))})
+        return rows
+
+    def _write_day_log(self, m, k, rows, summary):
+        day = m.dates[k]
+        path = self._month_log_path(day[:7])
         try:
             log = json.loads(path.read_text())
         except (OSError, ValueError):
             log = {"days": [], "rows": []}
-        log["days"] = [d for d in log["days"] if d["date"] != day] + [summary]
+        if summary is not None:
+            log["days"] = [d for d in log["days"] if d["date"] != day] + [summary]
         log["rows"] = [r for r in log["rows"] if r["date"] != day] + rows
         self.state_root.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix(".tmp"); tmp.write_text(json.dumps(log)); os.replace(tmp, path)

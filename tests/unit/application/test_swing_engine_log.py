@@ -171,3 +171,19 @@ def test_fetch_without_kite_connection_fails_cleanly(tmp_path):
                         runner=lambda fn: fn())
     el.start("MANUAL")
     assert el.status()["last_result"]["reason"] == "KITE_NOT_CONNECTED"
+
+
+def test_repeat_run_refreshes_today_without_touching_paper(tmp_path):
+    el = log(tmp_path)
+    m = market(331, burst=330)
+    el.process(market(330), {})
+    el.process(m, {})
+    before = json.dumps(el.state, sort_keys=True)
+    path = tmp_path / "state" / f"verdicts-{m.dates[-1][:7]}.json"
+    data = json.loads(path.read_text()); data["rows"] = [r for r in data["rows"] if r["date"] != m.dates[-1]]
+    path.write_text(json.dumps(data))
+    res = el.process(m, {})
+    assert res["processed_days"] == 0 and res["refreshed"] is True
+    assert json.dumps(el.state, sort_keys=True) == before
+    rows = [r for r in json.loads(path.read_text())["rows"] if r["date"] == m.dates[-1]]
+    assert len(rows) == 10 and [r for r in rows if r["symbol"] == "HOT"][0]["selected"] is True
