@@ -1302,12 +1302,12 @@ def _native_opportunity_card(
         f'{escape(item.canonical_instrument)}</span></div>'
         f'<span class="direction direction-{escape(direction.lower())}">{escape(direction)}</span>'
         '</div>' + compact
-        + _swing_continuity_warning(continuity)
         + intake_summary
         + '<details class="swing-compact-full"' + (' open' if v2_now else '')
         + '><summary>' + ('FULL ANALYSIS · ' + escape(_v2_state_label(v2)) if v2_now
                           else 'Full analysis, scenarios and evidence') + '</summary>'
         + sponsor_summary
+        + _swing_continuity_warning(continuity)
         + (_nse_technical_panel(native_intake, item.canonical_instrument, item.run_identity,
              item.result_sha256, item.direction.value,
              None if intake_row is None else intake_row.get("requirement_sha256"), compact=True)
