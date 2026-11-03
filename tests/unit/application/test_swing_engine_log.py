@@ -89,11 +89,11 @@ def test_workbook_is_valid_xlsx(tmp_path):
     path = tmp_path / "wb" / f"KRONOS_Engine_v2.2_Log_{m.dates[-1][:7]}.xlsx"
     with ZipFile(path) as z:
         names = z.namelist()
-        assert "xl/workbook.xml" in names and "xl/worksheets/sheet5.xml" in names
+        assert "xl/workbook.xml" in names and "xl/worksheets/sheet6.xml" in names
         for n in names:
             if n.endswith(".xml") or n.endswith(".rels"):
                 ElementTree.fromstring(z.read(n))
-        assert b"All_Verdicts" in z.read("xl/workbook.xml")
+        assert b"All_Verdicts" in z.read("xl/workbook.xml") and b"Watchlist" in z.read("xl/workbook.xml")
 
 
 def test_write_xlsx_escapes_text(tmp_path):

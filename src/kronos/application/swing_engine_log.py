@@ -299,7 +299,10 @@ class SwingEngineLog:
                          "reasons": " | ".join(v.reasons), "waiting_for": " | ".join(v.waiting_for),
                          "close": f.get("close"), "momentum_rank": f.get("momentum_rank"),
                          "ext_atr": f.get("ext_atr"), "high_50d": f.get("high_50d_prior"),
-                         "sma50": f.get("sma50"), "stop": v.plan.get("stop"), "risk_pct": v.plan.get("risk_pct")})
+                         "sma50": f.get("sma50"), "stop": v.plan.get("stop"), "risk_pct": v.plan.get("risk_pct"),
+                         "trend_trigger": f.get("trend_trigger"), "pct_to_trigger": f.get("pct_to_trigger"),
+                         "strength_ok": (f.get("momentum_rank") is not None
+                                         and f.get("momentum_rank") <= f.get("momentum_cutoff", 0))})
         nifty_ok = m.nc[k] > m.nsma[k]
         summary = {"date": day, "nifty": round(m.nc[k], 2), "nifty_200d": round(m.nsma[k], 2),
                    "market_gate": "OPEN" if nifty_ok else "CLOSED",
@@ -343,7 +346,8 @@ class SwingEngineLog:
         daily_cols = ["date", "nifty", "nifty_200d", "market_gate", "now", "ready", "watch", "no_trade",
                       "selected", "taken_this_month", "open_positions", "events"]
         verdict_cols = ["date", "symbol", "verdict", "selected", "note", "close", "momentum_rank", "ext_atr",
-                        "high_50d", "sma50", "stop", "risk_pct", "waiting_for", "reasons"]
+                        "high_50d", "sma50", "trend_trigger", "pct_to_trigger", "stop", "risk_pct",
+                        "waiting_for", "reasons"]
         trade_cols = ["symbol", "signal_date", "entry_date", "entry", "stop", "lot_size", "lots", "last_close",
                       "exit_level_50d", "exit_date", "exit", "exit_reason", "sessions", "ret_pct",
                       "gross_pnl", "costs", "net_pnl"]
@@ -352,8 +356,15 @@ class SwingEngineLog:
         days = sorted(log["days"], key=lambda d: d["date"])
         rows = sorted(log["rows"], key=lambda r: (r["date"], {"BUY NOW": 0, "BUY READY": 1, "WATCH": 2}.get(r["verdict"], 3), r["symbol"]))
         ready_now = [r for r in rows if r["date"] == (days[-1]["date"] if days else None) and r["verdict"] in ("BUY NOW", "BUY READY")]
+        last_day = days[-1]["date"] if days else None
+        watch = sorted((r for r in rows if r["date"] == last_day and r.get("strength_ok")
+                        and r.get("pct_to_trigger") is not None),
+                       key=lambda r: r["pct_to_trigger"])
+        watch_cols = ["date", "symbol", "verdict", "close", "trend_trigger", "pct_to_trigger", "momentum_rank",
+                      "ext_atr", "high_50d", "sma50", "waiting_for"]
         sheets = [("Summary", summary), ("Daily", table(daily_cols, days)),
                   ("Today_Ready_Now", table(verdict_cols, ready_now)),
+                  ("Watchlist", table(watch_cols, watch)),
                   ("Paper_Trades", table(trade_cols, sorted(trades, key=lambda t: t.get("signal_date", "")))),
                   ("All_Verdicts", table(verdict_cols, rows))]
         self.workbook_root.mkdir(parents=True, exist_ok=True)

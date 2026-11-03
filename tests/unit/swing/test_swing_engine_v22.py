@@ -79,3 +79,12 @@ def test_v22_quality_and_monthly_limit():
         x = VerdictV22(f"X{k}", "D", LONG, "BUY NOW"); x.priority = p; vs.append(x)
     sel, skip = monthly_selection(vs, already_this_month=3)
     assert [x.priority for x in sel] == [5.0, 4.0] and len(skip) == 2
+
+
+def test_no_trade_still_shows_watchlist_needs():
+    m = uni(nifty=make(drift=-0.002)); v = evaluate(m, "S9", LONG, m.n - 1)
+    assert v.verdict == "NO TRADE"
+    assert v.waiting_for[0].startswith("Market: Nifty to close above its 200-day average")
+    assert any(w.startswith("Trend:") for w in v.waiting_for)
+    v0 = evaluate(m, "S0", LONG, m.n - 1)
+    assert any(w.startswith("Strength: momentum rank in the top") for w in v0.waiting_for)

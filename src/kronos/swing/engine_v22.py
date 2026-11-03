@@ -250,11 +250,21 @@ def evaluate(m, symbol, direction, i):
     trend_now = broke and ext >= rb.trend_min_ext_atr and fresh
     trend_ready = not trend_now and not broke and hi50 - close <= rb.trend_ready_atr * a
     trend_need = max(hi50, strong_level)
+    v.facts.update(trend_trigger=_r(trend_need), pct_to_trigger=_r((trend_need / close - 1) * 100, 2))
     dip_now = rb.dip_enabled and rsi is not None and rsi < rb.dip_rsi_below
     dip_ready = rb.dip_enabled and not dip_now and rsi is not None and rsi < rb.dip_ready_rsi_below
     v.priority = ext                     # used to pick the best when more than the monthly limit qualify
 
     if v.reasons:
+        # Watchlist view: what this stock still needs once the gates are open.
+        if not nifty_ok:
+            v.waiting_for.append(f"Market: Nifty to close above its 200-day average {m.nsma[i]:.0f} (now {m.nc[i]:.0f})")
+        if rank > cutoff:
+            v.waiting_for.append(f"Strength: momentum rank in the top {cutoff} (now {rank})")
+        if trend_now:
+            v.waiting_for.append(f"Trend: setup present today (fresh strong close {close:.2f}); needs the gates above")
+        else:
+            v.waiting_for.append(f"Trend: a fresh strong close at or above {trend_need:.2f} (now {close:.2f})")
         return v
 
     if trend_now or dip_now:
