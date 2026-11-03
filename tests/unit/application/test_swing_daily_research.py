@@ -331,3 +331,14 @@ def test_changed_publication_during_capture_retains_failure_not_success(rig):
   assert len(rig.research.store.records('DAILY_ATTEMPT'))==1
   assert not a.snapshot()['owners']
  finally:c.close()
+
+def test_startup_restore_loads_each_prepared_record_once_and_still_verifies(rig,monkeypatch):
+ publish(rig);store=rig.research.store
+ plain=daily_chain(store,day(rig).isoformat())
+ calls=[];real=store.records
+ monkeypatch.setattr(store,'records',lambda kind:(calls.append(kind),real(kind))[1],raising=False)
+ c,_,_=controller(rig)
+ assert c.daily_status()['state']=='READY' and len(c.daily_status()['publications'])==len(plain)
+ assert calls.count('DAILY_PREPARED')==1 and calls.count('DAILY_PUBLICATION')==1
+ p=Path(plain[0].data['workbook_path']);p.write_bytes(b'CORRUPTED')
+ c2,_,_=controller(rig);assert c2.daily_status()['state']=='BLOCKED'

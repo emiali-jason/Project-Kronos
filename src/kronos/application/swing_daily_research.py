@@ -164,8 +164,12 @@ def publication_path(research_root, data):
     return path
 
 
-def daily_chain(store, day, publication_root=None):
-    values = sorted((r for r in store.records('DAILY_PUBLICATION')
+def daily_chain(store, day, publication_root=None, *, publications=None, prepared_index=None):
+    # publications / prepared_index let a caller verify many days from one
+    # load of the store; every record and workbook is still fully checked.
+    if publications is None:
+        publications = store.records('DAILY_PUBLICATION')
+    values = sorted((r for r in publications
                      if r.data['reporting_date'] == day), key=lambda r:r.data['sequence'])
     prior = None
     for index, item in enumerate(values):
@@ -173,7 +177,10 @@ def daily_chain(store, day, publication_root=None):
         require(type(d['sequence']) is int and d['sequence'] == index
                 and d['prior_publication'] == prior
                 and d['publication_kind'] == ('BASE' if index == 0 else 'SUPPLEMENT'), 'SWING_DAILY_CHAIN_INVALID')
-        prepared = [p for p in store.records('DAILY_PREPARED') if p.identity == d['prepared_identity']]
+        if prepared_index is None:
+            prepared = [p for p in store.records('DAILY_PREPARED') if p.identity == d['prepared_identity']]
+        else:
+            prepared = prepared_index.get(d['prepared_identity'], [])
         require(len(prepared) == 1 and prepared[0].data['source_digest'] == d['source_digest'])
         path = publication_path(publication_root,d)
         require(path.is_file() and not path.is_symlink()

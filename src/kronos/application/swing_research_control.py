@@ -410,8 +410,13 @@ class SwingResearchControl:
         self._daily_receipts = ()
         try:
             values = self.research.store.records('DAILY_PUBLICATION')
+            # Load and verify each prepared record once, not once per publication.
+            prepared_index = {}
+            for p in self.research.store.records('DAILY_PREPARED'):
+                prepared_index.setdefault(p.identity, []).append(p)
             for day in sorted({r.data['reporting_date'] for r in values}):
-                daily_chain(self.research.store, day, self.research.publication_root)
+                daily_chain(self.research.store, day, self.research.publication_root,
+                            publications=values, prepared_index=prepared_index)
             self._daily_receipts = values
         except (ValueError, OSError, TypeError, KeyError):
             self._daily_restore_failure = 'DAILY_RESTORATION_UNAVAILABLE'
