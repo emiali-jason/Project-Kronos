@@ -864,6 +864,19 @@ class KronosBrowserServer(ThreadingHTTPServer):
             source_runtime=lambda: ({"availability":"UNAVAILABLE"} if self.connection_governance is None
                 else {"loaded_revision":self.connection_governance.process.loaded_revision,
                       "process_id":self.connection_governance.process.pid}))
+        # WO-11: v2.2 engine daily log + PAPER trading (research only, read-only Provider use).
+        self.swing_engine_log = None
+        try:
+            from kronos.application.swing_engine_log import SwingEngineLog
+            self.swing_engine_log = SwingEngineLog(
+                application=self.application,
+                ready=lambda: (self.connection_governance is not None
+                    and getattr(self.connection_governance, "startup_state", None) == "READY"
+                    and not getattr(self.connection_governance, "maintenance_active", True)
+                    and not getattr(self.connection_governance, "shutting_down", True)
+                    and not self._shutdown_started))
+        except Exception:
+            self.swing_engine_log = None
         self.local_analysis = None
         if self.native_intake is not None:
             from kronos.application.swing_local_analysis import SwingLocalAnalysisWorkflow
@@ -1067,6 +1080,12 @@ class KronosBrowserServer(ThreadingHTTPServer):
         daily = getattr(getattr(self, "swing_research_control", None), "poll_daily", None)
         if callable(daily):
             daily()
+        engine_log = getattr(self, "swing_engine_log", None)
+        if engine_log is not None:
+            try:
+                engine_log.poll()
+            except Exception:
+                pass  # research log must never disturb the shared server pulse
         # Reuse the admitted server maintenance pulse. Notification GETs never
         # synchronize sources, expire cards or append reminder history.
         if hasattr(self, "_swing_notification_lock"):
@@ -3607,6 +3626,33 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         finally:
             self.server.finish_sponsor_work()
 
+    def _engine_log_panel(self, query) -> str:
+        engine_log = getattr(self.server, "swing_engine_log", None)
+        if engine_log is None:
+            return '<section class="panel" id="engine-log"><h2>Engine v2.2 log (PAPER)</h2><p>Unavailable.</p></section>'
+        st = engine_log.status()
+        last = st.get("last_result") or {}
+        flag = query.get("engine", [""])[0]
+        note = ("<p>Run started. Refresh in about 2 minutes.</p>" if flag == "started" else
+                "<p>A run is already in progress.</p>" if flag == "busy" else "")
+        outcome = ("" if not last else
+                   "<p>Last run: " + escape(str(last.get("state"))) + " · " + escape(str(last.get("trigger")))
+                   + " · " + escape(str(last.get("finished_at", ""))[:16])
+                   + (" · " + escape(str(last.get("reason"))) if last.get("reason") else "")
+                   + (" · days processed " + escape(str(last.get("processed_days"))) if "processed_days" in last else "")
+                   + "</p>")
+        return ('<section class="panel" id="engine-log"><h2>Engine v2.2 log (PAPER)</h2>'
+                "<p>Research only: Rulebook v2.2 on the 91 NSE stocks, 1-lot PAPER futures trades, max 5 new a month. "
+                "Runs automatically at 23:00 while KRONOS is ready and Kite is connected. No orders are placed.</p>"
+                + note + outcome
+                + "<p>State: " + escape(st["state"]) + " · Paper trading since: " + escape(str(st.get("started") or "not started"))
+                + " · Processed through: " + escape(str(st.get("last_processed") or "—"))
+                + " · Open: " + str(st["open"]) + " · Pending entries: " + str(st["pending"])
+                + " · Closed: " + str(st["closed"]) + " · Taken this month: " + str(st["taken_this_month"]) + " of 5</p>"
+                + "<p>Monthly workbook: " + escape(st["workbook_root"]) + "/KRONOS_Engine_v2.2_Log_YYYY-MM.xlsx</p>"
+                + '<form method="post" action="/engine-log/run"><button type="submit"'
+                + (" disabled" if st["state"] == "RUNNING" else "") + ">Run Engine Log now</button></form></section>")
+
     def _swing_research_page(self) -> None:
         """Presentation reads retained status only; no capture or Provider call."""
         try:
@@ -3700,11 +3746,27 @@ class _BrowserHandler(BaseHTTPRequestHandler):
                 daily={**daily,"state":"LOCAL_HISTORY_UNAVAILABLE"}
                 observations=()
         body += render_daily_research(daily, observations)
+        body += self._engine_log_panel(query)
         self._html(render_browser_page(
             title="Swing Research", subtitle="Explicit prospective direction research",
             snapshot=self.server.application.snapshot(), active_nav="Swing",
             active_tab="Opportunities", body=body,
             back_link='<a href="/swing/opportunities">← Opportunities</a>'))
+
+    def _engine_log_run(self) -> None:
+        """WO-11 manual run: same read-only engine log as the 23:00 run."""
+        try:
+            length = int(self.headers.get("Content-Length", "0") or 0)
+            if not 0 <= length <= 256:
+                raise ValueError("ENGINE_LOG_REQUEST_INVALID")
+            if length:
+                self.rfile.read(length)
+        except (ValueError, OSError):
+            self._text(HTTPStatus.BAD_REQUEST, "Engine log request rejected.")
+            return
+        engine_log = getattr(self.server, "swing_engine_log", None)
+        started = engine_log is not None and engine_log.start("MANUAL")
+        self._redirect("/swing/research?" + urlencode({"engine": "started" if started else "busy"}) + "#engine-log")
 
     def _swing_research_update(self, *, retained_only=False) -> None:
         try:
@@ -3777,6 +3839,9 @@ class _BrowserHandler(BaseHTTPRequestHandler):
         self._json(result)
 
     def _dispatch_post(self, path: str) -> None:
+        if path == "/engine-log/run":
+            self._engine_log_run()
+            return
         if path in {"/control/swing-research/commission", "/control/swing-research/corporate-actions/import"}:
             self._swing_research_authority(path)
             return
