@@ -23,15 +23,22 @@ class CardText(HTMLParser):
     def __init__(self):
         super().__init__()
         self.disclosures = 0
+        self.stack = []
         self.primary = []
         self.details = []
 
+    # Nov 2026 compact card: the whole former card sits inside one outer
+    # "swing-compact-full" disclosure. Its content keeps the earlier primary/
+    # detail contract, so that outer wrapper is not counted as a disclosure.
     def handle_starttag(self, tag, attrs):
         if tag == 'details':
-            self.disclosures += 1
+            wrapper = ('class', 'swing-compact-full') in attrs
+            self.stack.append(wrapper)
+            if not wrapper:
+                self.disclosures += 1
 
     def handle_endtag(self, tag):
-        if tag == 'details':
+        if tag == 'details' and not self.stack.pop():
             self.disclosures -= 1
 
     def handle_data(self, data):
